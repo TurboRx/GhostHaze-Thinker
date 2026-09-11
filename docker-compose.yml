@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    container_name: showdown-turboot
+    container_name: turboot
     restart: unless-stopped
     env_file:
       - .env

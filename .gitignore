@@ -1,5 +1,13 @@
-node_modules/
-dist/
+# Binaries
+bin/
+/turboot
+
+# Environment configuration
 .env
-*.js.map
-*.d.ts
+
+# Go test and coverage artifacts
+*.test
+*.out
+
+# OS files
+.DS_Store

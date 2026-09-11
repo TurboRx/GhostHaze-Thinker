@@ -1,44 +1,36 @@
-# ── Build stage ────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+# ── Build stage ─────────────────────────────────────────────────────────────
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /build
 
-# Copy dependency manifests first for better layer caching
-COPY package.json package-lock.json ./
+# Copy dependency manifests first for layer caching
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Install all dependencies (including devDependencies for tsc)
-RUN npm ci
+# Copy source code
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+COPY pkg/ ./pkg/
 
-# Copy TypeScript source and config
-COPY tsconfig.json ./
-COPY src/ ./src/
+# Compile static binary with optimizations
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/turboot ./cmd/turboot
 
-# Compile TypeScript → JavaScript
-RUN npm run build
+# ── Production stage ────────────────────────────────────────────────────────
+FROM alpine:3.21 AS production
 
-# Prune devDependencies so only production deps remain
-RUN npm prune --omit=dev
-
-# ── Production stage ──────────────────────────────────────────────────────────
-FROM node:22-alpine AS production
-
-# Add labels for GitHub Container Registry
 LABEL org.opencontainers.image.source="https://github.com/TurboRx/Showdown-TurBOOT"
-LABEL org.opencontainers.image.description="Pokémon Showdown Battle/ChatBot"
+LABEL org.opencontainers.image.description="A Pokémon Showdown bot and client library in Go"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Run as non-root for security
-RUN addgroup -S turboot && adduser -S turboot -G turboot
+# Install SSL root certificates and tzdata, create unprivileged user
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S turboot && adduser -S turboot -G turboot
 
 WORKDIR /app
 
-# Copy only compiled JS and production node_modules from the builder
-COPY --from=builder /build/dist/ ./dist/
-COPY --from=builder /build/node_modules/ ./node_modules/
-COPY --from=builder /build/package.json ./
+# Copy only the compiled static binary
+COPY --from=builder /build/turboot /app/turboot
 
-# Switch to non-root user
 USER turboot
 
-# The bot reads env vars directly — pass them via docker run -e or .env file
-CMD ["node", "dist/index.js"]
+CMD ["/app/turboot"]

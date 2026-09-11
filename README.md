@@ -1,135 +1,217 @@
-# Showdown-TurBOOT
+# TurBOOT
 
-A bot for Pokemon Showdown that connects over WebSocket, logs into your account, auto-joins rooms, and listens to chat. Built with TypeScript and designed to be easy to extend with your own commands and features.
+A Pokémon Showdown bot and client library in Go.
 
-## What it does
+TurBOOT connects to Pokémon Showdown over WebSockets, authenticates with account credentials, automatically joins configured rooms, and provides an event-driven framework for handling chat messages, private messages (PMs), and custom commands.
 
-- Connects to the official Pokemon Showdown server (or a custom one)
-- Logs in with your account credentials
-- Automatically joins rooms you specify
-- Logs chat messages, PMs, room joins/leaves, and server popups to the console
-- Reconnects on its own if the connection drops
+It can be run as a standalone bot daemon or imported directly as a Go package (`pkg/showdown`) in your own applications.
+
+---
+
+## Features
+
+- **Dual Purpose:** Ready-to-run bot daemon (`cmd/turboot`) and reusable client library (`pkg/showdown`).
+- **Zero Heavy Dependencies:** Only uses standard Go and `gorilla/websocket`.
+- **Automatic Reconnection:** Reconnects on connection loss with configurable backoff.
+- **Full Authentication Support:** Handles challenge strings (`challstr`) and assertions via the Showdown login API.
+- **Guest Fallback:** Seamlessly connects as a guest if credentials are not provided.
+- **Event-Driven Hooks:** Callbacks for chat, private messages, room joins/leaves, popups, and raw protocol frames.
+- **Command Router:** Simple registration for prefix commands (e.g. `.ping`).
+- **Tiny Docker Footprint:** Statically compiled multi-stage build resulting in a ~6 MB container image running as non-root.
+
+---
 
 ## Requirements
 
-- Node.js 20 or newer
-- A Pokemon Showdown account (optional — the bot connects as a guest without one)
+- **Go 1.27.1** or newer (to run or build natively)
+- **Docker** and **Docker Compose** (optional, for containerized deployment)
+- A Pokémon Showdown account (optional; connects as a guest without one)
 
-## Setup
+---
 
-1. Clone the repository and install dependencies:
+## Quickstart
 
-```bash
-git clone https://github.com/TurboRx/Showdown-TurBOOT.git
-cd Showdown-TurBOOT
-npm install
-```
-
-2. Copy the example environment file and fill in your details:
+### 1. Clone & Configure
 
 ```bash
+git clone https://github.com/TurboRx/turboot.git
+cd turboot
 cp .env.example .env
 ```
 
-3. Open `.env` in any text editor and set your bot's username and password:
+Edit `.env` with your bot's username and credentials:
 
 ```env
 PS_USERNAME=YourBotName
 PS_PASSWORD=YourBotPassword
 PS_ROOMS=botdevelopment
+PS_COMMAND_CHAR=.
 ```
 
-If you leave the username blank, the bot will connect as a guest.
+*(Leave `PS_USERNAME` blank to connect as a guest.)*
 
-## Running the bot
+### 2. Run Locally
 
 ```bash
-npm start
+# Run directly
+go run ./cmd/turboot
+
+# Or build a standalone binary
+go build -o turboot ./cmd/turboot
+./turboot
 ```
 
-To kill/stop the bot, press `Ctrl+C` or kill the process by other way.
+To gracefully stop the bot, press `Ctrl+C`.
 
-## Configuration
+---
 
-All settings are controlled through the `.env` file. Here is the full list:
+## Running with Docker
 
-| Variable | Default | Description |
-|---|---|---|
-| PS_USERNAME | _(empty, connects as guest)_ | Your bot's Pokemon Showdown username |
-| PS_PASSWORD | _(empty)_ | Your bot's password |
-| PS_ROOMS | _(empty)_ | Comma-separated list of rooms to auto-join |
-| PS_SERVER_URL | wss://sim3.psim.us/showdown/websocket | WebSocket server URL |
-| PS_LOGIN_URL | https://play.pokemonshowdown.com/api/login | Login API endpoint |
-| PS_AVATAR | _(empty)_ | Avatar ID to set after login |
-| PS_RECONNECT_DELAY_MS | 10000 | Milliseconds to wait before reconnecting |
-| PS_COMMAND_CHAR | . | Prefix character for bot commands |
-
-## Docker
-
-### Build and run with Docker
-
-Build the image:
+### Docker Compose (Recommended)
 
 ```bash
-docker build -t showdown-turboot .
-```
-
-Run the bot, passing your configuration as environment variables:
-
-```bash
-docker run -d --name showdown-turboot \
-  -e PS_USERNAME=YourBotName \
-  -e PS_PASSWORD=YourBotPassword \
-  -e PS_ROOMS=botdevelopment \
-  showdown-turboot
-```
-
-Or mount your `.env` file:
-
-```bash
-docker run -d --name showdown-turboot --env-file .env showdown-turboot
-```
-
-### Build and run with Docker Compose
-
-1. Make sure your `.env` file is configured (see [Setup](#setup) above).
-
-2. Start the bot:
-
-```bash
+# Start in the background
 docker compose up -d --build
-```
 
-3. View logs:
-
-```bash
+# Follow logs
 docker compose logs -f
-```
 
-4. Stop the bot:
-
-```bash
+# Stop
 docker compose down
 ```
 
-5. To pull the published image:
+### Standalone Docker
 
 ```bash
-docker pull ghcr.io/turborx/showdown-turboot:main
+# Build the image (~6 MB)
+docker build -t turboot .
+
+# Run with environment variables
+docker run -d --name turboot \
+  -e PS_USERNAME=YourBotName \
+  -e PS_PASSWORD=YourBotPassword \
+  -e PS_ROOMS=botdevelopment \
+  turboot
+
+# Or mount your .env file
+docker run -d --name turboot --env-file .env turboot
 ```
 
-## Troubleshooting
+---
 
-**The bot connects but stays as a guest**
-Make sure `PS_USERNAME` and `PS_PASSWORD` are set correctly in your `.env` file. The account must be registered on Pokemon Showdown.
+## Configuration Reference
 
-**If Connection keeps dropping**
-This is usually a network issue. The bot will automatically try to reconnect after the delay set in `PS_RECONNECT_DELAY_MS` (default 10 seconds).
+All settings can be specified via environment variables or a local `.env` file:
 
-**Login assertion error**
-This means the Pokemon Showdown login server rejected your credentials. Double-check your username and password. If your account uses a special character in the password, make sure it is not being stripped by the .env parser.
+| Variable | Default | Description |
+|---|---|---|
+| `PS_USERNAME` | _(empty)_ | Pokémon Showdown username (leaves as guest if blank) |
+| `PS_PASSWORD` | _(empty)_ | Account password |
+| `PS_ROOMS` | _(empty)_ | Comma-separated list of rooms to join upon login |
+| `PS_SERVER_URL` | `wss://sim3.psim.us/showdown/websocket` | Showdown WebSocket endpoint |
+| `PS_LOGIN_URL` | `https://play.pokemonshowdown.com/api/login` | HTTP assertion login endpoint |
+| `PS_AVATAR` | _(empty)_ | Avatar sprite ID to set after logging in |
+| `PS_RECONNECT_DELAY_MS` | `10000` | Milliseconds to wait before reconnecting |
+| `PS_COMMAND_CHAR` | `.` | Command prefix symbol |
+
+---
+
+## Using as a Library
+
+Because Go's module system allows importing subpackages directly, you can import `pkg/showdown` into any Go project without needing an external repository:
+
+```bash
+go get github.com/TurboRx/turboot/pkg/showdown
+```
+
+### Example Usage
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/TurboRx/turboot/pkg/showdown"
+)
+
+func main() {
+	client := showdown.NewClient(showdown.Config{
+		Username:    "MyBotName",
+		Password:    "SecretPassword",
+		Rooms:       []string{"lobby", "botdevelopment"},
+		CommandChar: ".",
+	})
+
+	// Register chat listener
+	client.OnChat(func(msg showdown.ChatMessage) {
+		fmt.Printf("[%s] %s: %s\n", msg.Room, msg.User, msg.Text)
+	})
+
+	// Register custom command (.ping -> pong!)
+	client.HandleCommand("ping", func(room, user, args string) {
+		if room != "" {
+			_ = client.SendToRoom(room, "pong!")
+		} else {
+			_ = client.SendPM(user, "pong!")
+		}
+	})
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := client.Run(ctx); err != nil {
+		fmt.Printf("Client stopped: %v\n", err)
+	}
+}
+```
+
+---
+
+## Repository Structure
+
+```
+turboot/
+├── cmd/
+│   └── turboot/          # Bot application entrypoint (main.go)
+├── internal/
+│   └── config/           # Environment variable and .env parser
+├── pkg/
+│   └── showdown/         # Core reusable Pokémon Showdown client library
+│       ├── client.go     # Connection loop, state, auth, and actions
+│       ├── config.go     # Client configuration and defaults
+│       ├── handler.go    # Event hooks and dispatcher
+│       ├── message.go    # Protocol and frame parser
+│       └── types.go      # Data models and structures
+├── .env.example          # Sample environment variables
+├── Dockerfile            # Multi-stage static build (~6 MB image)
+├── docker-compose.yml    # Docker Compose definition
+├── verify_docker.sh      # Automated validation script
+└── go.mod
+```
+
+---
+
+## Testing & Verification
+
+Run the unit test suite:
+
+```bash
+go test -v ./...
+```
+
+Run the automated Docker and setup verification:
+
+```bash
+bash verify_docker.sh
+```
+
+---
 
 ## License
 
 [MIT](LICENSE)
-

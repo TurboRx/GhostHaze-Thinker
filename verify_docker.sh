@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
 # ── verify_docker.sh ──────────────────────────────────────────────────────────
-# Automated verification script for the Showdown-TurBOOT Docker setup.
-# Checks: build, image contents, image size, compose config, workflow YAML.
+# Automated verification script for the TurBOOT Docker setup.
+# Checks: build, binary presence, source absence, image size, compose config, workflow YAML.
 # Usage: bash verify_docker.sh
 # ──────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
-IMAGE_NAME="showdown-turboot-verify"
-MAX_SIZE_MB=200
+IMAGE_NAME="turboot-verify"
+MAX_SIZE_MB=50
 PASS=0
 FAIL=0
 RESULTS=()
 
 pass() {
   RESULTS+=("✅ PASS: $1")
-  ((PASS++))
+  PASS=$((PASS + 1))
 }
 
 fail() {
   RESULTS+=("❌ FAIL: $1")
-  ((FAIL++))
+  FAIL=$((FAIL + 1))
 }
 
 # ── 1. Docker build ──────────────────────────────────────────────────────────
@@ -33,13 +33,13 @@ else
   echo "Build failed — remaining checks may be unreliable."
 fi
 
-# ── 2. No src/ directory in the final image ──────────────────────────────────
+# ── 2. Binary exists and no source in final image ─────────────────────────────
 echo ""
-echo "═══ Check 2: No src/ directory in final image ═══"
-if docker run --rm "$IMAGE_NAME" sh -c '[ ! -d /app/src ]'; then
-  pass "src/ directory is absent from the final image"
+echo "═══ Check 2: Binary exists and no source in final image ═══"
+if docker run --rm "$IMAGE_NAME" sh -c '[ -x /app/turboot ] && [ ! -d /app/cmd ] && [ ! -d /app/pkg ] && [ ! -d /app/internal ]'; then
+  pass "compiled binary is present and source code is excluded from final image"
 else
-  fail "src/ directory exists in the final image"
+  fail "binary missing or source code leaked into final image"
 fi
 
 # ── 3. Image size under threshold ────────────────────────────────────────────
@@ -57,7 +57,6 @@ fi
 # ── 4. docker compose config ─────────────────────────────────────────────────
 echo ""
 echo "═══ Check 4: docker compose config validation ═══"
-# docker compose config requires an env_file to exist; create a dummy if missing
 CREATED_DUMMY_ENV=false
 if [ ! -f .env ]; then
   touch .env
@@ -81,14 +80,12 @@ WORKFLOW_FILE=".github/workflows/docker-publish.yml"
 if [ ! -f "$WORKFLOW_FILE" ]; then
   fail "Workflow file $WORKFLOW_FILE does not exist"
 else
-  # Use python's yaml module for validation (available on most systems)
   if command -v python3 > /dev/null 2>&1; then
     if python3 -c "import yaml; yaml.safe_load(open('$WORKFLOW_FILE'))" 2>/dev/null; then
       pass "Workflow YAML ($WORKFLOW_FILE) is syntactically valid"
     else
       fail "Workflow YAML ($WORKFLOW_FILE) has syntax errors"
     fi
-  # Fallback: try ruby
   elif command -v ruby > /dev/null 2>&1; then
     if ruby -ryaml -e "YAML.safe_load(File.read('$WORKFLOW_FILE'))" 2>/dev/null; then
       pass "Workflow YAML ($WORKFLOW_FILE) is syntactically valid"
@@ -96,9 +93,8 @@ else
       fail "Workflow YAML ($WORKFLOW_FILE) has syntax errors"
     fi
   else
-    # Basic check — at least confirm the file isn't empty and starts with valid YAML
     if [ -s "$WORKFLOW_FILE" ] && head -1 "$WORKFLOW_FILE" | grep -qE '^(name:|on:|\-\-\-)'; then
-      pass "Workflow YAML ($WORKFLOW_FILE) exists and appears valid (no YAML parser available for deep check)"
+      pass "Workflow YAML ($WORKFLOW_FILE) exists and appears valid"
     else
       fail "Workflow YAML ($WORKFLOW_FILE) appears invalid or empty"
     fi

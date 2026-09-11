@@ -1,6 +1,7 @@
-# Dependencies and build artifacts (reinstalled/rebuilt inside container)
-node_modules/
-dist/
+# Dependencies and local build artifacts
+bin/
+*.test
+*.out
 
 # Version control
 .git/
@@ -23,7 +24,7 @@ LICENSE
 .DS_Store
 Thumbs.db
 
-# Docker files (no need to copy themselves into the build)
+# Docker files
 Dockerfile
 docker-compose.yml
 .dockerignore
