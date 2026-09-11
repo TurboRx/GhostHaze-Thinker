@@ -10,9 +10,7 @@ import (
 	"github.com/TurboRx/turboot/pkg/showdown"
 )
 
-// Load reads optional .env files and environment variables, populating a showdown.Config.
 func Load() (*showdown.Config, error) {
-	// Attempt to load .env from current directory or parent directory
 	_ = LoadEnvFile(".env")
 
 	cfg := &showdown.Config{
@@ -44,8 +42,6 @@ func Load() (*showdown.Config, error) {
 	return cfg, nil
 }
 
-// LoadEnvFile reads a key=value formatted .env file and sets variables in the environment
-// if they are not already set.
 func LoadEnvFile(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -71,7 +67,7 @@ func LoadEnvFile(filename string) error {
 		key := strings.TrimSpace(line[:eqIdx])
 		val := strings.TrimSpace(line[eqIdx+1:])
 
-		// Strip surrounding single or double quotes
+		// strip surrounding quotes
 		if len(val) >= 2 {
 			if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
 				(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {

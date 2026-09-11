@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# ── verify_docker.sh ──────────────────────────────────────────────────────────
-# Automated verification script for the TurBOOT Docker setup.
-# Checks: build, binary presence, source absence, image size, compose config, workflow YAML.
-# Usage: bash verify_docker.sh
-# ──────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
@@ -23,7 +18,7 @@ fail() {
   FAIL=$((FAIL + 1))
 }
 
-# ── 1. Docker build ──────────────────────────────────────────────────────────
+# 1. docker build
 echo "═══ Check 1: Docker build ═══"
 if docker build -t "$IMAGE_NAME" . ; then
   pass "docker build completed successfully"
@@ -33,7 +28,7 @@ else
   echo "Build failed — remaining checks may be unreliable."
 fi
 
-# ── 2. Binary exists and no source in final image ─────────────────────────────
+# 2. binary exists and no source in final image
 echo ""
 echo "═══ Check 2: Binary exists and no source in final image ═══"
 if docker run --rm "$IMAGE_NAME" sh -c '[ -x /app/turboot ] && [ ! -d /app/cmd ] && [ ! -d /app/pkg ] && [ ! -d /app/internal ]'; then
@@ -42,7 +37,7 @@ else
   fail "binary missing or source code leaked into final image"
 fi
 
-# ── 3. Image size under threshold ────────────────────────────────────────────
+# 3. image size under threshold
 echo ""
 echo "═══ Check 3: Image size < ${MAX_SIZE_MB} MB ═══"
 SIZE_BYTES=$(docker image inspect "$IMAGE_NAME" --format='{{.Size}}' 2>/dev/null || echo "0")
@@ -54,7 +49,7 @@ else
   fail "Image size (${SIZE_MB} MB) exceeds ${MAX_SIZE_MB} MB limit"
 fi
 
-# ── 4. docker compose config ─────────────────────────────────────────────────
+# 4. docker compose config validation
 echo ""
 echo "═══ Check 4: docker compose config validation ═══"
 CREATED_DUMMY_ENV=false
@@ -73,7 +68,7 @@ if [ "$CREATED_DUMMY_ENV" = true ]; then
   rm .env
 fi
 
-# ── 5. GitHub Actions workflow YAML validity ─────────────────────────────────
+# 5. github actions workflow yaml validity
 echo ""
 echo "═══ Check 5: GitHub Actions workflow YAML validity ═══"
 WORKFLOW_FILE=".github/workflows/docker-publish.yml"
@@ -101,12 +96,11 @@ else
   fi
 fi
 
-# ── Cleanup ──────────────────────────────────────────────────────────────────
+# cleanup verification image
 echo ""
 echo "Cleaning up verification image..."
 docker rmi "$IMAGE_NAME" > /dev/null 2>&1 || true
 
-# ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════╗"
 echo "║       VERIFICATION SUMMARY           ║"

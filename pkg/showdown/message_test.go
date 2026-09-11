@@ -5,7 +5,7 @@ import (
 )
 
 func TestParseRawStream(t *testing.T) {
-	raw := ">lobby\n|init|chat\n|c|alice|Hello everyone!\n>botdevelopment\n|c:|1710000000|bob|testing 123\n|pm|charlie|TurBOOT|hi bot"
+	raw := ">botdevelopment\n|init|chat\n|c|alice|Hello everyone!\n|c:|1710000000|bob|testing 123\n|pm|charlie|TurBOOT|hi bot"
 
 	messages, finalRoom := ParseRawStream(raw, "")
 
@@ -17,22 +17,15 @@ func TestParseRawStream(t *testing.T) {
 		t.Fatalf("expected 4 messages, got %d", len(messages))
 	}
 
-	// 1: |init|chat in lobby
-	if messages[0].Room != "lobby" || messages[0].Type != "init" {
+	if messages[0].Room != "botdevelopment" || messages[0].Type != "init" {
 		t.Errorf("unexpected message 0: %+v", messages[0])
 	}
-
-	// 2: |c|alice|Hello everyone! in lobby
-	if messages[1].Room != "lobby" || messages[1].Type != "c" {
+	if messages[1].Room != "botdevelopment" || messages[1].Type != "c" {
 		t.Errorf("unexpected message 1: %+v", messages[1])
 	}
-
-	// 3: |c:|1710000000|bob|testing 123 in botdevelopment
 	if messages[2].Room != "botdevelopment" || messages[2].Type != "c:" {
 		t.Errorf("unexpected message 2: %+v", messages[2])
 	}
-
-	// 4: |pm|charlie|TurBOOT|hi bot in botdevelopment (context stays botdevelopment)
 	if messages[3].Type != "pm" {
 		t.Errorf("unexpected message 3: %+v", messages[3])
 	}
@@ -41,7 +34,7 @@ func TestParseRawStream(t *testing.T) {
 func TestParseChatMessage(t *testing.T) {
 	t.Run("Standard chat", func(t *testing.T) {
 		msg := RawMessage{
-			Room:  "lobby",
+			Room:  "botdevelopment",
 			Type:  "c",
 			Parts: []string{"ash", "Let's battle! | ready"},
 			Raw:   "|c|ash|Let's battle! | ready",
@@ -57,14 +50,14 @@ func TestParseChatMessage(t *testing.T) {
 		if chat.Text != "Let's battle! | ready" {
 			t.Errorf("expected text 'Let's battle! | ready', got '%s'", chat.Text)
 		}
-		if chat.Room != "lobby" {
-			t.Errorf("expected room 'lobby', got '%s'", chat.Room)
+		if chat.Room != "botdevelopment" {
+			t.Errorf("expected room 'botdevelopment', got '%s'", chat.Room)
 		}
 	})
 
 	t.Run("Timestamped chat", func(t *testing.T) {
 		msg := RawMessage{
-			Room:  "tournaments",
+			Room:  "botdevelopment",
 			Type:  "c:",
 			Parts: []string{"1700000000", "gary", "Smell ya later!"},
 			Raw:   "|c:|1700000000|gary|Smell ya later!",
@@ -82,6 +75,9 @@ func TestParseChatMessage(t *testing.T) {
 		}
 		if chat.Timestamp.Unix() != 1700000000 {
 			t.Errorf("expected timestamp %d, got %d", 1700000000, chat.Timestamp.Unix())
+		}
+		if chat.Room != "botdevelopment" {
+			t.Errorf("expected room 'botdevelopment', got '%s'", chat.Room)
 		}
 	})
 }

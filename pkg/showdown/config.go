@@ -6,20 +6,13 @@ import (
 )
 
 const (
-	// DefaultServerURL is the official Pokémon Showdown websocket endpoint.
-	DefaultServerURL = "wss://sim3.psim.us/showdown/websocket"
-
-	// DefaultLoginURL is the official Pokémon Showdown HTTP login API.
-	DefaultLoginURL = "https://play.pokemonshowdown.com/api/login"
-
-	// DefaultReconnectDelay is the backoff wait duration before attempting to reconnect.
+	DefaultServerURL      = "wss://sim3.psim.us/showdown/websocket"
+	DefaultLoginURL       = "https://play.pokemonshowdown.com/api/login"
+	DefaultRoom           = "botdevelopment"
 	DefaultReconnectDelay = 10 * time.Second
-
-	// DefaultCommandChar is the prefix symbol indicating a bot command.
-	DefaultCommandChar = "."
+	DefaultCommandChar    = "."
 )
 
-// Config holds configuration parameters for connecting and authenticating with Pokémon Showdown.
 type Config struct {
 	ServerURL      string
 	LoginURL       string
@@ -32,13 +25,15 @@ type Config struct {
 	HTTPClient     *http.Client
 }
 
-// ApplyDefaults fills in zero-value configuration fields with sensible defaults.
 func (c *Config) ApplyDefaults() {
 	if c.ServerURL == "" {
 		c.ServerURL = DefaultServerURL
 	}
 	if c.LoginURL == "" {
 		c.LoginURL = DefaultLoginURL
+	}
+	if len(c.Rooms) == 0 {
+		c.Rooms = []string{DefaultRoom}
 	}
 	if c.ReconnectDelay <= 0 {
 		c.ReconnectDelay = DefaultReconnectDelay

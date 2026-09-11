@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// ParseRawStream parses a multi-line websocket frame into individual RawMessages,
-// tracking the active room across lines beginning with '>'.
 func ParseRawStream(raw string, currentRoom string) ([]RawMessage, string) {
 	lines := strings.Split(raw, "\n")
 	messages := make([]RawMessage, 0, len(lines))
@@ -23,7 +21,7 @@ func ParseRawStream(raw string, currentRoom string) ([]RawMessage, string) {
 			continue
 		}
 
-		// Strip leading '|' and split remaining tokens
+		// strip leading '|' and split remaining tokens
 		parts := strings.Split(trimmed[1:], "|")
 		if len(parts) == 0 {
 			continue
@@ -43,8 +41,6 @@ func ParseRawStream(raw string, currentRoom string) ([]RawMessage, string) {
 	return messages, room
 }
 
-// ParseChatMessage extracts chat details from a RawMessage.
-// Handles both '|c|user|message' and timestamped '|c:|timestamp|user|message'.
 func ParseChatMessage(msg RawMessage) (ChatMessage, bool) {
 	switch msg.Type {
 	case "c", "chat":
@@ -85,7 +81,6 @@ func ParseChatMessage(msg RawMessage) (ChatMessage, bool) {
 	}
 }
 
-// ParsePrivateMessage extracts PM details from a '|pm|from|to|message' RawMessage.
 func ParsePrivateMessage(msg RawMessage) (PrivateMessage, bool) {
 	if msg.Type != "pm" || len(msg.Parts) < 3 {
 		return PrivateMessage{}, false
@@ -103,7 +98,6 @@ func ParsePrivateMessage(msg RawMessage) (PrivateMessage, bool) {
 	}, true
 }
 
-// ParseUserUpdate extracts user update details from a '|updateuser|name|isGuest|avatar' RawMessage.
 func ParseUserUpdate(msg RawMessage) (UserUpdate, bool) {
 	if msg.Type != "updateuser" || len(msg.Parts) < 2 {
 		return UserUpdate{}, false
@@ -123,7 +117,6 @@ func ParseUserUpdate(msg RawMessage) (UserUpdate, bool) {
 	}, true
 }
 
-// ParseChallstr extracts the authentication challenge string from a '|challstr|...' message.
 func ParseChallstr(msg RawMessage) (string, bool) {
 	if msg.Type != "challstr" || len(msg.Parts) == 0 {
 		return "", false

@@ -107,7 +107,7 @@ All settings can be specified via environment variables or a local `.env` file:
 |---|---|---|
 | `PS_USERNAME` | _(empty)_ | Pokémon Showdown username (leaves as guest if blank) |
 | `PS_PASSWORD` | _(empty)_ | Account password |
-| `PS_ROOMS` | _(empty)_ | Comma-separated list of rooms to join upon login |
+| `PS_ROOMS` | `botdevelopment` | Comma-separated list of rooms to join upon login |
 | `PS_SERVER_URL` | `wss://sim3.psim.us/showdown/websocket` | Showdown WebSocket endpoint |
 | `PS_LOGIN_URL` | `https://play.pokemonshowdown.com/api/login` | HTTP assertion login endpoint |
 | `PS_AVATAR` | _(empty)_ | Avatar sprite ID to set after logging in |
@@ -143,16 +143,14 @@ func main() {
 	client := showdown.NewClient(showdown.Config{
 		Username:    "MyBotName",
 		Password:    "SecretPassword",
-		Rooms:       []string{"lobby", "botdevelopment"},
+		Rooms:       []string{"botdevelopment"},
 		CommandChar: ".",
 	})
 
-	// Register chat listener
 	client.OnChat(func(msg showdown.ChatMessage) {
 		fmt.Printf("[%s] %s: %s\n", msg.Room, msg.User, msg.Text)
 	})
 
-	// Register custom command (.ping -> pong!)
 	client.HandleCommand("ping", func(room, user, args string) {
 		if room != "" {
 			_ = client.SendToRoom(room, "pong!")
@@ -184,7 +182,6 @@ turboot/
 │   └── showdown/         # Core reusable Pokémon Showdown client library
 │       ├── client.go     # Connection loop, state, auth, and actions
 │       ├── config.go     # Client configuration and defaults
-│       ├── handler.go    # Event hooks and dispatcher
 │       ├── message.go    # Protocol and frame parser
 │       └── types.go      # Data models and structures
 ├── .env.example          # Sample environment variables

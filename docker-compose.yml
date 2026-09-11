@@ -5,8 +5,4 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    # Override or add individual environment variables here:
-    # environment:
-    #   PS_USERNAME: MyBot
-    #   PS_ROOMS: botdevelopment,lobby
     stop_grace_period: 10s

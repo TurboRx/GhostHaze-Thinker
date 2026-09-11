@@ -18,6 +18,9 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.LoginURL != DefaultLoginURL {
 		t.Errorf("expected login url %s, got %s", DefaultLoginURL, cfg.LoginURL)
 	}
+	if len(cfg.Rooms) != 1 || cfg.Rooms[0] != DefaultRoom {
+		t.Errorf("expected rooms [%s], got %v", DefaultRoom, cfg.Rooms)
+	}
 	if cfg.ReconnectDelay != DefaultReconnectDelay {
 		t.Errorf("expected reconnect delay %v, got %v", DefaultReconnectDelay, cfg.ReconnectDelay)
 	}
@@ -43,7 +46,7 @@ func TestRouteCommand(t *testing.T) {
 		wg.Done()
 	})
 
-	client.routeCommand("lobby", "alice", ".ping hello world")
+	client.routeCommand("botdevelopment", "alice", ".ping hello world")
 
 	done := make(chan struct{})
 	go func() {
@@ -53,7 +56,7 @@ func TestRouteCommand(t *testing.T) {
 
 	select {
 	case <-done:
-		if receivedRoom != "lobby" || receivedUser != "alice" || receivedArgs != "hello world" {
+		if receivedRoom != "botdevelopment" || receivedUser != "alice" || receivedArgs != "hello world" {
 			t.Errorf("unexpected command execution: room=%s, user=%s, args=%s", receivedRoom, receivedUser, receivedArgs)
 		}
 	case <-time.After(1 * time.Second):

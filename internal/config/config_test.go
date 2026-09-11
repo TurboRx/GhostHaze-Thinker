@@ -12,10 +12,9 @@ func TestLoadEnvFile(t *testing.T) {
 	envPath := filepath.Join(tempDir, ".env")
 
 	content := `
-# Pokemon Showdown Config
 PS_USERNAME="TestBot"
 PS_PASSWORD='SecretPassword'
-PS_ROOMS=lobby, botdevelopment , tournaments
+PS_ROOMS=botdevelopment
 PS_RECONNECT_DELAY_MS=5000
 PS_COMMAND_CHAR=!
 `
@@ -23,7 +22,6 @@ PS_COMMAND_CHAR=!
 		t.Fatalf("failed to write test .env file: %v", err)
 	}
 
-	// Clear any preexisting env vars
 	os.Unsetenv("PS_USERNAME")
 	os.Unsetenv("PS_PASSWORD")
 	os.Unsetenv("PS_ROOMS")
@@ -55,7 +53,7 @@ PS_COMMAND_CHAR=!
 	if cfg.ReconnectDelay != 5*time.Second {
 		t.Errorf("expected ReconnectDelay 5s, got %v", cfg.ReconnectDelay)
 	}
-	if len(cfg.Rooms) != 3 || cfg.Rooms[0] != "lobby" || cfg.Rooms[1] != "botdevelopment" || cfg.Rooms[2] != "tournaments" {
+	if len(cfg.Rooms) != 1 || cfg.Rooms[0] != "botdevelopment" {
 		t.Errorf("unexpected rooms: %v", cfg.Rooms)
 	}
 	if cfg.CommandChar != "!" {

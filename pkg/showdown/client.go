@@ -25,7 +25,6 @@ type loginResponse struct {
 	} `json:"curuser"`
 }
 
-// Client manages connection, authentication, and communication with Pokémon Showdown.
 type Client struct {
 	config Config
 
@@ -38,7 +37,6 @@ type Client struct {
 	loggedIn    bool
 	currentRoom string
 
-	// Event hooks
 	onConnect     []func()
 	onDisconnect  []func(error)
 	onLogin       []func(username string, isGuest bool)
@@ -51,7 +49,6 @@ type Client struct {
 	commands      map[string]CommandHandler
 }
 
-// NewClient initializes a new Pokémon Showdown client with the given configuration.
 func NewClient(cfg Config) *Client {
 	cfg.ApplyDefaults()
 
@@ -61,70 +58,60 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
-// OnConnect registers a callback invoked when websocket connection is established.
 func (c *Client) OnConnect(fn func()) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onConnect = append(c.onConnect, fn)
 }
 
-// OnDisconnect registers a callback invoked when connection is lost or closed.
 func (c *Client) OnDisconnect(fn func(error)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onDisconnect = append(c.onDisconnect, fn)
 }
 
-// OnLogin registers a callback invoked when login status is updated.
 func (c *Client) OnLogin(fn func(username string, isGuest bool)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onLogin = append(c.onLogin, fn)
 }
 
-// OnChat registers a callback invoked on public room messages.
 func (c *Client) OnChat(fn ChatHandler) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onChat = append(c.onChat, fn)
 }
 
-// OnPM registers a callback invoked on private messages.
 func (c *Client) OnPM(fn PMHandler) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onPM = append(c.onPM, fn)
 }
 
-// OnRoomJoin registers a callback invoked when the bot joins a room.
 func (c *Client) OnRoomJoin(fn func(room, roomType string)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onRoomJoin = append(c.onRoomJoin, fn)
 }
 
-// OnRoomLeave registers a callback invoked when the bot leaves a room.
 func (c *Client) OnRoomLeave(fn func(room string)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onRoomLeave = append(c.onRoomLeave, fn)
 }
 
-// OnPopup registers a callback invoked on server popups.
 func (c *Client) OnPopup(fn func(text string)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onPopup = append(c.onPopup, fn)
 }
 
-// OnRawMessage registers a callback invoked for every individual protocol line.
 func (c *Client) OnRawMessage(fn MessageHandler) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onRawMessages = append(c.onRawMessages, fn)
 }
 
-// HandleCommand registers a handler for a bot command (e.g. "ping" for .ping).
 func (c *Client) HandleCommand(cmd string, fn CommandHandler) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
@@ -132,21 +119,18 @@ func (c *Client) HandleCommand(cmd string, fn CommandHandler) {
 	c.commands[strings.ToLower(name)] = fn
 }
 
-// IsConnected returns whether the client is currently connected.
 func (c *Client) IsConnected() bool {
 	c.stateMu.RLock()
 	defer c.stateMu.RUnlock()
 	return c.connected
 }
 
-// IsLoggedIn returns whether the bot is authenticated with an account.
 func (c *Client) IsLoggedIn() bool {
 	c.stateMu.RLock()
 	defer c.stateMu.RUnlock()
 	return c.loggedIn
 }
 
-// Send writes a raw protocol message to the WebSocket.
 func (c *Client) Send(message string) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -158,33 +142,26 @@ func (c *Client) Send(message string) error {
 	return c.wsConn.WriteMessage(websocket.TextMessage, []byte(message))
 }
 
-// SendToRoom sends a chat message to a specific room.
 func (c *Client) SendToRoom(room, message string) error {
 	return c.Send(fmt.Sprintf("%s|%s", room, message))
 }
 
-// SendPM sends a direct private message to a user.
 func (c *Client) SendPM(targetUser, message string) error {
 	return c.Send(fmt.Sprintf("|/pm %s,%s", targetUser, message))
 }
 
-// JoinRoom sends a request to join a room.
 func (c *Client) JoinRoom(room string) error {
 	return c.Send(fmt.Sprintf("|/join %s", room))
 }
 
-// LeaveRoom sends a request to leave a room.
 func (c *Client) LeaveRoom(room string) error {
 	return c.Send(fmt.Sprintf("|/leave %s", room))
 }
 
-// SetAvatar sends an avatar update command.
 func (c *Client) SetAvatar(avatar string) error {
 	return c.Send(fmt.Sprintf("|/avatar %s", avatar))
 }
 
-// Run connects to Pokémon Showdown and continuously maintains the connection
-// with automatic reconnection until the context is canceled.
 func (c *Client) Run(ctx context.Context) error {
 	for {
 		select {
@@ -205,6 +182,7 @@ func (c *Client) Run(ctx context.Context) error {
 			c.dispatchDisconnect(errors.New("connection closed cleanly"))
 		}
 
+		// wait reconnect delay before retrying
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -213,7 +191,6 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 }
 
-// Disconnect closes the active websocket connection cleanly.
 func (c *Client) Disconnect() {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -252,10 +229,10 @@ func (c *Client) connectAndListen(ctx context.Context) error {
 
 	c.dispatchConnect()
 
-	// Handle close when context completes
 	done := make(chan struct{})
 	defer close(done)
 
+	// close connection if context is cancelled
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -368,6 +345,7 @@ func (c *Client) authenticate(challstr string) {
 		return
 	}
 
+	// showdown returns a ']' prefix before the json payload
 	body = bytes.TrimPrefix(body, []byte("]"))
 
 	var result loginResponse
@@ -381,6 +359,7 @@ func (c *Client) authenticate(challstr string) {
 		return
 	}
 
+	// assertions starting with ';;' indicate server rejection
 	if strings.HasPrefix(result.Assertion, ";;") {
 		log.Printf("Login assertion rejected by server: %s", result.Assertion[2:])
 		return
@@ -426,7 +405,6 @@ func (c *Client) routeCommand(room, user, text string) {
 	}
 }
 
-// Event dispatcher helpers
 func (c *Client) dispatchConnect() {
 	c.handlerMu.RLock()
 	handlers := append([]func(){}, c.onConnect...)

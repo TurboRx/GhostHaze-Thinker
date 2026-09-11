@@ -80,7 +80,6 @@ func main() {
 		logInfo("[%s] %s: %s", msg.Room, msg.User, msg.Text)
 	})
 
-	// Built-in .ping command
 	bot.HandleCommand("ping", func(room, user, args string) {
 		if room != "" {
 			_ = bot.SendToRoom(room, "pong!")
