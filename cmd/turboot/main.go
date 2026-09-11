@@ -32,8 +32,8 @@ func logWarn(format string, args ...any) {
 
 func main() {
 	fmt.Println()
-	fmt.Println("  TurBOOT v1.0.0")
-	fmt.Println("  A Pokemon Showdown Battle/ChatBot in Go")
+	fmt.Println("  TurBOOT")
+	fmt.Println("  A Pokémon Showdown bot and client library in Go")
 	fmt.Println()
 
 	cfg, err := config.Load()
