@@ -1,0 +1,530 @@
+package battle
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestTypechart(t *testing.T) {
+	// single type effectiveness
+	if eff := GetEffectiveness("fire", "grass"); eff != 2.0 {
+		t.Fatalf("expected fire vs grass to be 2.0, got %f", eff)
+	}
+	if eff := GetEffectiveness("water", "fire"); eff != 2.0 {
+		t.Fatalf("expected water vs fire to be 2.0, got %f", eff)
+	}
+	if eff := GetEffectiveness("electric", "ground"); eff != 0.0 {
+		t.Fatalf("expected electric vs ground to be 0.0, got %f", eff)
+	}
+	if eff := GetEffectiveness("normal", "ghost"); eff != 0.0 {
+		t.Fatalf("expected normal vs ghost to be 0.0, got %f", eff)
+	}
+	if eff := GetEffectiveness("fairy", "dragon"); eff != 2.0 {
+		t.Fatalf("expected fairy vs dragon to be 2.0, got %f", eff)
+	}
+	if eff := GetEffectiveness("dragon", "fairy"); eff != 0.0 {
+		t.Fatalf("expected dragon vs fairy to be 0.0, got %f", eff)
+	}
+	if eff := GetEffectiveness("fighting", "normal"); eff != 2.0 {
+		t.Fatalf("expected fighting vs normal to be 2.0, got %f", eff)
+	}
+
+	// dual type effectiveness
+	if eff := GetMultipleEffectiveness("fire", "grass", "steel"); eff != 4.0 {
+		t.Fatalf("expected fire vs grass/steel to be 4.0, got %f", eff)
+	}
+	if eff := GetMultipleEffectiveness("ice", "dragon", "flying"); eff != 4.0 {
+		t.Fatalf("expected ice vs dragon/flying to be 4.0, got %f", eff)
+	}
+	if eff := GetMultipleEffectiveness("electric", "water", "ground"); eff != 0.0 {
+		t.Fatalf("expected electric vs water/ground to be 0.0, got %f", eff)
+	}
+	if eff := GetMultipleEffectiveness("ground", "electric", "flying"); eff != 0.0 {
+		t.Fatalf("expected ground vs electric/flying to be 0.0, got %f", eff)
+	}
+
+	// unknown type defaults to neutral
+	if eff := GetEffectiveness("cosmic", "water"); eff != 1.0 {
+		t.Fatalf("expected unknown type to be 1.0, got %f", eff)
+	}
+
+	// species typing mapping
+	garchompTypes := GetSpeciesTypes("Garchomp")
+	if len(garchompTypes) != 2 || garchompTypes[0] != "dragon" || garchompTypes[1] != "ground" {
+		t.Fatalf("unexpected garchomp types: %v", garchompTypes)
+	}
+
+	unknownTypes := GetSpeciesTypes("RandomFakemon")
+	if len(unknownTypes) != 1 || unknownTypes[0] != "normal" {
+		t.Fatalf("expected unknown species to default to normal, got %v", unknownTypes)
+	}
+}
+
+func TestCalculateDamage(t *testing.T) {
+	// neutral physical hit
+	dmg := CalculateDamage(80, 80, 100, 100, 1.0, 1.0, false, true)
+	if dmg <= 0 {
+		t.Fatalf("expected positive damage, got %f", dmg)
+	}
+
+	// super effective hit should double damage
+	dmgSuper := CalculateDamage(80, 80, 100, 100, 1.0, 2.0, false, true)
+	if dmgSuper <= dmg {
+		t.Fatalf("expected super effective damage %f > neutral %f", dmgSuper, dmg)
+	}
+
+	// stab multiplier
+	dmgSTAB := CalculateDamage(80, 80, 100, 100, 1.5, 1.0, false, true)
+	if dmgSTAB <= dmg {
+		t.Fatalf("expected stab damage %f > non-stab %f", dmgSTAB, dmg)
+	}
+
+	// immunity results in zero damage
+	dmgImmune := CalculateDamage(80, 80, 100, 100, 1.5, 0.0, false, true)
+	if dmgImmune != 0.0 {
+		t.Fatalf("expected 0 damage on immunity, got %f", dmgImmune)
+	}
+
+	// burn should halve physical damage
+	dmgBurnPhysical := CalculateDamage(80, 80, 100, 100, 1.0, 1.0, true, true)
+	if dmgBurnPhysical >= dmg {
+		t.Fatalf("expected burn to reduce physical damage, got %f vs %f", dmgBurnPhysical, dmg)
+	}
+
+	// burn should not halve special damage
+	dmgBurnSpecial := CalculateDamage(80, 80, 100, 100, 1.0, 1.0, true, false)
+	if dmgBurnSpecial != dmg {
+		t.Fatalf("burn should not affect special damage: got %f vs %f", dmgBurnSpecial, dmg)
+	}
+}
+
+func TestMoveDatabase(t *testing.T) {
+	eq := GetMoveData("Earthquake")
+	if eq.Type != "ground" || eq.BasePower != 100 || eq.Category != CategoryPhysical {
+		t.Fatalf("unexpected data for earthquake: %+v", eq)
+	}
+
+	es := GetMoveData("Extreme Speed")
+	if es.Priority != 2 {
+		t.Fatalf("expected extreme speed priority 2, got %d", es.Priority)
+	}
+
+	protect := GetMoveData("protect")
+	if protect.Priority != 4 || protect.Category != CategoryStatus {
+		t.Fatalf("unexpected data for protect: %+v", protect)
+	}
+
+	roost := GetMoveData("roost")
+	if !roost.IsHealing {
+		t.Fatalf("expected roost to be marked as healing")
+	}
+
+	sr := GetMoveData("stealthrock")
+	if !sr.IsHazard {
+		t.Fatalf("expected stealthrock to be marked as hazard")
+	}
+
+	twave := GetMoveData("thunderwave")
+	if !twave.IsStatus {
+		t.Fatalf("expected thunderwave to be marked as status")
+	}
+
+	// fallback for unlisted moves
+	mystery := GetMoveData("mysterymove")
+	if mystery.BasePower != 60 || mystery.Type != "normal" {
+		t.Fatalf("unexpected fallback data: %+v", mystery)
+	}
+}
+
+func TestRequestTypesAndDetails(t *testing.T) {
+	// details parsing
+	species, level, gender := ParsePokemonDetails("Garchomp, L85, M")
+	if species != "Garchomp" || level != 85 || gender != "M" {
+		t.Fatalf("failed to parse pokemon details: %s, %d, %s", species, level, gender)
+	}
+
+	species2, level2, gender2 := ParsePokemonDetails("Pikachu")
+	if species2 != "Pikachu" || level2 != 100 || gender2 != "N" {
+		t.Fatalf("unexpected defaults in details parsing: %s, %d, %s", species2, level2, gender2)
+	}
+
+	// request move disabled checks
+	m1 := RequestMove{Disabled: false}
+	if m1.IsDisabled() {
+		t.Fatalf("expected disabled false")
+	}
+	m2 := RequestMove{Disabled: true}
+	if !m2.IsDisabled() {
+		t.Fatalf("expected disabled true")
+	}
+	m3 := RequestMove{Disabled: "disabled"}
+	if !m3.IsDisabled() {
+		t.Fatalf("expected string disabled to be true")
+	}
+	m4 := RequestMove{Disabled: nil}
+	if m4.IsDisabled() {
+		t.Fatalf("expected nil disabled to be false")
+	}
+
+	// request pokemon condition checks
+	pokeActive := RequestPokemon{
+		Details:   "Garchomp, L80",
+		Condition: "250/250",
+		Active:    true,
+	}
+	if pokeActive.IsFainted() {
+		t.Fatalf("expected poke not to be fainted")
+	}
+	if hp := pokeActive.HPPercent(); hp != 1.0 {
+		t.Fatalf("expected full hp 1.0, got %f", hp)
+	}
+
+	pokeInjured := RequestPokemon{
+		Condition: "125/250 brn",
+	}
+	if hp := pokeInjured.HPPercent(); hp != 0.5 {
+		t.Fatalf("expected hp 0.5, got %f", hp)
+	}
+	if st := pokeInjured.Status(); st != "brn" {
+		t.Fatalf("expected status brn, got %s", st)
+	}
+
+	pokeFainted := RequestPokemon{
+		Condition: "0 fnt",
+	}
+	if !pokeFainted.IsFainted() {
+		t.Fatalf("expected poke to be fainted")
+	}
+	if hp := pokeFainted.HPPercent(); hp != 0.0 {
+		t.Fatalf("expected fainted hp to be 0.0, got %f", hp)
+	}
+}
+
+func TestBattleEngine_TeamPreview(t *testing.T) {
+	engine := NewDefaultEngine()
+	b := NewBattle("battle-test", engine)
+	b.OpponentTeam = []OpponentBenchPoke{
+		{Species: "Charizard"}, // fire/flying: 4x weak to rock, 2x weak to electric/water
+	}
+
+	req := BattleRequest{
+		TeamPreview: true,
+		RQID:        1,
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{Details: "Venusaur, L80"}, // grass/poison: weak to fire/flying
+				{Details: "Zapdos, L80"},   // electric/flying: strong against charizard
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	if dec.Type != DecisionTeam {
+		t.Fatalf("expected decision team, got %v", dec.Type)
+	}
+	// zapdos is at index 1 (slot 2), should be placed first
+	if !strings.HasPrefix(dec.TeamOrder, "2") {
+		t.Fatalf("expected zapdos (slot 2) to lead against charizard, got team order %s", dec.TeamOrder)
+	}
+}
+
+func TestBattleEngine_ForcedSwitch(t *testing.T) {
+	engine := NewDefaultEngine()
+	b := NewBattle("battle-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Charizard",
+		Types:     []string{"fire", "flying"},
+		HPPercent: 1.0,
+	}
+
+	req := BattleRequest{
+		ForceSwitch: []bool{true},
+		RQID:        2,
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{Details: "Venusaur, L80", Condition: "0 fnt"}, // slot 1 fainted
+				{Details: "Blastoise, L80", Condition: "200/200", Moves: []string{"surf", "icebeam"}}, // slot 2 water
+				{Details: "Breloom, L80", Condition: "200/200", Moves: []string{"bulletseed"}},       // slot 3 grass/fighting
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	if dec.Type != DecisionSwitch {
+		t.Fatalf("expected switch decision, got %v", dec.Type)
+	}
+	// blastoise (slot 2) resists fire and has water moves against charizard
+	if dec.Slot != 2 {
+		t.Fatalf("expected slot 2 (blastoise) to be chosen, got slot %d", dec.Slot)
+	}
+}
+
+func TestBattleEngine_ActiveTurn_LethalKOAndImmunity(t *testing.T) {
+	engine := NewDefaultEngine()
+	b := NewBattle("battle-test", engine)
+	// opponent is gengar (ghost/poison) with low hp (10%)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Gengar",
+		Types:     []string{"ghost", "poison"},
+		HPPercent: 0.10,
+	}
+
+	req := BattleRequest{
+		RQID: 3,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "bodyslam", Move: "Body Slam", PP: 15}, // normal: immune against ghost!
+					{ID: "earthquake", Move: "Earthquake", PP: 10}, // ground: super effective + lethal ko!
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Garchomp, L80",
+					Condition: "280/280",
+					Stats:     map[string]int{"atk": 250, "spa": 150},
+				},
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	if dec.Type != DecisionMove {
+		t.Fatalf("expected move decision, got %v", dec.Type)
+	}
+	// slot 2 (earthquake) should be selected over slot 1 (body slam) which is immune
+	if dec.Slot != 2 {
+		t.Fatalf("expected earthquake (slot 2) to be chosen, got slot %d", dec.Slot)
+	}
+}
+
+func TestBattleEngine_PriorityFinisher(t *testing.T) {
+	engine := NewDefaultEngine()
+	b := NewBattle("battle-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Pikachu",
+		Types:     []string{"electric"},
+		HPPercent: 0.05, // very low hp
+	}
+
+	req := BattleRequest{
+		RQID: 4,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "surf", Move: "Surf", PP: 15},
+					{ID: "aquajet", Move: "Aqua Jet", PP: 20}, // priority 1 move securing quick KO
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Blastoise, L80",
+					Condition: "250/250",
+					Stats:     map[string]int{"atk": 180, "spa": 180},
+				},
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	if dec.Type != DecisionMove {
+		t.Fatalf("expected move decision, got %v", dec.Type)
+	}
+	// aqua jet has priority finisher bonus
+	if dec.Slot != 2 {
+		t.Fatalf("expected aqua jet (slot 2) to be chosen, got slot %d", dec.Slot)
+	}
+}
+
+func TestBattleEngine_HealingWhenLow(t *testing.T) {
+	engine := NewDefaultEngine()
+	b := NewBattle("battle-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Blissey",
+		Types:     []string{"normal"},
+		HPPercent: 1.0,
+	}
+
+	// healthy pokemon should attack, not heal
+	reqHealthy := BattleRequest{
+		RQID: 5,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "recover", Move: "Recover", PP: 10},
+					{ID: "surf", Move: "Surf", PP: 15},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Toxapex, L80",
+					Condition: "250/250",
+				},
+			},
+		},
+	}
+	decHealthy := engine.Decide(b, reqHealthy)
+	if decHealthy.Slot != 2 {
+		t.Fatalf("expected healthy pokemon to attack (slot 2), got slot %d", decHealthy.Slot)
+	}
+
+	// critical low hp pokemon should heal
+	reqLow := BattleRequest{
+		RQID: 6,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "recover", Move: "Recover", PP: 10},
+					{ID: "surf", Move: "Surf", PP: 15},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Toxapex, L80",
+					Condition: "50/250", // 20% hp
+				},
+			},
+		},
+	}
+	decLow := engine.Decide(b, reqLow)
+	if decLow.Slot != 1 {
+		t.Fatalf("expected critically low hp pokemon to recover (slot 1), got slot %d", decLow.Slot)
+	}
+}
+
+func TestBattleEngine_EntryHazardOnTurn1(t *testing.T) {
+	engine := NewDefaultEngine()
+	b := NewBattle("battle-test", engine)
+	b.Turn = 1
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Tyranitar",
+		Types:     []string{"rock", "dark"},
+		HPPercent: 1.0,
+	}
+	b.OpponentTeam = []OpponentBenchPoke{
+		{Species: "Pikachu"},
+		{Species: "Charizard"},
+	}
+
+	req := BattleRequest{
+		RQID: 7,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "stealthrock", Move: "Stealth Rock", PP: 20},
+					{ID: "ironhead", Move: "Iron Head", PP: 15},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Corviknight, L80",
+					Condition: "250/250",
+				},
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	if dec.Slot != 1 {
+		t.Fatalf("expected stealth rock (slot 1) on turn 1, got slot %d", dec.Slot)
+	}
+}
+
+func TestBattleHandleLine(t *testing.T) {
+	b := NewBattle("battle-gen9randombattle-100", nil)
+
+	// player identification
+	b.HandleLine([]string{"player", "p1", "GhostHaze Thinker"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"player", "p2", "EnemyTrainer"}, "GhostHaze Thinker")
+
+	if b.MyPlayerID != "p1" || b.OpponentID != "p2" {
+		t.Fatalf("failed player identification: my=%s, opp=%s", b.MyPlayerID, b.OpponentID)
+	}
+
+	// tier and turn
+	b.HandleLine([]string{"tier", "[Gen 9] Random Battle"}, "GhostHaze Thinker")
+	if b.Tier != "[Gen 9] Random Battle" {
+		t.Fatalf("unexpected tier: %s", b.Tier)
+	}
+
+	b.HandleLine([]string{"turn", "2"}, "GhostHaze Thinker")
+	if b.Turn != 2 {
+		t.Fatalf("unexpected turn: %d", b.Turn)
+	}
+
+	// opponent switch
+	b.HandleLine([]string{"switch", "p2a: Garchomp", "Garchomp, L80, M", "100/100"}, "GhostHaze Thinker")
+	if b.OpponentActive.Species != "Garchomp" {
+		t.Fatalf("unexpected opponent active species: %s", b.OpponentActive.Species)
+	}
+	if b.OpponentActive.HPPercent != 1.0 {
+		t.Fatalf("expected opponent active hp 1.0, got %f", b.OpponentActive.HPPercent)
+	}
+
+	// opponent damage and status
+	b.HandleLine([]string{"-damage", "p2a: Garchomp", "50/100"}, "GhostHaze Thinker")
+	if b.OpponentActive.HPPercent != 0.5 {
+		t.Fatalf("expected opponent hp 0.5 after damage, got %f", b.OpponentActive.HPPercent)
+	}
+
+	b.HandleLine([]string{"-status", "p2a: Garchomp", "brn"}, "GhostHaze Thinker")
+	if b.OpponentActive.Status != "brn" {
+		t.Fatalf("expected opponent status brn, got %s", b.OpponentActive.Status)
+	}
+
+	// hazards
+	b.HandleLine([]string{"-sidestart", "p2: EnemyTrainer", "move: Stealth Rock"}, "GhostHaze Thinker")
+	if !b.OpponentHasHazard("stealthrock") {
+		t.Fatalf("expected stealth rock hazard to be active")
+	}
+
+	b.HandleLine([]string{"-sideend", "p2: EnemyTrainer", "move: Stealth Rock"}, "GhostHaze Thinker")
+	if b.OpponentHasHazard("stealthrock") {
+		t.Fatalf("expected stealth rock hazard to be removed")
+	}
+
+	// invalid choice recovery
+	choice, shouldSend := b.HandleLine([]string{"error", "[Invalid choice] Can't move"}, "GhostHaze Thinker")
+	if !shouldSend || !strings.Contains(choice, "/choose default") {
+		t.Fatalf("expected /choose default on invalid choice, got choice=%s, shouldSend=%v", choice, shouldSend)
+	}
+
+	// win line
+	b.HandleLine([]string{"win", "GhostHaze Thinker"}, "GhostHaze Thinker")
+	if !b.Ended || b.Winner != "GhostHaze Thinker" {
+		t.Fatalf("expected battle ended with winner GhostHaze Thinker, got ended=%v, winner=%s", b.Ended, b.Winner)
+	}
+}
+
+func TestBattleRequestParsingAndChoice(t *testing.T) {
+	b := NewBattle("battle-gen9randombattle-200", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	reqJSON := `{"rqid":10,"active":[{"moves":[{"id":"surf","move":"Surf","pp":15}]}],"side":{"pokemon":[{"details":"Blastoise, L80","condition":"250/250"}]}}`
+	choice, shouldSend := b.HandleLine([]string{"request", reqJSON}, "GhostHaze Thinker")
+
+	if !shouldSend {
+		t.Fatalf("expected shouldSend to be true")
+	}
+	if choice != "/choose move 1|10" {
+		t.Fatalf("expected /choose move 1|10, got %s", choice)
+	}
+
+	// wait request should not produce a choice
+	waitJSON := `{"rqid":11,"wait":true}`
+	waitChoice, waitSend := b.HandleLine([]string{"request", waitJSON}, "GhostHaze Thinker")
+	if waitSend || waitChoice != "" {
+		t.Fatalf("expected wait request to not send choice, got send=%v, choice=%s", waitSend, waitChoice)
+	}
+}

@@ -38,6 +38,21 @@ func Load() (*showdown.Config, error) {
 		}
 	}
 
+	if autoBattleRaw := os.Getenv("PS_AUTO_BATTLE"); autoBattleRaw != "" {
+		cfg.AutoBattle = autoBattleRaw == "true" || autoBattleRaw == "1"
+	}
+
+	if formatsRaw := os.Getenv("PS_BATTLE_FORMATS"); formatsRaw != "" {
+		for _, f := range strings.Split(formatsRaw, ",") {
+			trimmed := strings.TrimSpace(f)
+			if trimmed != "" {
+				cfg.BattleFormats = append(cfg.BattleFormats, trimmed)
+			}
+		}
+	}
+
+	cfg.BattleTeam = os.Getenv("PS_BATTLE_TEAM")
+
 	cfg.ApplyDefaults()
 	return cfg, nil
 }

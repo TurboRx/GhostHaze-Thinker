@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown/battle"
 	"github.com/gorilla/websocket"
 )
 
@@ -32,6 +33,7 @@ type Client struct {
 	writeMu   sync.Mutex
 	stateMu   sync.RWMutex
 	handlerMu sync.RWMutex
+	battleMu  sync.RWMutex
 
 	connected        bool
 	loggedIn         bool
@@ -47,6 +49,12 @@ type Client struct {
 	formatsMap       map[string]Format
 	lastSend         time.Time
 
+	battles       map[string]*battle.Battle
+	battleEngine  battle.BattleEngine
+	autoBattle    bool
+	battleFormats []string
+	battleTeam    string
+
 	onConnect         []func()
 	onDisconnect      []func(error)
 	onLogin           []func(username string, isGuest bool)
@@ -59,6 +67,9 @@ type Client struct {
 	onFormats         []func([]Format)
 	onPopup           []func(text string)
 	onRawMessages     []MessageHandler
+	onChallenge       []func(from, format string)
+	onBattleStart     []func(b *battle.Battle)
+	onBattleEnd       []func(b *battle.Battle, winner string)
 	commands          map[string]CommandHandler
 }
 
@@ -66,13 +77,18 @@ func NewClient(cfg Config) *Client {
 	cfg.ApplyDefaults()
 
 	return &Client{
-		config:      cfg,
-		commands:    make(map[string]CommandHandler),
-		roomInIntro: make(map[string]bool),
-		roomUsers:   make(map[string]map[string]string),
-		roomAway:    make(map[string]map[string]bool),
-		roomTitles:  make(map[string]string),
-		formatsMap:  make(map[string]Format),
+		config:        cfg,
+		commands:      make(map[string]CommandHandler),
+		roomInIntro:   make(map[string]bool),
+		roomUsers:     make(map[string]map[string]string),
+		roomAway:      make(map[string]map[string]bool),
+		roomTitles:    make(map[string]string),
+		formatsMap:    make(map[string]Format),
+		battles:       make(map[string]*battle.Battle),
+		battleEngine:  battle.NewDefaultEngine(),
+		autoBattle:    cfg.AutoBattle,
+		battleFormats: append([]string{}, cfg.BattleFormats...),
+		battleTeam:    cfg.BattleTeam,
 	}
 }
 
@@ -146,6 +162,24 @@ func (c *Client) OnRawMessage(fn MessageHandler) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
 	c.onRawMessages = append(c.onRawMessages, fn)
+}
+
+func (c *Client) OnChallenge(fn func(from, format string)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.onChallenge = append(c.onChallenge, fn)
+}
+
+func (c *Client) OnBattleStart(fn func(b *battle.Battle)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.onBattleStart = append(c.onBattleStart, fn)
+}
+
+func (c *Client) OnBattleEnd(fn func(b *battle.Battle, winner string)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.onBattleEnd = append(c.onBattleEnd, fn)
 }
 
 func (c *Client) HandleCommand(cmd string, fn CommandHandler) {
@@ -355,6 +389,119 @@ func (c *Client) Format(id string) (Format, bool) {
 	return f, ok
 }
 
+func (c *Client) SetAutoBattle(enabled bool) {
+	c.battleMu.Lock()
+	defer c.battleMu.Unlock()
+	c.autoBattle = enabled
+}
+
+func (c *Client) AutoBattle() bool {
+	c.battleMu.RLock()
+	defer c.battleMu.RUnlock()
+	return c.autoBattle
+}
+
+func (c *Client) SetBattleFormats(formats []string) {
+	c.battleMu.Lock()
+	defer c.battleMu.Unlock()
+	c.battleFormats = append([]string{}, formats...)
+}
+
+func (c *Client) BattleFormats() []string {
+	c.battleMu.RLock()
+	defer c.battleMu.RUnlock()
+	res := make([]string, len(c.battleFormats))
+	copy(res, c.battleFormats)
+	return res
+}
+
+func (c *Client) SetBattleTeam(team string) {
+	c.battleMu.Lock()
+	defer c.battleMu.Unlock()
+	c.battleTeam = team
+}
+
+func (c *Client) BattleTeam() string {
+	c.battleMu.RLock()
+	defer c.battleMu.RUnlock()
+	return c.battleTeam
+}
+
+func (c *Client) SetBattleEngine(engine battle.BattleEngine) {
+	c.battleMu.Lock()
+	defer c.battleMu.Unlock()
+	if engine != nil {
+		c.battleEngine = engine
+	}
+}
+
+func (c *Client) Battle(room string) (*battle.Battle, bool) {
+	c.battleMu.RLock()
+	defer c.battleMu.RUnlock()
+	b, ok := c.battles[ToRoomID(room)]
+	return b, ok
+}
+
+func (c *Client) ActiveBattles() []*battle.Battle {
+	c.battleMu.RLock()
+	defer c.battleMu.RUnlock()
+	res := make([]*battle.Battle, 0, len(c.battles))
+	for _, b := range c.battles {
+		res = append(res, b)
+	}
+	return res
+}
+
+func (c *Client) AcceptChallenge(user string) error {
+	cleanUser := ToID(user)
+	if cleanUser == "" {
+		return errors.New("cannot accept challenge: username is empty")
+	}
+	c.battleMu.RLock()
+	team := c.battleTeam
+	c.battleMu.RUnlock()
+
+	if team != "" {
+		return c.Send(fmt.Sprintf("|/utm %s\n|/accept %s", team, cleanUser))
+	}
+	return c.Send(fmt.Sprintf("|/accept %s", cleanUser))
+}
+
+func (c *Client) RejectChallenge(user string) error {
+	cleanUser := ToID(user)
+	if cleanUser == "" {
+		return errors.New("cannot reject challenge: username is empty")
+	}
+	return c.Send(fmt.Sprintf("|/reject %s", cleanUser))
+}
+
+func (c *Client) ChallengeUser(user, format string) error {
+	cleanUser := ToID(user)
+	if cleanUser == "" {
+		return errors.New("cannot challenge: username is empty")
+	}
+	cleanFmt := strings.TrimSpace(format)
+	if cleanFmt == "" {
+		cleanFmt = "gen9randombattle"
+	}
+	c.battleMu.RLock()
+	team := c.battleTeam
+	c.battleMu.RUnlock()
+
+	if team != "" {
+		return c.Send(fmt.Sprintf("|/utm %s\n|/challenge %s, %s", team, cleanUser, cleanFmt))
+	}
+	return c.Send(fmt.Sprintf("|/challenge %s, %s", cleanUser, cleanFmt))
+}
+
+func (c *Client) CancelChallengeTo(user string) error {
+	cleanUser := ToID(user)
+	if cleanUser == "" {
+		return errors.New("cannot cancel challenge: username is empty")
+	}
+	return c.Send(fmt.Sprintf("|/cancelchallenge %s", cleanUser))
+}
+
 func (c *Client) Run(ctx context.Context) error {
 	c.stateMu.Lock()
 	c.intentionalClose = false
@@ -521,6 +668,10 @@ func (c *Client) handleRawPayload(payload string) {
 }
 
 func (c *Client) processMessage(msg RawMessage) {
+	if strings.HasPrefix(msg.Room, "battle-") {
+		c.handleBattleMessage(msg)
+	}
+
 	switch msg.Type {
 	case "challstr":
 		if challstr, ok := ParseChallstr(msg); ok {
@@ -649,6 +800,96 @@ func (c *Client) processMessage(msg RawMessage) {
 			c.dispatchPM(pm)
 			c.routeCommand("", pm.From, pm.Text)
 		}
+
+	case "updatechallenges":
+		if len(msg.Parts) > 0 {
+			var cu challengesUpdate
+			rawJSON := strings.Join(msg.Parts, "|")
+			if err := json.Unmarshal([]byte(rawJSON), &cu); err == nil {
+				c.handleChallengesUpdate(cu)
+			}
+		}
+	}
+}
+
+type challengesUpdate struct {
+	ChallengesFrom map[string]string `json:"challengesFrom"`
+	ChallengeTo    *struct {
+		To     string `json:"to"`
+		Format string `json:"format"`
+	} `json:"challengeTo"`
+}
+
+func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
+	c.battleMu.RLock()
+	auto := c.autoBattle
+	allowedFormats := append([]string{}, c.battleFormats...)
+	c.battleMu.RUnlock()
+
+	for from, format := range cu.ChallengesFrom {
+		cleanFrom := CleanUsername(from)
+		c.dispatchChallenge(cleanFrom, format)
+
+		if auto {
+			allowed := false
+			if len(allowedFormats) == 0 {
+				allowed = true
+			} else {
+				normFmt := ToID(format)
+				for _, af := range allowedFormats {
+					if ToID(af) == normFmt {
+						allowed = true
+						break
+					}
+				}
+			}
+			if allowed {
+				_ = c.AcceptChallenge(cleanFrom)
+			}
+		}
+	}
+}
+
+func (c *Client) handleBattleMessage(msg RawMessage) {
+	room := msg.Room
+	if !strings.HasPrefix(room, "battle-") {
+		return
+	}
+
+	roomID := ToRoomID(room)
+	c.battleMu.Lock()
+	b, exists := c.battles[roomID]
+	if !exists {
+		b = battle.NewBattle(room, c.battleEngine)
+		c.battles[roomID] = b
+		c.battleMu.Unlock()
+		c.dispatchBattleStart(b)
+		// enable timer to prevent stalling
+		_ = c.SendToRoom(room, "/timer on")
+	} else {
+		c.battleMu.Unlock()
+	}
+
+	c.stateMu.RLock()
+	myNick := c.username
+	c.stateMu.RUnlock()
+
+	tokens := append([]string{msg.Type}, msg.Parts...)
+	choice, shouldSend := b.HandleLine(tokens, myNick)
+	if shouldSend && choice != "" {
+		_ = c.SendToRoom(room, choice)
+	}
+
+	if msg.Type == "win" || msg.Type == "tie" {
+		winner := ""
+		if len(msg.Parts) > 0 {
+			winner = msg.Parts[0]
+		}
+		c.dispatchBattleEnd(b, winner)
+	} else if msg.Type == "deinit" {
+		c.battleMu.Lock()
+		delete(c.battles, roomID)
+		c.battleMu.Unlock()
 	}
 }
 
@@ -1035,5 +1276,35 @@ func (c *Client) dispatchRawMessage(msg RawMessage) {
 
 	for _, h := range handlers {
 		go h(msg)
+	}
+}
+
+func (c *Client) dispatchChallenge(from, format string) {
+	c.handlerMu.RLock()
+	handlers := append([]func(string, string){}, c.onChallenge...)
+	c.handlerMu.RUnlock()
+
+	for _, h := range handlers {
+		go h(from, format)
+	}
+}
+
+func (c *Client) dispatchBattleStart(b *battle.Battle) {
+	c.handlerMu.RLock()
+	handlers := append([]func(*battle.Battle){}, c.onBattleStart...)
+	c.handlerMu.RUnlock()
+
+	for _, h := range handlers {
+		go h(b)
+	}
+}
+
+func (c *Client) dispatchBattleEnd(b *battle.Battle, winner string) {
+	c.handlerMu.RLock()
+	handlers := append([]func(*battle.Battle, string){}, c.onBattleEnd...)
+	c.handlerMu.RUnlock()
+
+	for _, h := range handlers {
+		go h(b, winner)
 	}
 }

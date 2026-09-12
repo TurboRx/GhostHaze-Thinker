@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown/battle"
 	"github.com/gorilla/websocket"
 )
 
@@ -601,3 +602,314 @@ func TestThrottleDelay(t *testing.T) {
 		t.Errorf("expected throttle delay of at least 25ms, took %v", elapsed)
 	}
 }
+
+func TestBattleConfigAndDefaults(t *testing.T) {
+	cfg := Config{
+		AutoBattle: true,
+	}
+	cfg.ApplyDefaults()
+
+	if len(cfg.BattleFormats) != 1 || cfg.BattleFormats[0] != "gen9randombattle" {
+		t.Fatalf("expected default battle format gen9randombattle, got %v", cfg.BattleFormats)
+	}
+
+	client := NewClient(cfg)
+	if !client.AutoBattle() {
+		t.Fatalf("expected autobattle to be true")
+	}
+
+	client.SetAutoBattle(false)
+	if client.AutoBattle() {
+		t.Fatalf("expected autobattle to be false")
+	}
+
+	client.SetBattleFormats([]string{"gen9ou", "gen9doublesou"})
+	formats := client.BattleFormats()
+	if len(formats) != 2 || formats[0] != "gen9ou" {
+		t.Fatalf("unexpected battle formats: %v", formats)
+	}
+
+	client.SetBattleTeam("Pikachu|||...packed")
+	if client.BattleTeam() != "Pikachu|||...packed" {
+		t.Fatalf("unexpected battle team: %s", client.BattleTeam())
+	}
+}
+
+func TestBattleChallengeActions(t *testing.T) {
+	client := NewClient(Config{})
+
+	// validation guards
+	if err := client.AcceptChallenge(""); err == nil {
+		t.Fatalf("expected error on empty username")
+	}
+	if err := client.RejectChallenge(""); err == nil {
+		t.Fatalf("expected error on empty username")
+	}
+	if err := client.ChallengeUser("", "gen9randombattle"); err == nil {
+		t.Fatalf("expected error on empty username")
+	}
+	if err := client.CancelChallengeTo(""); err == nil {
+		t.Fatalf("expected error on empty username")
+	}
+
+	// mock websocket connection to capture sent commands
+	upgrader := websocket.Upgrader{}
+	sentChan := make(chan string, 10)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			sentChan <- string(msg)
+		}
+	}))
+	defer s.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
+	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer wsConn.Close()
+	client.wsConn = wsConn
+
+	// test accept challenge
+	_ = client.AcceptChallenge("Rival Trainer")
+	select {
+	case msg := <-sentChan:
+		if msg != "|/accept rivaltrainer" {
+			t.Fatalf("expected |/accept rivaltrainer, got %s", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for accept command")
+	}
+
+	// test reject challenge
+	_ = client.RejectChallenge("AnnoyingTrainer")
+	select {
+	case msg := <-sentChan:
+		if msg != "|/reject annoyingtrainer" {
+			t.Fatalf("expected |/reject annoyingtrainer, got %s", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for reject command")
+	}
+
+	// test challenge user default format
+	_ = client.ChallengeUser("Friend", "")
+	select {
+	case msg := <-sentChan:
+		if msg != "|/challenge friend, gen9randombattle" {
+			t.Fatalf("expected |/challenge friend, gen9randombattle, got %s", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for challenge command")
+	}
+
+	// test cancel challenge
+	_ = client.CancelChallengeTo("Friend")
+	select {
+	case msg := <-sentChan:
+		if msg != "|/cancelchallenge friend" {
+			t.Fatalf("expected |/cancelchallenge friend, got %s", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for cancel challenge command")
+	}
+
+	// test challenge with team
+	client.SetBattleTeam("packedteam123")
+	_ = client.ChallengeUser("Enemy", "gen9ou")
+	select {
+	case msg := <-sentChan:
+		if !strings.Contains(msg, "|/utm packedteam123") || !strings.Contains(msg, "|/challenge enemy, gen9ou") {
+			t.Fatalf("expected utm and challenge in message, got %s", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for team challenge command")
+	}
+}
+
+func TestChallengesUpdate_AutoAccept(t *testing.T) {
+	client := NewClient(Config{
+		AutoBattle:    true,
+		BattleFormats: []string{"gen9randombattle"},
+	})
+
+	upgrader := websocket.Upgrader{}
+	sentChan := make(chan string, 10)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			sentChan <- string(msg)
+		}
+	}))
+	defer s.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
+	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer wsConn.Close()
+	client.wsConn = wsConn
+
+	var challengeFrom, challengeFmt string
+	var challengeWG sync.WaitGroup
+	challengeWG.Add(1)
+
+	client.OnChallenge(func(from, format string) {
+		challengeFrom = from
+		challengeFmt = format
+		challengeWG.Done()
+	})
+
+	// simulate incoming updatechallenges with allowed format
+	client.handleRawPayload(`|updatechallenges|{"challengesFrom":{"Rival Trainer":"gen9randombattle"},"challengeTo":null}`)
+
+	challengeWG.Wait()
+	if challengeFrom != "Rival Trainer" || challengeFmt != "gen9randombattle" {
+		t.Fatalf("unexpected challenge dispatched: from=%s, fmt=%s", challengeFrom, challengeFmt)
+	}
+
+	// verify auto-accept sent
+	select {
+	case msg := <-sentChan:
+		if msg != "|/accept rivaltrainer" {
+			t.Fatalf("expected |/accept rivaltrainer, got %s", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for auto accept")
+	}
+
+	// simulate incoming challenge with disallowed format
+	challengeWG.Add(1)
+	client.handleRawPayload(`|updatechallenges|{"challengesFrom":{"OtherUser":"gen9vgc2024"},"challengeTo":null}`)
+	challengeWG.Wait()
+
+	select {
+	case msg := <-sentChan:
+		t.Fatalf("disallowed format should not have auto-accepted, got sent message: %s", msg)
+	case <-time.After(100 * time.Millisecond):
+		// correctly didn't auto-accept
+	}
+}
+
+func TestBattleRoomMessageRouting(t *testing.T) {
+	client := NewClient(Config{
+		Username: "GhostHaze Thinker",
+	})
+	client.username = "GhostHaze Thinker"
+
+	upgrader := websocket.Upgrader{}
+	sentChan := make(chan string, 10)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			sentChan <- string(msg)
+		}
+	}))
+	defer s.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
+	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer wsConn.Close()
+	client.wsConn = wsConn
+
+	battleStarted := make(chan struct{}, 1)
+	battleEnded := make(chan string, 1)
+
+	client.OnBattleStart(func(b *battle.Battle) {
+		battleStarted <- struct{}{}
+	})
+	client.OnBattleEnd(func(b *battle.Battle, winner string) {
+		battleEnded <- winner
+	})
+
+	battleRoom := "battle-gen9randombattle-999"
+
+	// battle init line
+	client.handleRawPayload(">" + battleRoom + "\n|init|battle\n|player|p1|GhostHaze Thinker|\n|player|p2|RivalTrainer|")
+
+	select {
+	case <-battleStarted:
+		// battle start dispatched
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for OnBattleStart")
+	}
+
+	// verify /timer on was sent to prevent stalling
+	select {
+	case msg := <-sentChan:
+		if msg != battleRoom+"|/timer on" {
+			t.Fatalf("expected timer on command, got %s", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for timer on")
+	}
+
+	// verify active battle exists
+	b, ok := client.Battle(battleRoom)
+	if !ok || b == nil {
+		t.Fatalf("expected active battle to be recorded")
+	}
+	if b.MyPlayerID != "p1" || b.OpponentID != "p2" {
+		t.Fatalf("unexpected battle player ids: my=%s, opp=%s", b.MyPlayerID, b.OpponentID)
+	}
+
+	// send a request line and verify choice is sent to battle room
+	reqJSON := `{"rqid":1,"active":[{"moves":[{"id":"surf","move":"Surf","pp":15}]}],"side":{"pokemon":[{"details":"Blastoise, L80","condition":"250/250"}]}}`
+	client.handleRawPayload(">" + battleRoom + "\n|request|" + reqJSON)
+
+	select {
+	case msg := <-sentChan:
+		if msg != battleRoom+"|/choose move 1|1" {
+			t.Fatalf("expected choose move sent to room, got %s", msg)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for move choice")
+	}
+
+	// send win line and deinit
+	client.handleRawPayload(">" + battleRoom + "\n|win|GhostHaze Thinker\n|deinit")
+
+	select {
+	case winner := <-battleEnded:
+		if winner != "GhostHaze Thinker" {
+			t.Fatalf("expected winner GhostHaze Thinker, got %s", winner)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for OnBattleEnd")
+	}
+
+	// battle should be cleaned up on deinit
+	if _, stillActive := client.Battle(battleRoom); stillActive {
+		t.Fatalf("expected battle to be removed after deinit")
+	}
+}
+

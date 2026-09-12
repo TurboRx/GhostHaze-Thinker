@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/TurboRx/GhostHaze-Thinker/internal/config"
 	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown"
+	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown/battle"
 )
 
 func logWith(prefix, msg string) {
@@ -80,8 +82,44 @@ func main() {
 		logInfo("[%s] %s: %s", msg.Room, msg.User, msg.Text)
 	})
 
+	bot.OnChallenge(func(from, format string) {
+		logInfo("Received challenge from %s in format %s", from, format)
+	})
+
+	bot.OnBattleStart(func(b *battle.Battle) {
+		logInfo("Battle started in room %s", b.Room)
+	})
+
+	bot.OnBattleEnd(func(b *battle.Battle, winner string) {
+		logInfo("Battle ended in room %s. Winner: %s", b.Room, winner)
+	})
+
 	bot.HandleCommand("ping", func(room, user, args string) {
 		_ = bot.Reply(room, user, "pong!")
+	})
+
+	bot.HandleCommand("battle", func(room, user, args string) {
+		fmtName := strings.TrimSpace(args)
+		if fmtName == "" {
+			fmtName = "gen9randombattle"
+		}
+		if err := bot.ChallengeUser(user, fmtName); err != nil {
+			_ = bot.Reply(room, user, fmt.Sprintf("Failed to send challenge: %v", err))
+		} else {
+			_ = bot.Reply(room, user, fmt.Sprintf("Challenge sent to %s in %s! Accept to battle.", user, fmtName))
+		}
+	})
+
+	bot.HandleCommand("challenge", func(room, user, args string) {
+		fmtName := strings.TrimSpace(args)
+		if fmtName == "" {
+			fmtName = "gen9randombattle"
+		}
+		if err := bot.ChallengeUser(user, fmtName); err != nil {
+			_ = bot.Reply(room, user, fmt.Sprintf("Failed to send challenge: %v", err))
+		} else {
+			_ = bot.Reply(room, user, fmt.Sprintf("Challenge sent to %s in %s! Accept to battle.", user, fmtName))
+		}
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

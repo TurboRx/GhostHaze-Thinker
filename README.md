@@ -12,6 +12,7 @@ Connects to Pokémon Showdown over WebSockets, handles authentication, auto-join
 
 - **WebSocket Client**: Persistent connection with automatic reconnection, keepalive pings, and outbound throttle rate limiting.
 - **Authentication**: Challenge string (`challstr`) login assertion with support for registered accounts and guest/unregistered bots.
+- **Battle Engine**: Full battle protocol support, challenge detection & auto-acceptance, and competitive decision heuristics (18-type effectiveness, lethal KO priority, priority finishers, smart status infliction, healing thresholds, entry hazards, Terastallization, and team preview lead selection).
 - **Room State Tracking**: Active user lists, user ranks, away status, room titles, and room renames.
 - **Security & Command Routing**: Intro backlog ignore, command injection prevention (`EscapeChat`), and prefix-based routing.
 - **Lightweight Docker**: ~6 MB Alpine image published to GitHub Container Registry (`ghcr.io/turborx/ghosthaze-thinker`).
@@ -52,6 +53,8 @@ Commands use the configured prefix (default `.`).
 | Command | Description |
 |---|---|
 | `.ping` | Responds with `pong!` in room chat or PM. |
+| `.battle [format]` | Challenges the user to a battle (defaults to `gen9randombattle`). |
+| `.challenge [format]` | Alias for `.battle`. |
 
 ### Adding Commands
 

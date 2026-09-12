@@ -25,6 +25,9 @@ type Config struct {
 	ThrottleDelay  time.Duration
 	CommandChar    string
 	HTTPClient     *http.Client
+	AutoBattle     bool
+	BattleFormats  []string
+	BattleTeam     string
 }
 
 func (c *Config) ApplyDefaults() {
@@ -52,5 +55,8 @@ func (c *Config) ApplyDefaults() {
 		c.HTTPClient = &http.Client{
 			Timeout: 15 * time.Second,
 		}
+	}
+	if c.AutoBattle && len(c.BattleFormats) == 0 {
+		c.BattleFormats = []string{"gen9randombattle"}
 	}
 }
