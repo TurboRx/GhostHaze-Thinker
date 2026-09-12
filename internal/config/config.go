@@ -67,9 +67,22 @@ func Load() (*showdown.Config, error) {
 
 	cfg.BattleTeam = os.Getenv("PS_BATTLE_TEAM")
 
+	// if a web url was supplied or auto-discovery was requested, resolve server parameters
+	autoDiscover := os.Getenv("PS_DISCOVER_SERVER") == "true" || os.Getenv("PS_DISCOVER_SERVER") == "1"
+	if strings.HasPrefix(cfg.ServerURL, "http://") || strings.HasPrefix(cfg.ServerURL, "https://") || autoDiscover {
+		target := cfg.ServerURL
+		if target == "" {
+			target = cfg.ServerID
+		}
+		if target != "" {
+			_ = cfg.ResolveServer(target)
+		}
+	}
+
 	cfg.ApplyDefaults()
 	return cfg, nil
 }
+
 
 func LoadEnvFile(filename string) error {
 	file, err := os.Open(filename)

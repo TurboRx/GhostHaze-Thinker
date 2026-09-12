@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -33,6 +34,19 @@ func logWarn(format string, args ...any) {
 }
 
 func main() {
+	getServerFlag := flag.String("get-server", "", "resolve showdown server connection details from a url or server id")
+	flag.Parse()
+
+	if *getServerFlag != "" {
+		info, err := showdown.GetShowdownServer(*getServerFlag, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving server: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(info.String())
+		return
+	}
+
 	fmt.Println()
 	fmt.Println("  GhostHaze-Thinker")
 	fmt.Println("  A Pokémon Showdown bot and client library in Go")

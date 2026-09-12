@@ -60,3 +60,39 @@ PS_COMMAND_CHAR=!
 		t.Errorf("expected CommandChar '!', got '%s'", cfg.CommandChar)
 	}
 }
+
+func TestCustomSideServerConfig(t *testing.T) {
+	// test dummy side server configuration
+	os.Setenv("PS_SERVER_ID", "testserver")
+	os.Setenv("PS_SERVER_HOST", "dummyhost.psim.us")
+	os.Setenv("PS_SERVER_PORT", "8000")
+	defer func() {
+		os.Unsetenv("PS_SERVER_ID")
+		os.Unsetenv("PS_SERVER_HOST")
+		os.Unsetenv("PS_SERVER_PORT")
+	}()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.ServerID != "testserver" {
+		t.Errorf("expected ServerID testserver, got %s", cfg.ServerID)
+	}
+	if cfg.ServerHost != "dummyhost.psim.us" {
+		t.Errorf("expected ServerHost dummyhost.psim.us, got %s", cfg.ServerHost)
+	}
+	if cfg.ServerPort != 8000 {
+		t.Errorf("expected ServerPort 8000, got %d", cfg.ServerPort)
+	}
+	expectedWS := "wss://dummyhost.psim.us:8000/showdown/websocket"
+	if cfg.ServerURL != expectedWS {
+		t.Errorf("expected ServerURL %s, got %s", expectedWS, cfg.ServerURL)
+	}
+	expectedLogin := "https://play.pokemonshowdown.com/~~testserver/action.php"
+	if cfg.LoginURL != expectedLogin {
+		t.Errorf("expected LoginURL %s, got %s", expectedLogin, cfg.LoginURL)
+	}
+}
+

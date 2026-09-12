@@ -110,3 +110,19 @@ func (c *Config) ApplyDefaults() {
 		c.BattleFormats = []string{"gen9randombattle"}
 	}
 }
+
+// resolveserver queries the showdown crossdomain discovery service and configures server parameters
+func (c *Config) ResolveServer(targetURL string) error {
+	info, err := GetShowdownServer(targetURL, c.HTTPClient)
+	if err != nil {
+		return err
+	}
+	c.ServerID = info.ID
+	c.ServerHost = info.Host
+	c.ServerPort = info.Port
+	c.ServerSSL = &info.HTTPS
+	c.ServerURL = info.WebSocketURL()
+	c.LoginURL = info.LoginActionURL(c.LoginServer)
+	return nil
+}
+
