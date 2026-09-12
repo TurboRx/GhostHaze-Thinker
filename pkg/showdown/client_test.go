@@ -33,7 +33,7 @@ func TestApplyDefaults(t *testing.T) {
 }
 
 func TestRouteCommand(t *testing.T) {
-	client := NewClient(Config{CommandChar: ".", Username: "TurBOOT"})
+	client := NewClient(Config{CommandChar: ".", Username: "Bot"})
 
 	var wg sync.WaitGroup
 	var receivedRoom, receivedUser, receivedArgs string
@@ -69,7 +69,7 @@ func TestRouteCommand(t *testing.T) {
 	client.HandleCommand("self", func(room, user, args string) {
 		executedSelf = true
 	})
-	client.routeCommand("botdevelopment", "*TurBOOT", ".self")
+	client.routeCommand("botdevelopment", "*Bot", ".self")
 	time.Sleep(50 * time.Millisecond)
 	if executedSelf {
 		t.Error("expected self-command to be ignored")

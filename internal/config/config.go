@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TurboRx/turboot/pkg/showdown"
+	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown"
 )
 
 func Load() (*showdown.Config, error) {

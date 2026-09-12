@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    container_name: turboot
+    container_name: ghosthaze-thinker
     restart: unless-stopped
     env_file:
       - .env

@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/TurboRx/turboot/internal/config"
-	"github.com/TurboRx/turboot/pkg/showdown"
+	"github.com/TurboRx/GhostHaze-Thinker/internal/config"
+	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown"
 )
 
 func logWith(prefix, msg string) {
@@ -32,7 +32,7 @@ func logWarn(format string, args ...any) {
 
 func main() {
 	fmt.Println()
-	fmt.Println("  TurBOOT")
+	fmt.Println("  GhostHaze-Thinker")
 	fmt.Println("  A Pokémon Showdown bot and client library in Go")
 	fmt.Println()
 

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-IMAGE_NAME="turboot-verify"
+IMAGE_NAME="ghosthaze-thinker-verify"
 MAX_SIZE_MB=50
 PASS=0
 FAIL=0
@@ -31,7 +31,7 @@ fi
 # 2. binary exists and no source in final image
 echo ""
 echo "═══ Check 2: Binary exists and no source in final image ═══"
-if docker run --rm "$IMAGE_NAME" sh -c '[ -x /app/turboot ] && [ ! -d /app/cmd ] && [ ! -d /app/pkg ] && [ ! -d /app/internal ]'; then
+if docker run --rm "$IMAGE_NAME" sh -c '[ -x /app/ghosthaze-thinker ] && [ ! -d /app/cmd ] && [ ! -d /app/pkg ] && [ ! -d /app/internal ]'; then
   pass "compiled binary is present and source code is excluded from final image"
 else
   fail "binary missing or source code leaked into final image"

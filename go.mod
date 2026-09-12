@@ -1,4 +1,4 @@
-module github.com/TurboRx/turboot
+module github.com/TurboRx/GhostHaze-Thinker
 
 go 1.27.1
 

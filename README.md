@@ -1,8 +1,8 @@
-# TurBOOT
+# GhostHaze-Thinker
 
 A Pokémon Showdown bot and client library in Go.
 
-TurBOOT connects to Pokémon Showdown over WebSockets, authenticates with account credentials, automatically joins configured rooms, and provides an event-driven framework for handling chat messages, private messages (PMs), and custom commands.
+GhostHaze-Thinker connects to Pokémon Showdown over WebSockets, authenticates with account credentials, automatically joins configured rooms, and provides an event-driven framework for handling chat messages, private messages (PMs), and custom commands.
 
 It can be run as a standalone bot daemon or imported directly as a Go package (`pkg/showdown`) in your own applications.
 
@@ -10,7 +10,7 @@ It can be run as a standalone bot daemon or imported directly as a Go package (`
 
 ## Features
 
-- **Dual Purpose:** Ready-to-run bot daemon (`cmd/turboot`) and reusable client library (`pkg/showdown`).
+- **Dual Purpose:** Ready-to-run bot daemon (`cmd/ghosthaze-thinker`) and reusable client library (`pkg/showdown`).
 - **Zero Heavy Dependencies:** Only uses standard Go and `gorilla/websocket`.
 - **Automatic Reconnection:** Reconnects on connection loss with configurable backoff.
 - **Full Authentication Support:** Handles challenge strings (`challstr`) and assertions via the Showdown login API.
@@ -34,12 +34,12 @@ It can be run as a standalone bot daemon or imported directly as a Go package (`
 ### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/TurboRx/turboot.git
-cd turboot
+git clone https://github.com/TurboRx/GhostHaze-Thinker.git
+cd GhostHaze-Thinker
 cp .env.example .env
 ```
 
-Edit `.env` with your bot's username and credentials:
+Edit `.env` with your bot's credentials:
 
 ```env
 PS_USERNAME=YourBotName
@@ -54,11 +54,11 @@ PS_COMMAND_CHAR=.
 
 ```bash
 # Run directly
-go run ./cmd/turboot
+go run ./cmd/ghosthaze-thinker
 
 # Or build a standalone binary
-go build -o turboot ./cmd/turboot
-./turboot
+go build -o ghosthaze-thinker ./cmd/ghosthaze-thinker
+./ghosthaze-thinker
 ```
 
 To gracefully stop the bot, press `Ctrl+C`.
@@ -84,17 +84,17 @@ docker compose down
 
 ```bash
 # Build the image (~6 MB)
-docker build -t turboot .
+docker build -t ghosthaze-thinker .
 
 # Run with environment variables
-docker run -d --name turboot \
+docker run -d --name ghosthaze-thinker \
   -e PS_USERNAME=YourBotName \
   -e PS_PASSWORD=YourBotPassword \
   -e PS_ROOMS=botdevelopment \
-  turboot
+  ghosthaze-thinker
 
 # Or mount your .env file
-docker run -d --name turboot --env-file .env turboot
+docker run -d --name ghosthaze-thinker --env-file .env ghosthaze-thinker
 ```
 
 ---
@@ -121,7 +121,7 @@ All settings can be specified via environment variables or a local `.env` file:
 Because Go's module system allows importing subpackages directly, you can import `pkg/showdown` into any Go project without needing an external repository:
 
 ```bash
-go get github.com/TurboRx/turboot/pkg/showdown
+go get github.com/TurboRx/GhostHaze-Thinker/pkg/showdown
 ```
 
 ### Example Usage
@@ -136,13 +136,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/TurboRx/turboot/pkg/showdown"
+	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown"
 )
 
 func main() {
 	client := showdown.NewClient(showdown.Config{
-		Username:    "MyBotName",
-		Password:    "SecretPassword",
+		Username:    "YourBotName",
+		Password:    "YourBotPassword",
 		Rooms:       []string{"botdevelopment"},
 		CommandChar: ".",
 	})
@@ -173,21 +173,21 @@ func main() {
 ## Repository Structure
 
 ```
-turboot/
+GhostHaze-Thinker/
 ├── cmd/
-│   └── turboot/          # Bot application entrypoint (main.go)
+│   └── ghosthaze-thinker/ # Bot application entrypoint (main.go)
 ├── internal/
-│   └── config/           # Environment variable and .env parser
+│   └── config/            # Environment variable and .env parser
 ├── pkg/
-│   └── showdown/         # Core reusable Pokémon Showdown client library
-│       ├── client.go     # Connection loop, state, auth, and actions
-│       ├── config.go     # Client configuration and defaults
-│       ├── message.go    # Protocol and frame parser
-│       └── types.go      # Data models and structures
-├── .env.example          # Sample environment variables
-├── Dockerfile            # Multi-stage static build (~6 MB image)
-├── docker-compose.yml    # Docker Compose definition
-├── verify_docker.sh      # Automated validation script
+│   └── showdown/          # Core reusable Pokémon Showdown client library
+│       ├── client.go      # Connection loop, state, auth, and actions
+│       ├── config.go      # Client configuration and defaults
+│       ├── message.go     # Protocol and frame parser
+│       └── types.go       # Data models and structures
+├── .env.example           # Sample environment variables
+├── Dockerfile             # Multi-stage static build (~6 MB image)
+├── docker-compose.yml     # Docker Compose definition
+├── verify_docker.sh       # Automated validation script
 └── go.mod
 ```
 
