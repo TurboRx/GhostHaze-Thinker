@@ -63,7 +63,7 @@ func ParseChatMessage(msg RawMessage) (ChatMessage, bool) {
 		}
 		tsInt, err := strconv.ParseInt(strings.TrimSpace(msg.Parts[0]), 10, 64)
 		ts := time.Now().UTC()
-		if err == nil {
+		if err == nil && tsInt > 0 {
 			// support both second and millisecond timestamps
 			if tsInt > 1e11 {
 				ts = time.UnixMilli(tsInt).UTC()

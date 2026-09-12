@@ -64,8 +64,8 @@ func UserRank(name string) string {
 
 func CleanUsername(name string) string {
 	trimmed := strings.TrimSpace(name)
-	if len(trimmed) > 0 && !isAlphanumeric(rune(trimmed[0])) {
-		return strings.TrimSpace(trimmed[1:])
+	for len(trimmed) > 0 && !isAlphanumeric(rune(trimmed[0])) {
+		trimmed = strings.TrimSpace(trimmed[1:])
 	}
 	return trimmed
 }

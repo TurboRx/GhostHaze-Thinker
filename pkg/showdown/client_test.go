@@ -65,14 +65,30 @@ func TestRouteCommand(t *testing.T) {
 	}
 
 	// test self-command guard (bot must ignore its own commands)
-	executedSelf := false
+	selfChan := make(chan struct{}, 1)
 	client.HandleCommand("self", func(room, user, args string) {
-		executedSelf = true
+		selfChan <- struct{}{}
 	})
 	client.routeCommand("botdevelopment", "*ghosthaze thinker", ".self")
-	time.Sleep(50 * time.Millisecond)
-	if executedSelf {
+	select {
+	case <-selfChan:
 		t.Error("expected self-command to be ignored")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// test command with spaces after prefix
+	echoChan := make(chan string, 1)
+	client.HandleCommand("echo", func(room, user, args string) {
+		echoChan <- args
+	})
+	client.routeCommand("botdevelopment", "bob", ".   echo   foo bar  ")
+	select {
+	case echoArgs := <-echoChan:
+		if echoArgs != "foo bar" {
+			t.Errorf("expected echoArgs 'foo bar', got '%s'", echoArgs)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for echo command")
 	}
 }
 
@@ -83,8 +99,11 @@ func TestUsernameAndIDHelpers(t *testing.T) {
 	if CleanUsername("@Bob") != "Bob" {
 		t.Errorf("expected 'Bob', got '%s'", CleanUsername("@Bob"))
 	}
-	if CleanUsername(" Charlie") != "Charlie" {
-		t.Errorf("expected 'Charlie', got '%s'", CleanUsername(" Charlie"))
+	if CleanUsername("@+Charlie") != "Charlie" {
+		t.Errorf("expected 'Charlie', got '%s'", CleanUsername("@+Charlie"))
+	}
+	if CleanUsername(" Dave") != "Dave" {
+		t.Errorf("expected 'Dave', got '%s'", CleanUsername(" Dave"))
 	}
 	if UserRank("+Alice") != "+" {
 		t.Errorf("expected '+', got '%s'", UserRank("+Alice"))
@@ -94,6 +113,25 @@ func TestUsernameAndIDHelpers(t *testing.T) {
 	}
 	if ToID("Bot Development 123!") != "botdevelopment123" {
 		t.Errorf("expected 'botdevelopment123', got '%s'", ToID("Bot Development 123!"))
+	}
+}
+
+func TestValidationGuards(t *testing.T) {
+	client := NewClient(Config{})
+	if err := client.SendPM("", "hello"); err == nil {
+		t.Error("expected error for empty PM target")
+	}
+	if err := client.SendToRoom("", "hello"); err == nil {
+		t.Error("expected error for empty room")
+	}
+	if err := client.JoinRoom(""); err == nil {
+		t.Error("expected error for empty join room")
+	}
+	if err := client.LeaveRoom(""); err == nil {
+		t.Error("expected error for empty leave room")
+	}
+	if err := client.SetAvatar(""); err == nil {
+		t.Error("expected error for empty avatar")
 	}
 }
 

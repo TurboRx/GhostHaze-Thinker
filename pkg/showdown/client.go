@@ -37,6 +37,8 @@ type Client struct {
 	loggedIn         bool
 	intentionalClose bool
 	currentRoom      string
+	username         string
+	reconnectWake    chan struct{}
 
 	onConnect     []func()
 	onDisconnect  []func(error)
@@ -143,15 +145,20 @@ func (c *Client) Send(message string) error {
 		return errors.New("cannot send: websocket is not connected")
 	}
 
+	_ = c.wsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return c.wsConn.WriteMessage(websocket.TextMessage, []byte(message))
 }
 
 func (c *Client) SendToRoom(room, message string) error {
+	trimmedRoom := strings.TrimSpace(room)
+	if trimmedRoom == "" {
+		return errors.New("cannot send to room: room is empty")
+	}
 	lines := strings.Split(message, "\n")
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
-		if line != "" {
-			if err := c.Send(fmt.Sprintf("%s|%s", room, line)); err != nil {
+		if strings.TrimSpace(line) != "" {
+			if err := c.Send(fmt.Sprintf("%s|%s", trimmedRoom, line)); err != nil {
 				return err
 			}
 		}
@@ -161,10 +168,13 @@ func (c *Client) SendToRoom(room, message string) error {
 
 func (c *Client) SendPM(targetUser, message string) error {
 	target := CleanUsername(targetUser)
+	if target == "" {
+		return errors.New("cannot send PM: target user is empty")
+	}
 	lines := strings.Split(message, "\n")
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
-		if line != "" {
+		if strings.TrimSpace(line) != "" {
 			if err := c.Send(fmt.Sprintf("|/pm %s,%s", target, line)); err != nil {
 				return err
 			}
@@ -174,15 +184,27 @@ func (c *Client) SendPM(targetUser, message string) error {
 }
 
 func (c *Client) JoinRoom(room string) error {
-	return c.Send(fmt.Sprintf("|/join %s", room))
+	trimmed := strings.TrimSpace(room)
+	if trimmed == "" {
+		return errors.New("cannot join room: room name is empty")
+	}
+	return c.Send(fmt.Sprintf("|/join %s", trimmed))
 }
 
 func (c *Client) LeaveRoom(room string) error {
-	return c.Send(fmt.Sprintf("|/leave %s", room))
+	trimmed := strings.TrimSpace(room)
+	if trimmed == "" {
+		return errors.New("cannot leave room: room name is empty")
+	}
+	return c.Send(fmt.Sprintf("|/leave %s", trimmed))
 }
 
 func (c *Client) SetAvatar(avatar string) error {
-	return c.Send(fmt.Sprintf("|/avatar %s", avatar))
+	trimmed := strings.TrimSpace(avatar)
+	if trimmed == "" {
+		return errors.New("cannot set avatar: avatar ID is empty")
+	}
+	return c.Send(fmt.Sprintf("|/avatar %s", trimmed))
 }
 
 func (c *Client) Run(ctx context.Context) error {
@@ -224,9 +246,16 @@ func (c *Client) Run(ctx context.Context) error {
 		}
 
 		// wait reconnect delay before retrying
+		c.stateMu.Lock()
+		wake := make(chan struct{})
+		c.reconnectWake = wake
+		c.stateMu.Unlock()
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-wake:
+			return nil
 		case <-time.After(c.config.ReconnectDelay):
 		}
 	}
@@ -242,9 +271,17 @@ func (c *Client) Disconnect() {
 	c.loggedIn = false
 	conn := c.wsConn
 	c.wsConn = nil
+	if c.reconnectWake != nil {
+		select {
+		case <-c.reconnectWake:
+		default:
+			close(c.reconnectWake)
+		}
+	}
 	c.stateMu.Unlock()
 
 	if conn != nil {
+		_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "disconnecting"))
 		_ = conn.Close()
@@ -260,6 +297,7 @@ func (c *Client) connectAndListen(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
+	defer conn.Close()
 
 	c.writeMu.Lock()
 	c.stateMu.Lock()
@@ -346,6 +384,7 @@ func (c *Client) processMessage(msg RawMessage) {
 			c.stateMu.Lock()
 			wasLoggedIn := c.loggedIn
 			c.loggedIn = !update.IsGuest
+			c.username = CleanUsername(update.Username)
 			c.stateMu.Unlock()
 
 			c.dispatchLogin(update.Username, update.IsGuest)
@@ -450,9 +489,19 @@ func (c *Client) onPostLogin() {
 }
 
 func (c *Client) routeCommand(room, user, text string) {
+	c.stateMu.RLock()
+	currentBotNick := c.username
+	c.stateMu.RUnlock()
+
 	// ignore commands sent by the bot itself
-	if c.config.Username != "" && ToID(user) == ToID(c.config.Username) {
-		return
+	userID := ToID(user)
+	if userID != "" {
+		if c.config.Username != "" && userID == ToID(c.config.Username) {
+			return
+		}
+		if currentBotNick != "" && userID == ToID(currentBotNick) {
+			return
+		}
 	}
 
 	trimmed := strings.TrimSpace(text)
@@ -460,14 +509,19 @@ func (c *Client) routeCommand(room, user, text string) {
 		return
 	}
 
-	cmdStr := strings.TrimPrefix(trimmed, c.config.CommandChar)
-	fields := strings.Fields(cmdStr)
-	if len(fields) == 0 {
+	payload := strings.TrimSpace(strings.TrimPrefix(trimmed, c.config.CommandChar))
+	if payload == "" {
 		return
 	}
 
-	cmdName := strings.ToLower(fields[0])
-	args := strings.TrimSpace(strings.TrimPrefix(cmdStr, fields[0]))
+	var cmdName, args string
+	if idx := strings.IndexAny(payload, " \t"); idx != -1 {
+		cmdName = strings.ToLower(payload[:idx])
+		args = strings.TrimSpace(payload[idx+1:])
+	} else {
+		cmdName = strings.ToLower(payload)
+		args = ""
+	}
 
 	c.handlerMu.RLock()
 	handler, exists := c.commands[cmdName]

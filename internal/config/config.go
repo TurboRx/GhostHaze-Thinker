@@ -16,9 +16,9 @@ func Load() (*showdown.Config, error) {
 	cfg := &showdown.Config{
 		ServerURL:      getEnv("PS_SERVER_URL", showdown.DefaultServerURL),
 		LoginURL:       getEnv("PS_LOGIN_URL", showdown.DefaultLoginURL),
-		Username:       os.Getenv("PS_USERNAME"),
+		Username:       strings.TrimSpace(os.Getenv("PS_USERNAME")),
 		Password:       os.Getenv("PS_PASSWORD"),
-		Avatar:         os.Getenv("PS_AVATAR"),
+		Avatar:         strings.TrimSpace(os.Getenv("PS_AVATAR")),
 		CommandChar:    getEnv("PS_COMMAND_CHAR", showdown.DefaultCommandChar),
 		ReconnectDelay: showdown.DefaultReconnectDelay,
 	}
@@ -67,10 +67,15 @@ func LoadEnvFile(filename string) error {
 		key := strings.TrimSpace(line[:eqIdx])
 		val := strings.TrimSpace(line[eqIdx+1:])
 
-		// strip surrounding quotes if present, otherwise strip unquoted inline comments
-		if len(val) >= 2 && ((strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
-			(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'"))) {
-			val = val[1 : len(val)-1]
+		// parse quoted value or strip unquoted inline comment
+		if strings.HasPrefix(val, "\"") {
+			if lastIdx := strings.LastIndex(val, "\""); lastIdx > 0 {
+				val = val[1:lastIdx]
+			}
+		} else if strings.HasPrefix(val, "'") {
+			if lastIdx := strings.LastIndex(val, "'"); lastIdx > 0 {
+				val = val[1:lastIdx]
+			}
 		} else if idx := strings.Index(val, "#"); idx != -1 {
 			val = strings.TrimSpace(val[:idx])
 		}
