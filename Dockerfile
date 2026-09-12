@@ -28,4 +28,6 @@ COPY --from=builder /build/ghosthaze-thinker /app/ghosthaze-thinker
 # run unprivileged for security
 USER ghosthaze
 
+EXPOSE 8080
+
 CMD ["/app/ghosthaze-thinker"]

@@ -323,6 +323,32 @@ func (c *Client) RoomUsers(room string) []string {
 	return users
 }
 
+// username returns the active username
+func (c *Client) Username() string {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	if c.username != "" {
+		return c.username
+	}
+	return c.config.Username
+}
+
+// rooms returns a slice of currently joined room identifiers
+func (c *Client) Rooms() []string {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	rooms := make([]string, 0, len(c.roomUsers))
+	for r := range c.roomUsers {
+		rooms = append(rooms, r)
+	}
+	return rooms
+}
+
+// clientconfig returns the current configuration
+func (c *Client) ClientConfig() Config {
+	return c.config
+}
+
 func (c *Client) IsInRoom(room, user string) bool {
 	c.stateMu.RLock()
 	defer c.stateMu.RUnlock()

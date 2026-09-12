@@ -96,3 +96,65 @@ func TestCustomSideServerConfig(t *testing.T) {
 	}
 }
 
+func TestWebConfigDefaultsAndOverrides(t *testing.T) {
+	// isolate environment for test
+	oldHost := os.Getenv("WEB_HOST")
+	oldPort := os.Getenv("WEB_PORT")
+	oldEnabled := os.Getenv("WEB_ENABLED")
+	os.Unsetenv("WEB_HOST")
+	os.Unsetenv("WEB_PORT")
+	os.Unsetenv("WEB_ENABLED")
+	defer func() {
+		if oldHost != "" {
+			os.Setenv("WEB_HOST", oldHost)
+		} else {
+			os.Unsetenv("WEB_HOST")
+		}
+		if oldPort != "" {
+			os.Setenv("WEB_PORT", oldPort)
+		} else {
+			os.Unsetenv("WEB_PORT")
+		}
+		if oldEnabled != "" {
+			os.Setenv("WEB_ENABLED", oldEnabled)
+		} else {
+			os.Unsetenv("WEB_ENABLED")
+		}
+	}()
+
+	// test default web configuration
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.WebEnabled {
+		t.Errorf("expected WebEnabled to be true by default")
+	}
+	if cfg.WebPort != 8080 {
+		t.Errorf("expected WebPort to be 8080 by default, got %d", cfg.WebPort)
+	}
+	if cfg.WebHost != "0.0.0.0" {
+		t.Errorf("expected WebHost to be 0.0.0.0 by default, got %s", cfg.WebHost)
+	}
+
+	// test override with environment variables
+	os.Setenv("WEB_ENABLED", "false")
+	os.Setenv("WEB_PORT", "9090")
+	os.Setenv("WEB_HOST", "127.0.0.1")
+
+	customCfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load with custom web config failed: %v", err)
+	}
+	if customCfg.WebEnabled {
+		t.Errorf("expected WebEnabled to be false")
+	}
+	if customCfg.WebPort != 9090 {
+		t.Errorf("expected WebPort 9090, got %d", customCfg.WebPort)
+	}
+	if customCfg.WebHost != "127.0.0.1" {
+		t.Errorf("expected WebHost 127.0.0.1, got %s", customCfg.WebHost)
+	}
+}
+
+

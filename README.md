@@ -16,6 +16,7 @@ Connects to Pokémon Showdown over WebSockets, handles authentication, auto-join
 - **Room State Tracking**: Active user lists, user ranks, away status, room titles, and room renames.
 - **Security & Command Routing**: Intro backlog ignore, command injection prevention (`EscapeChat`), and prefix-based routing.
 - **Server Discovery & Side Servers**: Automatic resolution of server host, port, TLS, WebSocket URL, and login endpoints using Pokémon Showdown's discovery API, with built-in CLI tool support.
+- **Web Control Panel**: Built-in native dashboard on port 8080 with live bot telemetry, room management, server discovery tool, battle monitoring, and activity logs.
 - **Lightweight Docker**: ~6 MB Alpine image published to GitHub Container Registry (`ghcr.io/turborx/ghosthaze-thinker`).
 
 ## Getting Started
@@ -65,6 +66,21 @@ WebSocket URL: wss://sim3.psim.us/showdown/websocket
 ```
 
 The bot also supports side servers by configuring `PS_SERVER_ID`, `PS_SERVER_HOST`, or `PS_SERVER_URL` in `.env`.
+
+### Web Control Panel
+
+The bot includes a built-in native control panel accessible in your web browser at `http://localhost:8080`.
+
+- **Overview**: Live connection state, server metadata, uptime, and active room counts.
+- **Rooms**: View connected channels and join or leave rooms on the fly.
+- **Tools**: Features a web-based **Get-Server discovery tool**, manual room/PM message dispatch, and automated battle challenger.
+- **Battles & Logs**: Monitor active battles and review live incoming/outgoing event streams.
+
+You can customize the listening port or disable the interface via `.env`:
+```bash
+WEB_ENABLED=true
+WEB_PORT=8080
+```
 
 ## Commands
 

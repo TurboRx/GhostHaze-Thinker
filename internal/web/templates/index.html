@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GhostHaze-Thinker Control Panel</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- top navigation bar -->
+  <header class="navbar">
+    <a href="/" class="brand">
+      <div class="brand-icon">G</div>
+      <span>GhostHaze-Thinker</span>
+    </a>
+
+    <nav>
+      <ul class="nav-tabs">
+        <li><button class="nav-tab-btn active" data-tab="overview">Overview</button></li>
+        <li><button class="nav-tab-btn" data-tab="rooms">Rooms</button></li>
+        <li><button class="nav-tab-btn" data-tab="tools">Tools</button></li>
+        <li><button class="nav-tab-btn" data-tab="battles">Battles</button></li>
+        <li><button class="nav-tab-btn" data-tab="logs">Activity Log</button></li>
+      </ul>
+    </nav>
+
+    <div class="nav-status">
+      <div class="status-badge">
+        <span class="status-dot {{if .Connected}}online{{else}}offline{{end}}" id="status-dot"></span>
+        <span id="status-text">{{if .Connected}}Online ({{.Username}}){{else}}Offline{{end}}</span>
+      </div>
+      <span class="chip">{{.ServerID}}</span>
+    </div>
+  </header>
+
+  <!-- main dashboard body -->
+  <main class="container">
+    <div id="global-alert" class="alert"></div>
+
+    <!-- tab 1: overview -->
+    <section id="tab-overview" class="tab-pane active">
+      <div class="grid-stats">
+        <div class="card">
+          <div class="stat-label">Connection Status</div>
+          <div class="stat-value" id="stat-conn">{{if .Connected}}Connected{{else}}Disconnected{{end}}</div>
+          <div class="stat-sub" id="stat-server">{{.ServerID}} ({{.ServerHost}})</div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label">Bot Identity</div>
+          <div class="stat-value" id="stat-user">{{if .Username}}{{.Username}}{{else}}Guest{{end}}</div>
+          <div class="stat-sub">Prefix: <code>{{.CommandChar}}</code></div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label">Active Rooms</div>
+          <div class="stat-value" id="stat-rooms">{{len .Rooms}}</div>
+          <div class="stat-sub">Joined channels</div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label">Uptime</div>
+          <div class="stat-value" id="stat-uptime">{{.Uptime}}</div>
+          <div class="stat-sub">Active battles: <span id="stat-battles">{{len .ActiveBattles}}</span></div>
+        </div>
+      </div>
+
+      <!-- quick message card -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Quick Announcement / Message</h2>
+        </div>
+        <form id="form-send-message">
+          <div class="form-row">
+            <div class="form-group" style="max-width: 140px;">
+              <label class="form-label" for="select-send-type">Destination</label>
+              <select id="select-send-type" class="form-select">
+                <option value="room">Room</option>
+                <option value="pm">PM (User)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="input-send-target">Room Name or Username</label>
+              <input type="text" id="input-send-target" class="form-input" placeholder="e.g. botdevelopment" required>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label" for="input-send-msg">Message</label>
+            <textarea id="input-send-msg" class="form-textarea" placeholder="Type your message here..." required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">Send Message</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- tab 2: rooms management -->
+    <section id="tab-rooms" class="tab-pane">
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <h2 class="card-title">Join a Room</h2>
+        </div>
+        <form id="form-join-room" class="form-row">
+          <div class="form-group">
+            <input type="text" id="input-join-room" class="form-input" placeholder="Room identifier (e.g. lobby, botdevelopment)" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Join Room</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Currently Joined Rooms</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Status</th>
+                <th style="text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rooms-table-body">
+              {{range .Rooms}}
+              <tr>
+                <td><strong>{{.}}</strong></td>
+                <td><span class="chip">Active</span></td>
+                <td style="text-align:right;">
+                  <button class="btn btn-danger btn-sm btn-leave-room" data-room="{{.}}">Leave</button>
+                </td>
+              </tr>
+              {{else}}
+              <tr>
+                <td colspan="3" style="text-align:center;color:var(--text-dim);">No active rooms joined</td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- tab 3: tools (get-server, challenge) -->
+    <section id="tab-tools" class="tab-pane">
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <h2 class="card-title">Get-Server Discovery Tool</h2>
+        </div>
+        <p style="color:var(--text-muted);margin-bottom:16px;">
+          Automatically query and inspect connection parameters for Pokémon Showdown servers.
+        </p>
+        <form id="form-get-server" class="form-row">
+          <div class="form-group">
+            <input type="text" id="input-get-server-url" class="form-input" placeholder="Server URL or ID (e.g. play.pokemonshowdown.com)" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Discover Server</button>
+        </form>
+
+        <div id="get-server-result" class="result-box">
+          <div class="result-row"><span class="result-label">Server Host:</span><span id="res-host" class="result-val">-</span></div>
+          <div class="result-row"><span class="result-label">Port:</span><span id="res-port" class="result-val">-</span></div>
+          <div class="result-row"><span class="result-label">Server-ID:</span><span id="res-id" class="result-val">-</span></div>
+          <div class="result-row"><span class="result-label">TLS / HTTPS:</span><span id="res-tls" class="result-val">-</span></div>
+          <div class="result-row"><span class="result-label">WebSocket URL:</span><span id="res-ws" class="result-val">-</span></div>
+          <div class="result-row"><span class="result-label">Login URL:</span><span id="res-login" class="result-val">-</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Battle Challenge Tool</h2>
+        </div>
+        <p style="color:var(--text-muted);margin-bottom:16px;">
+          Issue an automated battle challenge to another trainer.
+        </p>
+        <form id="form-challenge">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="input-challenge-user">Trainer Username</label>
+              <input type="text" id="input-challenge-user" class="form-input" placeholder="Opponent username" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="input-challenge-format">Format</label>
+              <input type="text" id="input-challenge-format" class="form-input" value="gen9randombattle" placeholder="e.g. gen9randombattle">
+            </div>
+            <button type="submit" class="btn btn-primary">Send Challenge</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- tab 4: battles -->
+    <section id="tab-battles" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Active Battles</h2>
+          <span class="chip">{{if .AutoBattle}}Auto-Battle: ON{{else}}Auto-Battle: OFF{{end}}</span>
+        </div>
+        <div id="battles-container">
+          <p style="color:var(--text-dim);text-align:center;padding:24px;">No active battles currently in progress</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- tab 5: activity logs -->
+    <section id="tab-logs" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Live Activity Log</h2>
+          <span class="chip">Auto-refreshing</span>
+        </div>
+        <div id="activity-log-box" class="log-box">
+          <div style="color:var(--text-dim);">Listening for server and chat events...</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>GhostHaze-Thinker &bull; Pokémon Showdown Bot &amp; Client in Go</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

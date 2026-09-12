@@ -10,7 +10,15 @@ import (
 	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown"
 )
 
-func Load() (*showdown.Config, error) {
+// config holds application configuration including showdown client and web control panel
+type Config struct {
+	*showdown.Config
+	WebEnabled bool
+	WebHost    string
+	WebPort    int
+}
+
+func Load() (*Config, error) {
 	_ = LoadEnvFile(".env")
 
 	cfg := &showdown.Config{
@@ -80,7 +88,32 @@ func Load() (*showdown.Config, error) {
 	}
 
 	cfg.ApplyDefaults()
-	return cfg, nil
+
+	webEnabled := true
+	if val := os.Getenv("WEB_ENABLED"); val == "false" || val == "0" {
+		webEnabled = false
+	}
+	webPort := 8080
+	if val := os.Getenv("WEB_PORT"); val != "" {
+		if p, err := strconv.Atoi(val); err == nil && p > 0 {
+			webPort = p
+		}
+	} else if val := os.Getenv("PORT"); val != "" {
+		if p, err := strconv.Atoi(val); err == nil && p > 0 {
+			webPort = p
+		}
+	}
+	webHost := os.Getenv("WEB_HOST")
+	if webHost == "" {
+		webHost = "0.0.0.0"
+	}
+
+	return &Config{
+		Config:     cfg,
+		WebEnabled: webEnabled,
+		WebHost:    webHost,
+		WebPort:    webPort,
+	}, nil
 }
 
 
