@@ -153,8 +153,12 @@ document.addEventListener("DOMContentLoaded", function () {
     if (userEl) userEl.value = data.username || "";
     if (avatarEl) avatarEl.value = data.avatar || "";
     if (cmdEl) cmdEl.value = data.command_char || ".";
+    const roomsEl = document.getElementById("cfg-rooms");
+    if (roomsEl) roomsEl.value = data.config_rooms ? data.config_rooms.join(", ") : (data.rooms ? data.rooms.join(", ") : "");
     if (autoBattleEl) autoBattleEl.checked = !!data.auto_battle;
     if (autoLeaveEl) autoLeaveEl.checked = data.auto_leave_battle !== false;
+    const maxBattlesEl = document.getElementById("cfg-max-battles");
+    if (maxBattlesEl) maxBattlesEl.value = data.max_battles !== undefined ? data.max_battles : 1;
     if (winMsgEl) winMsgEl.value = data.battle_win_msg || "";
     if (loseMsgEl) loseMsgEl.value = data.battle_lose_msg || "";
     if (formatsEl) formatsEl.value = data.battle_formats ? data.battle_formats.join(", ") : "gen9randombattle";
@@ -268,6 +272,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const logBox = document.getElementById("activity-log-box");
     if (!logBox) return;
 
+    const isNearBottom = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 80;
+
     let filtered = cachedLogs;
     if (activeLogFilter !== "all") {
       filtered = cachedLogs.filter((e) => e.type === activeLogFilter);
@@ -293,6 +299,10 @@ document.addEventListener("DOMContentLoaded", function () {
       </div>`;
     });
     logBox.innerHTML = html;
+
+    if (isNearBottom) {
+      logBox.scrollTop = logBox.scrollHeight;
+    }
   }
 
   // fetch activity logs
@@ -412,6 +422,32 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // quick challenge form in battles tab
+  const quickChallengeForm = document.getElementById("form-quick-challenge");
+  if (quickChallengeForm) {
+    quickChallengeForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const user = document.getElementById("input-quick-challenge-user").value.trim();
+      const format = document.getElementById("input-quick-challenge-format").value.trim() || "gen9randombattle";
+
+      if (!user) {
+        showAlert("error", "Username cannot be empty");
+        return;
+      }
+
+      postJSON("/api/challenge", { user: user, format: format }, function (err) {
+        if (err) {
+          showAlert("error", "Failed to challenge user: " + err);
+        } else {
+          showAlert("success", "Challenge sent to " + user + " in " + format);
+          document.getElementById("input-quick-challenge-user").value = "";
+          updateLogs();
+          updateStatus();
+        }
+      });
+    });
+  }
+
   // get-server discovery tool
   const getServerForm = document.getElementById("form-get-server");
   if (getServerForm) {
@@ -514,6 +550,62 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // toggle password visibility
+  const btnTogglePw = document.getElementById("btn-toggle-pw");
+  if (btnTogglePw) {
+    btnTogglePw.addEventListener("click", function () {
+      const pwInput = document.getElementById("cfg-password");
+      if (!pwInput) return;
+      if (pwInput.type === "password") {
+        pwInput.type = "text";
+        this.textContent = "Hide";
+      } else {
+        pwInput.type = "password";
+        this.textContent = "Show";
+      }
+    });
+  }
+
+  const btnToggleLoginPw = document.getElementById("btn-toggle-login-pw");
+  if (btnToggleLoginPw) {
+    btnToggleLoginPw.addEventListener("click", function () {
+      const pwInput = document.getElementById("input-login-password");
+      if (!pwInput) return;
+      if (pwInput.type === "password") {
+        pwInput.type = "text";
+        this.textContent = "Hide";
+      } else {
+        pwInput.type = "password";
+        this.textContent = "Show";
+      }
+    });
+  }
+
+  // bot login tool form
+  const loginForm = document.getElementById("form-bot-login");
+  if (loginForm) {
+    loginForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const user = document.getElementById("input-login-username").value.trim();
+      const pass = document.getElementById("input-login-password").value;
+
+      if (!user) {
+        showAlert("error", "Username cannot be empty");
+        return;
+      }
+
+      postJSON("/api/bot/login", { username: user, password: pass }, function (err) {
+        if (err) {
+          showAlert("error", "Login error: " + err);
+        } else {
+          showAlert("success", "Login submitted for " + user);
+          updateStatus();
+          updateLogs();
+        }
+      });
+    });
+  }
+
   // save configuration helper
   function saveBotConfig(reconnect) {
     const host = document.getElementById("cfg-server-host").value.trim();
@@ -523,14 +615,18 @@ document.addEventListener("DOMContentLoaded", function () {
     const user = document.getElementById("cfg-username").value.trim();
     const pass = document.getElementById("cfg-password").value;
     const avatar = document.getElementById("cfg-avatar").value.trim();
+    const cmdChar = document.getElementById("cfg-command-char") ? document.getElementById("cfg-command-char").value.trim() : ".";
+    const roomsRaw = document.getElementById("cfg-rooms") ? document.getElementById("cfg-rooms").value.trim() : "";
     const autoBattle = document.getElementById("cfg-auto-battle") ? document.getElementById("cfg-auto-battle").checked : false;
     const autoLeave = document.getElementById("cfg-auto-leave-battle") ? document.getElementById("cfg-auto-leave-battle").checked : true;
+    const maxBattles = parseInt(document.getElementById("cfg-max-battles") ? document.getElementById("cfg-max-battles").value.trim() : "1", 10) || 0;
     const winMsg = document.getElementById("cfg-battle-win-msg") ? document.getElementById("cfg-battle-win-msg").value.trim() : "";
     const loseMsg = document.getElementById("cfg-battle-lose-msg") ? document.getElementById("cfg-battle-lose-msg").value.trim() : "";
     const formatsRaw = document.getElementById("cfg-battle-formats").value.trim();
     const team = document.getElementById("cfg-battle-team").value.trim();
 
     const formats = formatsRaw.split(",").map((f) => f.trim()).filter((f) => f !== "");
+    const rooms = roomsRaw.split(",").map((r) => r.trim()).filter((r) => r !== "");
 
     const payload = {
       server_id: id,
@@ -541,8 +637,10 @@ document.addEventListener("DOMContentLoaded", function () {
       password: pass,
       avatar: avatar,
       command_char: cmdChar,
+      rooms: rooms,
       auto_battle: autoBattle,
       auto_leave_battle: autoLeave,
+      max_battles: maxBattles,
       battle_win_msg: winMsg,
       battle_lose_msg: loseMsg,
       battle_formats: formats,

@@ -1015,4 +1015,59 @@ func TestBattleAutoLeaveAndForfeit(t *testing.T) {
 	}
 }
 
+func TestClientLogin(t *testing.T) {
+	cfg := Config{
+		ServerID:   "dummytest",
+		ServerHost: "dummyhost.psim.us",
+		Username:   "olduser",
+	}
+	client := NewClient(cfg)
+
+	// empty username should error
+	if err := client.Login("", "pass"); err == nil {
+		t.Errorf("expected error when login with empty username")
+	}
+
+	// dynamic login with new credentials
+	if err := client.Login("newuser", "newpass"); err != nil {
+		t.Errorf("unexpected error on login: %v", err)
+	}
+
+	updatedCfg := client.ClientConfig()
+	if updatedCfg.Username != "newuser" {
+		t.Errorf("expected updated username 'newuser', got '%s'", updatedCfg.Username)
+	}
+	if updatedCfg.Password != "newpass" {
+		t.Errorf("expected updated password 'newpass', got '%s'", updatedCfg.Password)
+	}
+}
+
+func TestCleanupStaleBattles(t *testing.T) {
+	cfg := Config{
+		ServerID:   "dummytest",
+		ServerHost: "dummyhost.psim.us",
+	}
+	client := NewClient(cfg)
+
+	room := "battle-gen9randombattle-888"
+	client.handleRawPayload(">" + room + "\n|init|battle\n|player|p1|GhostHaze\n|player|p2|Foe")
+
+	b, ok := client.Battle(room)
+	if !ok {
+		t.Fatalf("expected battle to exist")
+	}
+
+	// mark battle as ended and simulate lingering time
+	b.SetEnded(true)
+	b.LastActivity = time.Now().Add(-15 * time.Second)
+
+	client.cleanupStaleBattles()
+
+	// should be cleaned up from battles
+	if _, exists := client.Battle(room); exists {
+		t.Errorf("expected ended battle to be cleaned up")
+	}
+}
+
+
 

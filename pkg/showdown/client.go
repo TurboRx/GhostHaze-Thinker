@@ -41,6 +41,7 @@ type Client struct {
 	intentionalClose bool
 	currentRoom      string
 	username         string
+	lastChallstr     string
 	reconnectWake    chan struct{}
 	roomInIntro      map[string]bool
 	roomUsers        map[string]map[string]string
@@ -304,6 +305,8 @@ func (c *Client) LeaveRoom(room string) error {
 		delete(c.battles, roomID)
 		c.battleMu.Unlock()
 	}
+	_ = c.SendToRoom(trimmed, "/leave")
+	_ = c.Send(fmt.Sprintf("|/noreply /leave %s", trimmed))
 	return c.Send(fmt.Sprintf("|/leave %s", trimmed))
 }
 
@@ -397,7 +400,9 @@ func (c *Client) Rooms() []string {
 	defer c.stateMu.RUnlock()
 	rooms := make([]string, 0, len(c.roomUsers))
 	for r := range c.roomUsers {
-		rooms = append(rooms, r)
+		if !strings.HasPrefix(r, "battle-") {
+			rooms = append(rooms, r)
+		}
 	}
 	return rooms
 }
@@ -751,6 +756,7 @@ func (c *Client) connectAndListen(ctx context.Context) error {
 					_ = currentConn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second))
 				}
 				c.writeMu.Unlock()
+				c.cleanupStaleBattles()
 			case <-done:
 				return
 			case <-ctx.Done():
@@ -797,6 +803,9 @@ func (c *Client) processMessage(msg RawMessage) {
 	switch msg.Type {
 	case "challstr":
 		if challstr, ok := ParseChallstr(msg); ok {
+			c.stateMu.Lock()
+			c.lastChallstr = challstr
+			c.stateMu.Unlock()
 			go c.authenticate(challstr)
 		}
 
@@ -946,6 +955,16 @@ func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
 	c.battleMu.RLock()
 	auto := c.autoBattle
 	allowedFormats := append([]string{}, c.battleFormats...)
+	maxBattles := c.config.MaxBattles
+	if maxBattles <= 0 {
+		maxBattles = 1
+	}
+	currentBattles := 0
+	for _, b := range c.battles {
+		if !b.IsEnded() {
+			currentBattles++
+		}
+	}
 	c.battleMu.RUnlock()
 
 	for from, format := range cu.ChallengesFrom {
@@ -953,6 +972,9 @@ func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
 		c.dispatchChallenge(cleanFrom, format)
 
 		if auto {
+			if currentBattles >= maxBattles {
+				continue
+			}
 			allowed := false
 			if len(allowedFormats) == 0 {
 				allowed = true
@@ -967,6 +989,7 @@ func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
 			}
 			if allowed {
 				_ = c.AcceptChallenge(cleanFrom)
+				currentBattles++
 			}
 		}
 	}
@@ -992,6 +1015,13 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 		c.battleMu.Unlock()
 	}
 
+	// ensure timer is activated if not started by turn 1
+	if msg.Type == "turn" && len(msg.Parts) > 0 && msg.Parts[0] == "1" {
+		if !b.IsTimerActive() {
+			_ = c.SendToRoom(room, "/timer on")
+		}
+	}
+
 	c.stateMu.RLock()
 	myNick := c.username
 	c.stateMu.RUnlock()
@@ -1003,6 +1033,7 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 	}
 
 	if msg.Type == "win" || msg.Type == "tie" || msg.Type == "prematureend" || msg.Type == "expire" {
+		b.SetEnded(true)
 		winner := ""
 		if len(msg.Parts) > 0 {
 			winner = msg.Parts[0]
@@ -1043,7 +1074,7 @@ func (c *Client) autoLeaveBattleAfterDelay(room, winner, myNick, winMsg, loseMsg
 	}
 
 	// brief delay to allow victory banner and chat messages to appear cleanly
-	time.Sleep(1 * time.Second)
+	time.Sleep(1500 * time.Millisecond)
 
 	_ = c.SendToRoom(room, "/leavebattle")
 	_ = c.LeaveRoom(room)
@@ -1476,4 +1507,60 @@ func (c *Client) dispatchBattleEnd(b *battle.Battle, winner string) {
 	for _, h := range handlers {
 		go h(b, winner)
 	}
+}
+
+// cleanupstalebattles removes battles that have ended or been abandoned without activity
+func (c *Client) cleanupStaleBattles() {
+	now := time.Now()
+	var forfeitRooms []string
+	var leaveRooms []string
+
+	c.battleMu.RLock()
+	for _, b := range c.battles {
+		if b.IsEnded() {
+			if now.Sub(b.LastActivityTime()) > 10*time.Second {
+				leaveRooms = append(leaveRooms, b.Room)
+			}
+		} else {
+			if now.Sub(b.LastActivityTime()) > 2*time.Minute {
+				forfeitRooms = append(forfeitRooms, b.Room)
+			}
+		}
+	}
+	c.battleMu.RUnlock()
+
+	for _, room := range forfeitRooms {
+		_ = c.ForfeitBattle(room)
+	}
+	for _, room := range leaveRooms {
+		_ = c.LeaveRoom(room)
+	}
+}
+
+// login authenticates the client using the specified credentials
+func (c *Client) Login(username, password string) error {
+	cleanUser := strings.TrimSpace(username)
+	if cleanUser == "" {
+		return errors.New("cannot login: username is empty")
+	}
+
+	c.stateMu.Lock()
+	c.config.Username = cleanUser
+	c.config.Password = password
+	challstr := c.lastChallstr
+	connected := c.connected
+	c.stateMu.Unlock()
+
+	if !connected {
+		c.Reconnect()
+		return nil
+	}
+
+	if challstr != "" {
+		go c.authenticate(challstr)
+		return nil
+	}
+
+	c.Reconnect()
+	return nil
 }

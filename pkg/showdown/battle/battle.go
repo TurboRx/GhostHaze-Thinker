@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type OpponentActivePoke struct {
@@ -45,6 +46,8 @@ type Battle struct {
 	Winner          string
 	LastRQID        int
 	Engine          BattleEngine
+	LastActivity    time.Time
+	TimerActive     bool
 }
 
 func NewBattle(room string, engine BattleEngine) *Battle {
@@ -59,7 +62,8 @@ func NewBattle(room string, engine BattleEngine) *Battle {
 			HPPercent: 1.0,
 			Boosts:    make(map[string]int),
 		},
-		Engine: engine,
+		Engine:       engine,
+		LastActivity: time.Now(),
 	}
 }
 
@@ -87,6 +91,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.LastActivity = time.Now()
 
 	msgType := parts[0]
 
@@ -322,6 +327,12 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			}
 		}
 
+	case "inactive":
+		b.TimerActive = true
+
+	case "inactiveoff":
+		b.TimerActive = false
+
 	case "win", "tie", "prematureend", "expire":
 		b.Ended = true
 		if len(parts) > 1 {
@@ -470,4 +481,33 @@ func (b *Battle) WinnerName() string {
 	defer b.mu.RUnlock()
 	return b.Winner
 }
+
+// lastactivitytime returns timestamp of last activity in battle
+func (b *Battle) LastActivityTime() time.Time {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.LastActivity
+}
+
+// istimeractive returns whether the battle timer has been activated
+func (b *Battle) IsTimerActive() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.TimerActive
+}
+
+// settimeractive updates the timer active status
+func (b *Battle) SetTimerActive(active bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.TimerActive = active
+}
+
+// setended marks the battle as ended
+func (b *Battle) SetEnded(ended bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.Ended = ended
+}
+
 

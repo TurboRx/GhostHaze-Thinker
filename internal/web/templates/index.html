@@ -149,11 +149,14 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="cfg-password">Password</label>
-              <input type="password" id="cfg-password" class="form-input" placeholder="Leave blank for unregistered/guest accounts">
+              <div style="display:flex;gap:6px;">
+                <input type="password" id="cfg-password" class="form-input" placeholder="Leave blank for unregistered/guest accounts">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-pw" style="white-space:nowrap;">Show</button>
+              </div>
             </div>
           </div>
 
-          <div class="form-row" style="margin-bottom:20px;">
+          <div class="form-row" style="margin-bottom:16px;">
             <div class="form-group">
               <label class="form-label" for="cfg-avatar">Avatar ID</label>
               <input type="text" id="cfg-avatar" class="form-input" value="{{.Avatar}}" placeholder="e.g. 169">
@@ -162,6 +165,11 @@
               <label class="form-label" for="cfg-command-char">Command Prefix</label>
               <input type="text" id="cfg-command-char" class="form-input" value="{{.CommandChar}}" placeholder="." maxlength="3">
             </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:20px;">
+            <label class="form-label" for="cfg-rooms">Auto-Join Rooms (comma-separated)</label>
+            <input type="text" id="cfg-rooms" class="form-input" value="{{.ConfigRooms}}" placeholder="botdevelopment, lobby">
           </div>
 
           <h3 style="font-size:14px;color:var(--text-main);margin-bottom:12px;border-bottom:1px solid var(--border-color);padding-bottom:6px;">
@@ -180,6 +188,17 @@
 
           <div class="form-row" style="margin-bottom:14px;">
             <div class="form-group">
+              <label class="form-label" for="cfg-max-battles">Max Simultaneous Battles (0 = unlimited)</label>
+              <input type="number" id="cfg-max-battles" class="form-input" value="{{.MaxBattles}}" min="0" max="32">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="cfg-battle-formats">Allowed Formats (comma-separated)</label>
+              <input type="text" id="cfg-battle-formats" class="form-input" value="{{.BattleFormats}}" placeholder="gen9randombattle, gen9ou">
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom:14px;">
+            <div class="form-group">
               <label class="form-label" for="cfg-battle-win-msg">Win Message (Optional)</label>
               <input type="text" id="cfg-battle-win-msg" class="form-input" value="{{.BattleWinMsg}}" placeholder="e.g. GG">
             </div>
@@ -187,11 +206,6 @@
               <label class="form-label" for="cfg-battle-lose-msg">Lose Message (Optional)</label>
               <input type="text" id="cfg-battle-lose-msg" class="form-input" value="{{.BattleLoseMsg}}" placeholder="e.g. gg">
             </div>
-          </div>
-
-          <div class="form-group" style="margin-bottom:14px;">
-            <label class="form-label" for="cfg-battle-formats">Allowed Battle Formats (comma-separated)</label>
-            <input type="text" id="cfg-battle-formats" class="form-input" value="{{.BattleFormats}}" placeholder="gen9randombattle, gen9ou">
           </div>
 
           <div class="form-group" style="margin-bottom:24px;">
@@ -303,7 +317,7 @@
         </form>
       </div>
 
-      <div class="card">
+      <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
           <h2 class="card-title">Quick Avatar Tool</h2>
         </div>
@@ -314,10 +328,50 @@
           <button type="submit" class="btn btn-primary">Update Avatar</button>
         </form>
       </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Bot Login &amp; Authentication</h2>
+        </div>
+        <p style="color:var(--text-muted);margin-bottom:16px;">
+          Directly authenticate the bot with a username and password without restarting the process.
+        </p>
+        <form id="form-bot-login">
+          <div class="form-row" style="margin-bottom:14px;">
+            <div class="form-group">
+              <label class="form-label" for="input-login-username">Username</label>
+              <input type="text" id="input-login-username" class="form-input" placeholder="Bot username" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="input-login-password">Password</label>
+              <div style="display:flex;gap:6px;">
+                <input type="password" id="input-login-password" class="form-input" placeholder="Password (leave blank for guest)">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-login-pw" style="white-space:nowrap;">Show</button>
+              </div>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">Login to Showdown</button>
+        </form>
+      </div>
     </section>
 
     <!-- tab 5: battles -->
     <section id="tab-battles" class="tab-pane">
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <h2 class="card-title">Quick Challenge</h2>
+        </div>
+        <form id="form-quick-challenge" class="form-row">
+          <div class="form-group">
+            <input type="text" id="input-quick-challenge-user" class="form-input" placeholder="Opponent Username" required>
+          </div>
+          <div class="form-group">
+            <input type="text" id="input-quick-challenge-format" class="form-input" value="gen9randombattle" placeholder="Format (e.g. gen9randombattle)">
+          </div>
+          <button type="submit" class="btn btn-primary">Challenge</button>
+        </form>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <h2 class="card-title">Active Battles</h2>

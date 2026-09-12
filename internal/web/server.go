@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TurboRx/GhostHaze-Thinker/internal/config"
 	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown"
 )
 
@@ -132,6 +133,7 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/config/update", s.handleAPIConfigUpdate)
 	mux.HandleFunc("/api/bot/reconnect", s.handleAPIBotReconnect)
 	mux.HandleFunc("/api/bot/avatar", s.handleAPIBotAvatar)
+	mux.HandleFunc("/api/bot/login", s.handleAPIBotLogin)
 	mux.HandleFunc("/api/battles/forfeit", s.handleAPIBattlesForfeit)
 	mux.HandleFunc("/api/battles/leave", s.handleAPIBattlesLeave)
 
@@ -173,10 +175,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		"ServerSSL":     ssl,
 		"Avatar":        cfg.Avatar,
 		"CommandChar":   cfg.CommandChar,
-		"Rooms":         s.client.Rooms(),
+		"Rooms":           s.client.Rooms(),
+		"ConfigRooms":     strings.Join(cfg.Rooms, ", "),
 		"ActiveBattles":   battlesData,
 		"AutoBattle":      s.client.AutoBattle(),
 		"AutoLeaveBattle": cfg.ShouldAutoLeaveBattle(),
+		"MaxBattles":      cfg.MaxBattles,
 		"BattleWinMsg":    cfg.BattleWinMsg,
 		"BattleLoseMsg":   cfg.BattleLoseMsg,
 		"BattleFormats":   strings.Join(s.client.BattleFormats(), ", "),
@@ -237,11 +241,13 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"command_char":          cfg.CommandChar,
 		"auto_battle":           s.client.AutoBattle(),
 		"auto_leave_battle":     cfg.ShouldAutoLeaveBattle(),
+		"max_battles":           cfg.MaxBattles,
 		"battle_win_msg":        cfg.BattleWinMsg,
 		"battle_lose_msg":       cfg.BattleLoseMsg,
 		"battle_formats":        s.client.BattleFormats(),
 		"battle_team":           s.client.BattleTeam(),
 		"rooms":                 s.client.Rooms(),
+		"config_rooms":          cfg.Rooms,
 		"active_battles":        battlesData,
 		"connected_at_ms":       connectedAtMs,
 		"uptime_seconds":        uptimeSec,
@@ -453,8 +459,10 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		Password        string   `json:"password"`
 		Avatar          string   `json:"avatar"`
 		CommandChar     string   `json:"command_char"`
+		Rooms           []string `json:"rooms"`
 		AutoBattle      *bool    `json:"auto_battle"`
 		AutoLeaveBattle *bool    `json:"auto_leave_battle"`
+		MaxBattles      int      `json:"max_battles"`
 		BattleWinMsg    string   `json:"battle_win_msg"`
 		BattleLoseMsg   string   `json:"battle_lose_msg"`
 		BattleFormats   []string `json:"battle_formats"`
@@ -491,11 +499,17 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if req.CommandChar != "" {
 			cfg.CommandChar = req.CommandChar
 		}
+		if len(req.Rooms) > 0 {
+			cfg.Rooms = req.Rooms
+		}
 		if req.AutoBattle != nil {
 			cfg.AutoBattle = *req.AutoBattle
 		}
 		if req.AutoLeaveBattle != nil {
 			cfg.AutoLeaveBattle = req.AutoLeaveBattle
+		}
+		if req.MaxBattles > 0 {
+			cfg.MaxBattles = req.MaxBattles
 		}
 		if req.BattleWinMsg != "" {
 			cfg.BattleWinMsg = req.BattleWinMsg
@@ -511,6 +525,10 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		cfg.ApplyDefaults()
 	})
 
+	// persist updated configuration to .env file
+	savedCfg := s.client.ClientConfig()
+	_ = config.SaveEnvFile(".env", &savedCfg)
+
 	s.AddLog("system", "Control Panel", "Configuration updated")
 
 	if req.Avatar != "" {
@@ -523,6 +541,34 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "configuration saved"})
+}
+
+// handleapibotlogin authenticates the bot with username and password
+func (s *Server) handleAPIBotLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Username) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid or missing username"})
+		return
+	}
+
+	if err := s.client.Login(req.Username, req.Password); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	savedCfg := s.client.ClientConfig()
+	_ = config.SaveEnvFile(".env", &savedCfg)
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Login request submitted for user '%s'", req.Username))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "login initiated"})
 }
 
 // handleapibattlesforfeit forfeits an active battle and leaves the room

@@ -3,8 +3,11 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown"
 )
 
 func TestLoadEnvFile(t *testing.T) {
@@ -154,6 +157,49 @@ func TestWebConfigDefaultsAndOverrides(t *testing.T) {
 	}
 	if customCfg.WebHost != "127.0.0.1" {
 		t.Errorf("expected WebHost 127.0.0.1, got %s", customCfg.WebHost)
+	}
+}
+
+func TestSaveEnvFile(t *testing.T) {
+	tempDir := t.TempDir()
+	envPath := filepath.Join(tempDir, ".env")
+
+	trueVal := true
+	cfg := &showdown.Config{
+		ServerID:        "dummytest",
+		ServerHost:      "dummyhost.psim.us",
+		ServerPort:      8000,
+		ServerSSL:       &trueVal,
+		Username:        "testbot",
+		Password:        "testpass",
+		Avatar:          "169",
+		CommandChar:     ".",
+		Rooms:           []string{"botdevelopment", "lobby"},
+		AutoBattle:      true,
+		AutoLeaveBattle: &trueVal,
+		BattleWinMsg:    "gg",
+		BattleLoseMsg:   "good game",
+		BattleFormats:   []string{"gen9randombattle"},
+		BattleTeam:      "Pikachu||lightball|lightningrod|thunderbolt|||||50",
+	}
+
+	if err := SaveEnvFile(envPath, cfg); err != nil {
+		t.Fatalf("SaveEnvFile failed: %v", err)
+	}
+
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("failed to read written env file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "PS_SERVER_ID=dummytest") {
+		t.Errorf("missing PS_SERVER_ID in written file")
+	}
+	if !strings.Contains(content, "PS_USERNAME=testbot") {
+		t.Errorf("missing PS_USERNAME in written file")
+	}
+	if !strings.Contains(content, "PS_AUTO_BATTLE=true") {
+		t.Errorf("missing PS_AUTO_BATTLE in written file")
 	}
 }
 

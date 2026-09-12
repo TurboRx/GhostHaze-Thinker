@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -178,4 +179,49 @@ func getEnv(key, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+// saveenvfile writes current showdown configuration to an env file
+func SaveEnvFile(filename string, cfg *showdown.Config) error {
+	if cfg == nil {
+		return nil
+	}
+
+	sslStr := "true"
+	if cfg.ServerSSL != nil && !*cfg.ServerSSL {
+		sslStr = "false"
+	}
+
+	autoBattleStr := "false"
+	if cfg.AutoBattle {
+		autoBattleStr = "true"
+	}
+
+	autoLeaveStr := "true"
+	if cfg.AutoLeaveBattle != nil && !*cfg.AutoLeaveBattle {
+		autoLeaveStr = "false"
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# pokemon showdown bot configuration\n")
+	sb.WriteString(fmt.Sprintf("PS_SERVER_ID=%s\n", cfg.ServerID))
+	sb.WriteString(fmt.Sprintf("PS_SERVER_HOST=%s\n", cfg.ServerHost))
+	sb.WriteString(fmt.Sprintf("PS_SERVER_PORT=%d\n", cfg.ServerPort))
+	sb.WriteString(fmt.Sprintf("PS_SERVER_SSL=%s\n", sslStr))
+	if cfg.ServerURL != "" {
+		sb.WriteString(fmt.Sprintf("PS_SERVER_URL=%s\n", cfg.ServerURL))
+	}
+	sb.WriteString(fmt.Sprintf("PS_USERNAME=%s\n", cfg.Username))
+	sb.WriteString(fmt.Sprintf("PS_PASSWORD=%s\n", cfg.Password))
+	sb.WriteString(fmt.Sprintf("PS_AVATAR=%s\n", cfg.Avatar))
+	sb.WriteString(fmt.Sprintf("PS_COMMAND_CHAR=%s\n", cfg.CommandChar))
+	sb.WriteString(fmt.Sprintf("PS_ROOMS=%s\n", strings.Join(cfg.Rooms, ",")))
+	sb.WriteString(fmt.Sprintf("PS_AUTO_BATTLE=%s\n", autoBattleStr))
+	sb.WriteString(fmt.Sprintf("PS_AUTO_LEAVE_BATTLE=%s\n", autoLeaveStr))
+	sb.WriteString(fmt.Sprintf("PS_BATTLE_WIN_MSG=%s\n", cfg.BattleWinMsg))
+	sb.WriteString(fmt.Sprintf("PS_BATTLE_LOSE_MSG=%s\n", cfg.BattleLoseMsg))
+	sb.WriteString(fmt.Sprintf("PS_BATTLE_FORMATS=%s\n", strings.Join(cfg.BattleFormats, ",")))
+	sb.WriteString(fmt.Sprintf("PS_BATTLE_TEAM=%s\n", cfg.BattleTeam))
+
+	return os.WriteFile(filename, []byte(sb.String()), 0600)
 }

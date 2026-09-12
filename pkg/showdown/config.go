@@ -37,6 +37,7 @@ type Config struct {
 	HTTPClient     *http.Client
 	AutoBattle      bool
 	AutoLeaveBattle *bool
+	MaxBattles      int
 	BattleWinMsg    string
 	BattleLoseMsg   string
 	BattleFormats   []string
@@ -115,6 +116,9 @@ func (c *Config) ApplyDefaults() {
 	if c.AutoLeaveBattle == nil {
 		leave := true
 		c.AutoLeaveBattle = &leave
+	}
+	if c.MaxBattles <= 0 {
+		c.MaxBattles = 1
 	}
 }
 

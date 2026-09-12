@@ -166,6 +166,16 @@ func TestWebServerEndpoints(t *testing.T) {
 		if leaveRR.Code != http.StatusOK && leaveRR.Code != http.StatusInternalServerError {
 			t.Errorf("unexpected status for leave: %d", leaveRR.Code)
 		}
+
+		// test bot login endpoint
+		loginPayload := `{"username":"testeruser","password":"mypassword"}`
+		loginReq := httptest.NewRequest(http.MethodPost, "/api/bot/login", bytes.NewBufferString(loginPayload))
+		loginRR := httptest.NewRecorder()
+		mux.ServeHTTP(loginRR, loginReq)
+		if loginRR.Code != http.StatusOK {
+			t.Errorf("expected 200 for bot login, got %d: %s", loginRR.Code, loginRR.Body.String())
+		}
 	})
 }
+
 
