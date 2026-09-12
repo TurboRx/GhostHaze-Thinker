@@ -15,6 +15,7 @@ Connects to Pokémon Showdown over WebSockets, handles authentication, auto-join
 - **Battle Engine**: Full battle protocol support, challenge detection & auto-acceptance, and competitive decision heuristics (18-type effectiveness, lethal KO priority, priority finishers, smart status infliction, healing thresholds, entry hazards, Terastallization, and team preview lead selection).
 - **Room State Tracking**: Active user lists, user ranks, away status, room titles, and room renames.
 - **Security & Command Routing**: Intro backlog ignore, command injection prevention (`EscapeChat`), and prefix-based routing.
+- **Server Discovery & Side Servers**: Automatic resolution of server host, port, TLS, WebSocket URL, and login endpoints using Pokémon Showdown's discovery API, with built-in CLI tool support.
 - **Lightweight Docker**: ~6 MB Alpine image published to GitHub Container Registry (`ghcr.io/turborx/ghosthaze-thinker`).
 
 ## Getting Started
@@ -45,6 +46,25 @@ Connects to Pokémon Showdown over WebSockets, handles authentication, auto-join
    # Or run with Docker
    docker compose up -d
    ```
+
+### Server Discovery Tool
+
+Inspect connection details for Pokémon Showdown servers using the built-in discovery tool:
+
+```bash
+go run ./cmd/ghosthaze-thinker -get-server play.pokemonshowdown.com
+```
+
+Output:
+```text
+Server: sim3.psim.us
+Port: 443
+Server-ID: showdown
+Secure connection (TLS): YES
+WebSocket URL: wss://sim3.psim.us/showdown/websocket
+```
+
+The bot also supports side servers by configuring `PS_SERVER_ID`, `PS_SERVER_HOST`, or `PS_SERVER_URL` in `.env`.
 
 ## Commands
 
