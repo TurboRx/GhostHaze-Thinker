@@ -38,6 +38,6 @@ jobs:
         with:
           commit-message: "Update Showdown data from smogon/pokemon-showdown"
           title: "Automatic Showdown Data Update"
-          body: "Automated update of battle datasets fetched directly from smogon/pokemon-showdown."
+          body: "Automated update of battle datasets."
           branch: automation/update-data
           delete-branch: true
