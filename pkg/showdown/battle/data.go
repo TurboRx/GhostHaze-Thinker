@@ -3,6 +3,7 @@ package battle
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -16,6 +17,12 @@ var embeddedPokedexJSON []byte
 //go:embed data/random_sets.json
 var embeddedRandomSetsJSON []byte
 
+//go:embed data/formats_data.json
+var embeddedFormatsJSON []byte
+
+//go:embed data/abilities.json
+var embeddedAbilitiesJSON []byte
+
 // pokedexentry represents the core attributes of a pokemon species.
 type PokedexEntry struct {
 	Name      string         `json:"name"`
@@ -27,8 +34,8 @@ type PokedexEntry struct {
 type RandomBattleRoleSet struct {
 	Role      string   `json:"role"`
 	Movepool  []string `json:"movepool"`
-	Abilities []string `json:"abilities"`
-	TeraTypes []string `json:"teraTypes"`
+	Abilities []string `json:"abilities,omitempty"`
+	TeraTypes []string `json:"teraTypes,omitempty"`
 }
 
 // randombattlespeciesdata represents the random battle parameters for a species.
@@ -37,14 +44,53 @@ type RandomBattleSpeciesData struct {
 	Sets  []RandomBattleRoleSet `json:"sets"`
 }
 
+// abilitydata represents ability information.
+type AbilityData struct {
+	Name   string  `json:"name"`
+	Rating float64 `json:"rating"`
+}
+
+// speciesformatdata represents competitive tier metadata.
+type SpeciesFormatData struct {
+	Tier        string `json:"tier"`
+	DoublesTier string `json:"doublesTier,omitempty"`
+}
+
 var (
 	embeddedMovesOnce      sync.Once
 	embeddedMoves          map[string]MoveData
 	embeddedPokedexOnce    sync.Once
 	embeddedPokedex        map[string]PokedexEntry
 	embeddedRandomSetsOnce sync.Once
-	embeddedRandomSets     map[string]RandomBattleSpeciesData
+	embeddedMultiGenSets   map[string]map[string]RandomBattleSpeciesData
+	embeddedFormatsOnce    sync.Once
+	embeddedFormats        map[string]SpeciesFormatData
+	embeddedAbilitiesOnce  sync.Once
+	embeddedAbilities      map[string]AbilityData
 )
+
+var abilityImmunities = map[string]string{
+	// ground immunities
+	"levitate":   "ground",
+	"eartheater": "ground",
+
+	// fire immunities
+	"flashfire":     "fire",
+	"wellbakedbody": "fire",
+
+	// electric immunities
+	"voltabsorb":   "electric",
+	"lightningrod": "electric",
+	"motordrive":   "electric",
+
+	// water immunities
+	"waterabsorb": "water",
+	"stormdrain":  "water",
+	"dryskin":     "water",
+
+	// grass immunities
+	"sapsipper": "grass",
+}
 
 // getembeddedmoves returns the parsed map of all known moves.
 func getEmbeddedMoves() map[string]MoveData {
@@ -68,15 +114,55 @@ func getEmbeddedPokedex() map[string]PokedexEntry {
 	return embeddedPokedex
 }
 
-// getembeddedrandomsets returns the parsed map of official random battle sets.
-func getEmbeddedRandomSets() map[string]RandomBattleSpeciesData {
+// getembeddedrandomsets returns the parsed map of official random battle sets across all generations.
+func getEmbeddedRandomSets() map[string]map[string]RandomBattleSpeciesData {
 	embeddedRandomSetsOnce.Do(func() {
-		embeddedRandomSets = make(map[string]RandomBattleSpeciesData)
-		if len(embeddedRandomSetsJSON) > 0 {
-			_ = json.Unmarshal(embeddedRandomSetsJSON, &embeddedRandomSets)
+		embeddedMultiGenSets = make(map[string]map[string]RandomBattleSpeciesData)
+		if len(embeddedRandomSetsJSON) == 0 {
+			return
+		}
+
+		// try parsing as multi-gen map {"gen1": ..., "gen9": ...}
+		var multiGen map[string]map[string]RandomBattleSpeciesData
+		if err := json.Unmarshal(embeddedRandomSetsJSON, &multiGen); err == nil && len(multiGen) > 0 {
+			// verify if keys look like genN
+			for k := range multiGen {
+				if strings.HasPrefix(k, "gen") {
+					embeddedMultiGenSets = multiGen
+					return
+				}
+			}
+		}
+
+		// fallback: parse as flat gen9 map {"venusaur": ...}
+		var flat map[string]RandomBattleSpeciesData
+		if err := json.Unmarshal(embeddedRandomSetsJSON, &flat); err == nil {
+			embeddedMultiGenSets["gen9"] = flat
 		}
 	})
-	return embeddedRandomSets
+	return embeddedMultiGenSets
+}
+
+// getembeddedformats returns tier format classifications.
+func getEmbeddedFormats() map[string]SpeciesFormatData {
+	embeddedFormatsOnce.Do(func() {
+		embeddedFormats = make(map[string]SpeciesFormatData)
+		if len(embeddedFormatsJSON) > 0 {
+			_ = json.Unmarshal(embeddedFormatsJSON, &embeddedFormats)
+		}
+	})
+	return embeddedFormats
+}
+
+// getembeddedabilities returns ability data.
+func getEmbeddedAbilities() map[string]AbilityData {
+	embeddedAbilitiesOnce.Do(func() {
+		embeddedAbilities = make(map[string]AbilityData)
+		if len(embeddedAbilitiesJSON) > 0 {
+			_ = json.Unmarshal(embeddedAbilitiesJSON, &embeddedAbilities)
+		}
+	})
+	return embeddedAbilities
 }
 
 // cleanid converts a string to lowercase and removes non-alphanumeric characters.
@@ -117,10 +203,61 @@ func GetSpeciesPokedexEntry(species string) (PokedexEntry, bool) {
 	return entry, exists
 }
 
-// getrandombattleset returns the official random battle sets for a given species.
-func GetRandomBattleSet(species string) (RandomBattleSpeciesData, bool) {
-	sets := getEmbeddedRandomSets()
+// getgenrandombattleset returns the official random battle sets for a given generation and species.
+func GetGenRandomBattleSet(gen int, species string) (RandomBattleSpeciesData, bool) {
+	allGens := getEmbeddedRandomSets()
 	clean := cleanID(species)
-	data, exists := sets[clean]
+	if gen <= 0 {
+		gen = 9
+	}
+
+	genKey := fmt.Sprintf("gen%d", gen)
+	if genSets, ok := allGens[genKey]; ok {
+		if data, exists := genSets[clean]; exists {
+			return data, true
+		}
+	}
+
+	// fallback to gen9 if requested generation set is not found
+	if gen != 9 {
+		if gen9Sets, ok := allGens["gen9"]; ok {
+			if data, exists := gen9Sets[clean]; exists {
+				return data, true
+			}
+		}
+	}
+	return RandomBattleSpeciesData{}, false
+}
+
+// getrandombattleset returns the official random battle sets for a given species (defaulting to gen 9).
+func GetRandomBattleSet(species string) (RandomBattleSpeciesData, bool) {
+	return GetGenRandomBattleSet(9, species)
+}
+
+// getspeciestier returns the competitive tier (e.g. OU, UU, Ubers) for a species.
+func GetSpeciesTier(species string) string {
+	formats := getEmbeddedFormats()
+	clean := cleanID(species)
+	if data, exists := formats[clean]; exists && data.Tier != "" {
+		return data.Tier
+	}
+	return "OU"
+}
+
+// getabilitydata returns parsed ability information if available.
+func GetAbilityData(ability string) (AbilityData, bool) {
+	abilities := getEmbeddedAbilities()
+	clean := cleanID(ability)
+	data, exists := abilities[clean]
 	return data, exists
+}
+
+// isabilityimmune returns true if the specified ability grants complete immunity to the given move type.
+func IsAbilityImmune(ability, moveType string) bool {
+	clean := cleanID(ability)
+	immuneType, exists := abilityImmunities[clean]
+	if !exists {
+		return false
+	}
+	return strings.EqualFold(immuneType, moveType)
 }

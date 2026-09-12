@@ -9,16 +9,18 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	smogonBaseURL       = "https://raw.githubusercontent.com/smogon/pokemon-showdown/master/data"
-	smogonPokedexURL    = smogonBaseURL + "/pokedex.ts"
-	smogonMovesURL      = smogonBaseURL + "/moves.ts"
-	smogonRandomSetsURL = smogonBaseURL + "/random-battles/gen9/sets.json"
+	smogonBaseURL      = "https://raw.githubusercontent.com/smogon/pokemon-showdown/master/data"
+	smogonPokedexURL   = smogonBaseURL + "/pokedex.ts"
+	smogonMovesURL     = smogonBaseURL + "/moves.ts"
+	smogonFormatsURL   = smogonBaseURL + "/formats-data.ts"
+	smogonAbilitiesURL = smogonBaseURL + "/abilities.ts"
 )
 
 var healingNames = map[string]bool{
@@ -56,6 +58,28 @@ type pokedexOutput struct {
 	Name      string         `json:"name"`
 	Types     []string       `json:"types"`
 	BaseStats map[string]int `json:"baseStats"`
+}
+
+type speciesFormatOutput struct {
+	Tier        string `json:"tier"`
+	DoublesTier string `json:"doublesTier,omitempty"`
+}
+
+type abilityOutput struct {
+	Name   string  `json:"name"`
+	Rating float64 `json:"rating"`
+}
+
+type randomBattleRoleSet struct {
+	Role      string   `json:"role"`
+	Movepool  []string `json:"movepool"`
+	Abilities []string `json:"abilities,omitempty"`
+	TeraTypes []string `json:"teraTypes,omitempty"`
+}
+
+type randomBattleSpeciesOutput struct {
+	Level int                   `json:"level"`
+	Sets  []randomBattleRoleSet `json:"sets"`
 }
 
 func cleanKey(s string) string {
@@ -297,31 +321,42 @@ func updatePokedex(showdownDir, destPath string) error {
 	return nil
 }
 
-func updateRandomSets(showdownDir, destPath string) error {
-	relPath := filepath.Join("random-battles", "gen9", "sets.json")
-	data, err := readSource(showdownDir, relPath, smogonRandomSetsURL)
+func updateFormatsData(showdownDir, destPath string) error {
+	data, err := readSource(showdownDir, "formats-data.ts", smogonFormatsURL)
 	if err != nil {
 		return err
 	}
 
-	var rawSets map[string]struct {
-		Level int `json:"level"`
-		Sets  []struct {
-			Role      string   `json:"role"`
-			Movepool  []string `json:"movepool"`
-			Abilities []string `json:"abilities"`
-			TeraTypes []string `json:"teraTypes"`
-		} `json:"sets"`
+	content := string(data)
+	blockRegex := regexp.MustCompile(`(?m)^\t([a-z0-9]+):\s*\{\s*\n([\s\S]*?)\n\t\},`)
+	tierRegex := regexp.MustCompile(`tier:\s*"([^"]+)"`)
+	doublesTierRegex := regexp.MustCompile(`doublesTier:\s*"([^"]+)"`)
+
+	matches := blockRegex.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return fmt.Errorf("no formats blocks found in formats-data.ts")
 	}
 
-	if err := json.Unmarshal(data, &rawSets); err != nil {
-		return fmt.Errorf("failed to unmarshal random sets: %w", err)
-	}
+	processed := make(map[string]speciesFormatOutput, len(matches))
+	for _, m := range matches {
+		rawID := m[1]
+		block := m[2]
+		cleanID := cleanKey(rawID)
 
-	processed := make(map[string]any, len(rawSets))
-	for species, set := range rawSets {
-		cleanID := cleanKey(species)
-		processed[cleanID] = set
+		tier := "OU"
+		if tierMatch := tierRegex.FindStringSubmatch(block); len(tierMatch) > 1 {
+			tier = tierMatch[1]
+		}
+
+		doublesTier := ""
+		if dtMatch := doublesTierRegex.FindStringSubmatch(block); len(dtMatch) > 1 {
+			doublesTier = dtMatch[1]
+		}
+
+		processed[cleanID] = speciesFormatOutput{
+			Tier:        tier,
+			DoublesTier: doublesTier,
+		}
 	}
 
 	outData, err := json.Marshal(processed)
@@ -332,7 +367,150 @@ func updateRandomSets(showdownDir, destPath string) error {
 	if err := os.WriteFile(destPath, outData, 0644); err != nil {
 		return err
 	}
-	fmt.Printf("wrote %d random battle sets to %s\n", len(processed), destPath)
+	fmt.Printf("wrote %d species formats tiers to %s\n", len(processed), destPath)
+	return nil
+}
+
+func updateAbilities(showdownDir, destPath string) error {
+	data, err := readSource(showdownDir, "abilities.ts", smogonAbilitiesURL)
+	if err != nil {
+		return err
+	}
+
+	content := string(data)
+	blockRegex := regexp.MustCompile(`(?m)^\t([a-z0-9]+):\s*\{\s*\n([\s\S]*?)\n\t\},`)
+	nameRegex := regexp.MustCompile(`name:\s*"([^"]+)"`)
+	ratingRegex := regexp.MustCompile(`rating:\s*(-?\d+(\.\d+)?)`)
+
+	matches := blockRegex.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return fmt.Errorf("no ability blocks found in abilities.ts")
+	}
+
+	processed := make(map[string]abilityOutput, len(matches))
+	for _, m := range matches {
+		rawID := m[1]
+		block := m[2]
+		cleanID := cleanKey(rawID)
+
+		name := rawID
+		if nm := nameRegex.FindStringSubmatch(block); len(nm) > 1 {
+			name = nm[1]
+		}
+
+		rating := 1.0
+		if rm := ratingRegex.FindStringSubmatch(block); len(rm) > 1 {
+			if parsed, err := strconv.ParseFloat(rm[1], 64); err == nil {
+				rating = parsed
+			}
+		}
+
+		processed[cleanID] = abilityOutput{
+			Name:   name,
+			Rating: rating,
+		}
+	}
+
+	outData, err := json.Marshal(processed)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(destPath, outData, 0644); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %d abilities to %s\n", len(processed), destPath)
+	return nil
+}
+
+func updateRandomSets(showdownDir, destPath string) error {
+	allGens := make(map[string]map[string]randomBattleSpeciesOutput)
+
+	// gen 1 parsing
+	gen1Rel := filepath.Join("random-battles", "gen1", "data.json")
+	gen1URL := smogonBaseURL + "/random-battles/gen1/data.json"
+	if gen1Data, err := readSource(showdownDir, gen1Rel, gen1URL); err == nil {
+		var rawGen1 map[string]struct {
+			Level          int      `json:"level"`
+			Moves          []string `json:"moves"`
+			EssentialMoves []string `json:"essentialMoves"`
+			ExclusiveMoves []string `json:"exclusiveMoves"`
+			ComboMoves     []string `json:"comboMoves"`
+		}
+		if err := json.Unmarshal(gen1Data, &rawGen1); err == nil {
+			gen1Processed := make(map[string]randomBattleSpeciesOutput, len(rawGen1))
+			for species, val := range rawGen1 {
+				cleanID := cleanKey(species)
+				moveMap := make(map[string]bool)
+				for _, m := range val.Moves {
+					moveMap[m] = true
+				}
+				for _, m := range val.EssentialMoves {
+					moveMap[m] = true
+				}
+				for _, m := range val.ExclusiveMoves {
+					moveMap[m] = true
+				}
+				for _, m := range val.ComboMoves {
+					moveMap[m] = true
+				}
+				var allMoves []string
+				for m := range moveMap {
+					allMoves = append(allMoves, m)
+				}
+				sort.Strings(allMoves)
+
+				gen1Processed[cleanID] = randomBattleSpeciesOutput{
+					Level: val.Level,
+					Sets: []randomBattleRoleSet{
+						{
+							Role:     "All",
+							Movepool: allMoves,
+						},
+					},
+				}
+			}
+			allGens["gen1"] = gen1Processed
+			fmt.Printf("loaded %d gen1 random sets\n", len(gen1Processed))
+		}
+	}
+
+	// gen 2 through gen 9 parsing
+	for g := 2; g <= 9; g++ {
+		genKey := fmt.Sprintf("gen%d", g)
+		relPath := filepath.Join("random-battles", genKey, "sets.json")
+		rawURL := fmt.Sprintf("%s/random-battles/%s/sets.json", smogonBaseURL, genKey)
+
+		data, err := readSource(showdownDir, relPath, rawURL)
+		if err != nil {
+			fmt.Printf("warning: could not load %s sets: %v\n", genKey, err)
+			continue
+		}
+
+		var rawSets map[string]randomBattleSpeciesOutput
+		if err := json.Unmarshal(data, &rawSets); err != nil {
+			fmt.Printf("warning: failed to unmarshal %s sets: %v\n", genKey, err)
+			continue
+		}
+
+		processed := make(map[string]randomBattleSpeciesOutput, len(rawSets))
+		for species, set := range rawSets {
+			cleanID := cleanKey(species)
+			processed[cleanID] = set
+		}
+		allGens[genKey] = processed
+		fmt.Printf("loaded %d %s random sets\n", len(processed), genKey)
+	}
+
+	outData, err := json.Marshal(allGens)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(destPath, outData, 0644); err != nil {
+		return err
+	}
+	fmt.Printf("wrote multi-generation random sets (%d generations) to %s\n", len(allGens), destPath)
 	return nil
 }
 
@@ -358,6 +536,8 @@ func main() {
 
 	movesDest := filepath.Join(dataDir, "moves.json")
 	pokedexDest := filepath.Join(dataDir, "pokedex.json")
+	formatsDest := filepath.Join(dataDir, "formats_data.json")
+	abilitiesDest := filepath.Join(dataDir, "abilities.json")
 	randomSetsDest := filepath.Join(dataDir, "random_sets.json")
 
 	if err := updateMoves(*showdownDir, movesDest); err != nil {
@@ -368,6 +548,14 @@ func main() {
 	if err := updatePokedex(*showdownDir, pokedexDest); err != nil {
 		fmt.Fprintf(os.Stderr, "error updating pokedex: %v\n", err)
 		os.Exit(1)
+	}
+
+	if err := updateFormatsData(*showdownDir, formatsDest); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: updating formats data: %v\n", err)
+	}
+
+	if err := updateAbilities(*showdownDir, abilitiesDest); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: updating abilities: %v\n", err)
 	}
 
 	if err := updateRandomSets(*showdownDir, randomSetsDest); err != nil {

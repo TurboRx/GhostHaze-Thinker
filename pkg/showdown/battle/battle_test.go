@@ -663,3 +663,106 @@ func TestStatAwareDamageEvaluation(t *testing.T) {
 	}
 }
 
+func TestAbilityImmunities(t *testing.T) {
+	if !IsAbilityImmune("levitate", "ground") {
+		t.Fatalf("expected levitate to grant ground immunity")
+	}
+	if !IsAbilityImmune("eartheater", "ground") {
+		t.Fatalf("expected eartheater to grant ground immunity")
+	}
+	if !IsAbilityImmune("flashfire", "fire") {
+		t.Fatalf("expected flash fire to grant fire immunity")
+	}
+	if !IsAbilityImmune("voltabsorb", "electric") {
+		t.Fatalf("expected volt absorb to grant electric immunity")
+	}
+	if !IsAbilityImmune("waterabsorb", "water") {
+		t.Fatalf("expected water absorb to grant water immunity")
+	}
+	if !IsAbilityImmune("sapsipper", "grass") {
+		t.Fatalf("expected sap sipper to grant grass immunity")
+	}
+	if IsAbilityImmune("levitate", "water") {
+		t.Fatalf("levitate should not grant water immunity")
+	}
+}
+
+func TestGenerationAndFormatParsing(t *testing.T) {
+	b1 := NewBattle("battle-1", nil)
+	b1.HandleLine([]string{"tier", "[Gen 1] Random Battle"}, "GhostHaze Thinker")
+	if b1.Generation() != 1 || !b1.IsRandomBattle() {
+		t.Fatalf("expected gen 1 random battle, got gen=%d, isRandom=%v", b1.Generation(), b1.IsRandomBattle())
+	}
+
+	b8 := NewBattle("battle-8", nil)
+	b8.HandleLine([]string{"tier", "[Gen 8] OU"}, "GhostHaze Thinker")
+	if b8.Generation() != 8 || b8.IsRandomBattle() {
+		t.Fatalf("expected gen 8 ou, got gen=%d, isRandom=%v", b8.Generation(), b8.IsRandomBattle())
+	}
+
+	b9 := NewBattle("battle-9", nil)
+	b9.HandleLine([]string{"tier", "[Gen 9] Random Battle"}, "GhostHaze Thinker")
+	if b9.Generation() != 9 || !b9.IsRandomBattle() {
+		t.Fatalf("expected gen 9 random battle, got gen=%d, isRandom=%v", b9.Generation(), b9.IsRandomBattle())
+	}
+}
+
+func TestRevealedDataTrackingAndAbilityAvoidance(t *testing.T) {
+	b := NewBattle("battle-test-tracking", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	// switch in rotom-wash
+	b.HandleLine([]string{"switch", "p2a: Rotom-Wash", "Rotom-Wash, L80", "100/100"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"-ability", "p2a: Rotom-Wash", "Levitate"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"move", "p2a: Rotom-Wash", "Hydro Pump", "p1a: Garchomp"}, "GhostHaze Thinker")
+
+	if b.OpponentActive.Ability != "levitate" {
+		t.Fatalf("expected ability levitate to be tracked, got %s", b.OpponentActive.Ability)
+	}
+	if len(b.OpponentActive.Moves) != 1 || b.OpponentActive.Moves[0] != "hydropump" {
+		t.Fatalf("expected hydropump to be tracked in moves: %v", b.OpponentActive.Moves)
+	}
+
+	// active pokemon has earthquake (ground, 100 bp) and dragon claw (dragon, 80 bp)
+	// rotom-wash is electric/water (normally 2x weak to ground), but levitate grants ground immunity
+	reqJSON := `{
+		"rqid": 5,
+		"active": [{
+			"moves": [
+				{"id": "earthquake", "move": "Earthquake", "pp": 10},
+				{"id": "dragonclaw", "move": "Dragon Claw", "pp": 15}
+			]
+		}],
+		"side": {
+			"pokemon": [{
+				"ident": "p1a: Garchomp",
+				"details": "Garchomp, L80",
+				"condition": "250/250",
+				"active": true,
+				"stats": {"atk": 250, "def": 180, "spa": 150, "spd": 150, "spe": 200}
+			}]
+		}
+	}`
+
+	choice, shouldSend := b.HandleLine([]string{"request", reqJSON}, "GhostHaze Thinker")
+	if !shouldSend {
+		t.Fatalf("expected shouldSend to be true")
+	}
+	// should choose dragon claw (slot 2) over immune earthquake (slot 1)
+	if choice != "/choose move 2|5" {
+		t.Fatalf("expected move 2 (dragon claw) against levitate rotom, got %s", choice)
+	}
+
+	// test switch out and back in retains revealed moves and ability
+	b.HandleLine([]string{"switch", "p2a: Tyranitar", "Tyranitar, L80", "100/100"}, "GhostHaze Thinker")
+	if b.OpponentActive.Species != "Tyranitar" {
+		t.Fatalf("expected active species tyranitar")
+	}
+	// switch back to rotom-wash
+	b.HandleLine([]string{"switch", "p2a: Rotom-Wash", "Rotom-Wash, L80", "100/100"}, "GhostHaze Thinker")
+	if b.OpponentActive.Ability != "levitate" || len(b.OpponentActive.Moves) != 1 {
+		t.Fatalf("expected remembered ability levitate and move hydropump after switch back: %+v", b.OpponentActive)
+	}
+}
+

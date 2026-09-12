@@ -15,11 +15,17 @@ type OpponentActivePoke struct {
 	HPPercent float64
 	Status    string
 	Boosts    map[string]int
+	Ability   string
+	Item      string
+	Moves     []string
 }
 
 type OpponentBenchPoke struct {
 	Species string
 	Fainted bool
+	Moves   []string
+	Ability string
+	Item    string
 }
 
 type Battle struct {
@@ -58,14 +64,10 @@ func NewBattle(room string, engine BattleEngine) *Battle {
 }
 
 func (b *Battle) OpponentHasHazard(hazard string) bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
 	return b.OpponentHazards[hazard]
 }
 
 func (b *Battle) OpponentAliveCount() int {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
 	if len(b.OpponentTeam) == 0 {
 		return 6
 	}
@@ -143,12 +145,47 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			ident := parts[1]
 			isOpp := b.isOpponentIdent(ident)
 			if isOpp {
+				// persist outgoing active pokemon's revealed data into bench list
+				if b.OpponentActive.Species != "" {
+					persisted := false
+					for i := range b.OpponentTeam {
+						if strings.EqualFold(b.OpponentTeam[i].Species, b.OpponentActive.Species) {
+							b.OpponentTeam[i].Moves = b.OpponentActive.Moves
+							b.OpponentTeam[i].Ability = b.OpponentActive.Ability
+							b.OpponentTeam[i].Item = b.OpponentActive.Item
+							persisted = true
+							break
+						}
+					}
+					if !persisted {
+						b.OpponentTeam = append(b.OpponentTeam, OpponentBenchPoke{
+							Species: b.OpponentActive.Species,
+							Moves:   b.OpponentActive.Moves,
+							Ability: b.OpponentActive.Ability,
+							Item:    b.OpponentActive.Item,
+						})
+					}
+				}
+
 				details := parts[2]
 				condition := parts[3]
 				species, _, _ := ParsePokemonDetails(details)
 				hp := parseHPPercent(condition)
 				status := parseStatus(condition)
 				types := GetSpeciesTypes(species)
+
+				// restore any previously known moves, ability, or item for incoming species
+				var rememberedMoves []string
+				rememberedAbility := ""
+				rememberedItem := ""
+				for _, p := range b.OpponentTeam {
+					if strings.EqualFold(p.Species, species) {
+						rememberedMoves = p.Moves
+						rememberedAbility = p.Ability
+						rememberedItem = p.Item
+						break
+					}
+				}
 
 				b.OpponentActive = OpponentActivePoke{
 					Ident:     ident,
@@ -157,6 +194,9 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 					HPPercent: hp,
 					Status:    status,
 					Boosts:    make(map[string]int),
+					Moves:     rememberedMoves,
+					Ability:   rememberedAbility,
+					Item:      rememberedItem,
 				}
 			}
 		}
@@ -238,6 +278,34 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			} else if strings.Contains(effect, "sticky web") {
 				delete(b.OpponentHazards, "stickyweb")
 			}
+		}
+
+	case "move":
+		// e.g. |move|p2a: Garchomp|Earthquake|p1a: Blastoise
+		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
+			moveID := cleanID(parts[2])
+			exists := false
+			for _, m := range b.OpponentActive.Moves {
+				if m == moveID {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				b.OpponentActive.Moves = append(b.OpponentActive.Moves, moveID)
+			}
+		}
+
+	case "-ability":
+		// e.g. |-ability|p2a: Rotom|Levitate
+		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
+			b.OpponentActive.Ability = cleanID(parts[2])
+		}
+
+	case "-item":
+		// e.g. |-item|p2a: Garchomp|Leftovers
+		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
+			b.OpponentActive.Item = cleanID(parts[2])
 		}
 
 	case "faint":
@@ -371,3 +439,21 @@ func toID(s string) string {
 	}
 	return b.String()
 }
+
+// Generation returns the pokemon generation number (1-9) parsed from tier, defaulting to 9.
+func (b *Battle) Generation() int {
+	tier := strings.ToLower(b.Tier)
+	for g := 1; g <= 9; g++ {
+		prefix := fmt.Sprintf("[gen %d]", g)
+		if strings.Contains(tier, prefix) || strings.Contains(tier, fmt.Sprintf("gen %d", g)) || strings.Contains(tier, fmt.Sprintf("gen%d", g)) {
+			return g
+		}
+	}
+	return 9
+}
+
+// IsRandomBattle returns true if the battle format is a random battle variant.
+func (b *Battle) IsRandomBattle() bool {
+	return strings.Contains(strings.ToLower(b.Tier), "random")
+}
+

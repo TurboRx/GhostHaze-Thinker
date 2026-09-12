@@ -177,6 +177,32 @@ func (e *DefaultEngine) decideActiveTurn(b *Battle, req BattleRequest) BattleDec
 	bestScore := -99999.0
 	shouldTera := false
 
+	// speed calculation
+	mySpe := 80
+	if activePoke.Stats != nil && activePoke.Stats["spe"] > 0 {
+		mySpe = activePoke.Stats["spe"]
+	} else {
+		mySpe = GetSpeciesBaseStats(activePoke.Species())["spe"]
+	}
+	if strings.Contains(activePoke.Status(), "par") {
+		mySpe = mySpe / 2
+	}
+
+	oppSpe := GetSpeciesBaseStats(b.OpponentActive.Species)["spe"]
+	if b.OpponentActive.Boosts != nil {
+		stage := b.OpponentActive.Boosts["spe"]
+		if stage > 0 {
+			oppSpe = int(float64(oppSpe) * float64(2+stage) / 2.0)
+		} else if stage < 0 {
+			oppSpe = int(float64(oppSpe) * 2.0 / float64(2-stage))
+		}
+	}
+	if strings.Contains(b.OpponentActive.Status, "par") {
+		oppSpe = oppSpe / 2
+	}
+
+	isFaster := mySpe >= oppSpe
+
 	for i, m := range moves {
 		slot := i + 1
 		if m.IsDisabled() || m.PP <= 0 {
@@ -192,6 +218,23 @@ func (e *DefaultEngine) decideActiveTurn(b *Battle, req BattleRequest) BattleDec
 		} else {
 			// attack moves evaluation
 			eff := GetMultipleEffectiveness(data.Type, oppTypes...)
+
+			// ability immunity check
+			if b.OpponentActive.Ability != "" {
+				if IsAbilityImmune(b.OpponentActive.Ability, data.Type) {
+					eff = 0.0
+				}
+			} else if b.OpponentActive.Species != "" {
+				if randData, found := GetGenRandomBattleSet(b.Generation(), b.OpponentActive.Species); found {
+					for _, set := range randData.Sets {
+						if len(set.Abilities) == 1 && IsAbilityImmune(set.Abilities[0], data.Type) {
+							eff = 0.0
+							break
+						}
+					}
+				}
+			}
+
 			if eff == 0.0 {
 				// immune: completely unviable
 				score = -5000.0
@@ -257,12 +300,20 @@ func (e *DefaultEngine) decideActiveTurn(b *Battle, req BattleRequest) BattleDec
 				// approx opponent max hp in points ~ 250
 				approxOppPoints := oppHP * 250.0
 				if dmg >= approxOppPoints {
-					score += 2500.0 // securing ko
+					if isFaster {
+						score += 3000.0 // faster lethal ko secures clean kill without taking damage
+					} else {
+						score += 1800.0
+					}
 				}
 
 				// priority finisher bonus
-				if data.Priority > 0 && dmg >= approxOppPoints {
-					score += 3000.0
+				if data.Priority > 0 {
+					if dmg >= approxOppPoints {
+						score += 3500.0 // priority secures ko before opponent can move
+					} else if !isFaster && activeHP < 0.35 {
+						score += 800.0 // priority chip when outsped and in danger of fainting
+					}
 				}
 
 				// super-effective bonus
