@@ -33,7 +33,7 @@ func TestApplyDefaults(t *testing.T) {
 }
 
 func TestRouteCommand(t *testing.T) {
-	client := NewClient(Config{CommandChar: "."})
+	client := NewClient(Config{CommandChar: ".", Username: "TurBOOT"})
 
 	var wg sync.WaitGroup
 	var receivedRoom, receivedUser, receivedArgs string
@@ -46,7 +46,8 @@ func TestRouteCommand(t *testing.T) {
 		wg.Done()
 	})
 
-	client.routeCommand("botdevelopment", "alice", ".ping hello world")
+	// test with rank symbol (+alice)
+	client.routeCommand("botdevelopment", "+alice", ".ping hello world")
 
 	done := make(chan struct{})
 	go func() {
@@ -61,6 +62,38 @@ func TestRouteCommand(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("timed out waiting for command execution")
+	}
+
+	// test self-command guard (bot must ignore its own commands)
+	executedSelf := false
+	client.HandleCommand("self", func(room, user, args string) {
+		executedSelf = true
+	})
+	client.routeCommand("botdevelopment", "*TurBOOT", ".self")
+	time.Sleep(50 * time.Millisecond)
+	if executedSelf {
+		t.Error("expected self-command to be ignored")
+	}
+}
+
+func TestUsernameAndIDHelpers(t *testing.T) {
+	if CleanUsername("+Alice") != "Alice" {
+		t.Errorf("expected 'Alice', got '%s'", CleanUsername("+Alice"))
+	}
+	if CleanUsername("@Bob") != "Bob" {
+		t.Errorf("expected 'Bob', got '%s'", CleanUsername("@Bob"))
+	}
+	if CleanUsername(" Charlie") != "Charlie" {
+		t.Errorf("expected 'Charlie', got '%s'", CleanUsername(" Charlie"))
+	}
+	if UserRank("+Alice") != "+" {
+		t.Errorf("expected '+', got '%s'", UserRank("+Alice"))
+	}
+	if UserRank("Normal") != "" {
+		t.Errorf("expected '', got '%s'", UserRank("Normal"))
+	}
+	if ToID("Bot Development 123!") != "botdevelopment123" {
+		t.Errorf("expected 'botdevelopment123', got '%s'", ToID("Bot Development 123!"))
 	}
 }
 

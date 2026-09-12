@@ -14,7 +14,7 @@ func TestLoadEnvFile(t *testing.T) {
 	content := `
 PS_USERNAME="TestBot"
 PS_PASSWORD='SecretPassword'
-PS_ROOMS=botdevelopment
+PS_ROOMS=botdevelopment # target room
 PS_RECONNECT_DELAY_MS=5000
 PS_COMMAND_CHAR=!
 `

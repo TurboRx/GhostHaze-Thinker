@@ -17,7 +17,7 @@ func ParseRawStream(raw string, currentRoom string) ([]RawMessage, string) {
 			room = strings.TrimSpace(trimmed[1:])
 			continue
 		}
-		if !strings.HasPrefix(trimmed, "|") {
+		if !strings.HasPrefix(trimmed, "|") || len(trimmed) <= 1 {
 			continue
 		}
 
@@ -64,7 +64,12 @@ func ParseChatMessage(msg RawMessage) (ChatMessage, bool) {
 		tsInt, err := strconv.ParseInt(strings.TrimSpace(msg.Parts[0]), 10, 64)
 		ts := time.Now().UTC()
 		if err == nil {
-			ts = time.Unix(tsInt, 0).UTC()
+			// support both second and millisecond timestamps
+			if tsInt > 1e11 {
+				ts = time.UnixMilli(tsInt).UTC()
+			} else {
+				ts = time.Unix(tsInt, 0).UTC()
+			}
 		}
 		user := strings.TrimSpace(msg.Parts[1])
 		text := strings.Join(msg.Parts[2:], "|")

@@ -33,9 +33,10 @@ type Client struct {
 	stateMu   sync.RWMutex
 	handlerMu sync.RWMutex
 
-	connected   bool
-	loggedIn    bool
-	currentRoom string
+	connected        bool
+	loggedIn         bool
+	intentionalClose bool
+	currentRoom      string
 
 	onConnect     []func()
 	onDisconnect  []func(error)
@@ -115,6 +116,9 @@ func (c *Client) OnRawMessage(fn MessageHandler) {
 func (c *Client) HandleCommand(cmd string, fn CommandHandler) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
+	if c.commands == nil {
+		c.commands = make(map[string]CommandHandler)
+	}
 	name := strings.TrimPrefix(cmd, c.config.CommandChar)
 	c.commands[strings.ToLower(name)] = fn
 }
@@ -143,11 +147,30 @@ func (c *Client) Send(message string) error {
 }
 
 func (c *Client) SendToRoom(room, message string) error {
-	return c.Send(fmt.Sprintf("%s|%s", room, message))
+	lines := strings.Split(message, "\n")
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line != "" {
+			if err := c.Send(fmt.Sprintf("%s|%s", room, line)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Client) SendPM(targetUser, message string) error {
-	return c.Send(fmt.Sprintf("|/pm %s,%s", targetUser, message))
+	target := CleanUsername(targetUser)
+	lines := strings.Split(message, "\n")
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line != "" {
+			if err := c.Send(fmt.Sprintf("|/pm %s,%s", target, line)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Client) JoinRoom(room string) error {
@@ -163,6 +186,10 @@ func (c *Client) SetAvatar(avatar string) error {
 }
 
 func (c *Client) Run(ctx context.Context) error {
+	c.stateMu.Lock()
+	c.intentionalClose = false
+	c.stateMu.Unlock()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -171,9 +198,23 @@ func (c *Client) Run(ctx context.Context) error {
 		default:
 		}
 
+		c.stateMu.RLock()
+		closed := c.intentionalClose
+		c.stateMu.RUnlock()
+		if closed {
+			return nil
+		}
+
 		err := c.connectAndListen(ctx)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+
+		c.stateMu.RLock()
+		closed = c.intentionalClose
+		c.stateMu.RUnlock()
+		if closed {
+			return nil
 		}
 
 		if err != nil {
@@ -196,6 +237,7 @@ func (c *Client) Disconnect() {
 	defer c.writeMu.Unlock()
 
 	c.stateMu.Lock()
+	c.intentionalClose = true
 	c.connected = false
 	c.loggedIn = false
 	conn := c.wsConn
@@ -241,14 +283,38 @@ func (c *Client) connectAndListen(ctx context.Context) error {
 		}
 	}()
 
+	// ping server periodically to keep connection alive
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	go func() {
+		for {
+			select {
+			case <-pingTicker.C:
+				c.writeMu.Lock()
+				currentConn := c.wsConn
+				if currentConn != nil {
+					_ = currentConn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second))
+				}
+				c.writeMu.Unlock()
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	for {
 		_, messageBytes, readErr := conn.ReadMessage()
 		if readErr != nil {
+			c.writeMu.Lock()
 			c.stateMu.Lock()
 			c.connected = false
 			c.loggedIn = false
 			c.wsConn = nil
 			c.stateMu.Unlock()
+			c.writeMu.Unlock()
 			return readErr
 		}
 
@@ -278,12 +344,14 @@ func (c *Client) processMessage(msg RawMessage) {
 	case "updateuser":
 		if update, ok := ParseUserUpdate(msg); ok {
 			c.stateMu.Lock()
+			wasLoggedIn := c.loggedIn
 			c.loggedIn = !update.IsGuest
 			c.stateMu.Unlock()
 
 			c.dispatchLogin(update.Username, update.IsGuest)
 
-			if !update.IsGuest {
+			// only trigger post-login room joins when transitioning to logged in
+			if !update.IsGuest && !wasLoggedIn {
 				c.onPostLogin()
 			}
 		}
@@ -382,6 +450,11 @@ func (c *Client) onPostLogin() {
 }
 
 func (c *Client) routeCommand(room, user, text string) {
+	// ignore commands sent by the bot itself
+	if c.config.Username != "" && ToID(user) == ToID(c.config.Username) {
+		return
+	}
+
 	trimmed := strings.TrimSpace(text)
 	if !strings.HasPrefix(trimmed, c.config.CommandChar) {
 		return
@@ -401,7 +474,8 @@ func (c *Client) routeCommand(room, user, text string) {
 	c.handlerMu.RUnlock()
 
 	if exists && handler != nil {
-		go handler(room, user, args)
+		cleanUser := CleanUsername(user)
+		go handler(room, cleanUser, args)
 	}
 }
 

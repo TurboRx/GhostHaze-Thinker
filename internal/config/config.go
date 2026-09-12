@@ -67,12 +67,12 @@ func LoadEnvFile(filename string) error {
 		key := strings.TrimSpace(line[:eqIdx])
 		val := strings.TrimSpace(line[eqIdx+1:])
 
-		// strip surrounding quotes
-		if len(val) >= 2 {
-			if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
-				(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-				val = val[1 : len(val)-1]
-			}
+		// strip surrounding quotes if present, otherwise strip unquoted inline comments
+		if len(val) >= 2 && ((strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
+			(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'"))) {
+			val = val[1 : len(val)-1]
+		} else if idx := strings.Index(val, "#"); idx != -1 {
+			val = strings.TrimSpace(val[:idx])
 		}
 
 		if _, exists := os.LookupEnv(key); !exists {
