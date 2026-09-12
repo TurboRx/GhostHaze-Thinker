@@ -140,6 +140,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const avatarEl = document.getElementById("cfg-avatar");
     const cmdEl = document.getElementById("cfg-command-char");
     const autoBattleEl = document.getElementById("cfg-auto-battle");
+    const autoLeaveEl = document.getElementById("cfg-auto-leave-battle");
+    const winMsgEl = document.getElementById("cfg-battle-win-msg");
+    const loseMsgEl = document.getElementById("cfg-battle-lose-msg");
     const formatsEl = document.getElementById("cfg-battle-formats");
     const teamEl = document.getElementById("cfg-battle-team");
 
@@ -151,6 +154,9 @@ document.addEventListener("DOMContentLoaded", function () {
     if (avatarEl) avatarEl.value = data.avatar || "";
     if (cmdEl) cmdEl.value = data.command_char || ".";
     if (autoBattleEl) autoBattleEl.checked = !!data.auto_battle;
+    if (autoLeaveEl) autoLeaveEl.checked = data.auto_leave_battle !== false;
+    if (winMsgEl) winMsgEl.value = data.battle_win_msg || "";
+    if (loseMsgEl) loseMsgEl.value = data.battle_lose_msg || "";
     if (formatsEl) formatsEl.value = data.battle_formats ? data.battle_formats.join(", ") : "gen9randombattle";
     if (teamEl) teamEl.value = data.battle_team || "";
   }
@@ -210,20 +216,51 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
-    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Room</th><th>Format</th><th>Turn</th><th>Opponent</th><th>Action</th></tr></thead><tbody>';
+    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Room</th><th>Format</th><th>Turn</th><th>Opponent</th><th style="text-align:right;">Actions</th></tr></thead><tbody>';
     battles.forEach((b) => {
       html += `<tr>
         <td><strong>${escapeHTML(b.room)}</strong></td>
         <td><span class="chip">${escapeHTML(b.format || "random")}</span></td>
         <td>${escapeHTML(b.turn || 0)}</td>
         <td>${escapeHTML(b.opponent || "Unknown")}</td>
-        <td>
-          <a href="https://play.pokemonshowdown.com/${escapeHTML(b.room)}" target="_blank" class="btn btn-secondary btn-sm">Watch</a>
+        <td style="text-align:right;">
+          <a href="https://play.pokemonshowdown.com/${escapeHTML(b.room)}" target="_blank" class="btn btn-secondary btn-sm" style="margin-right:6px;">Watch</a>
+          <button class="btn btn-secondary btn-sm btn-forfeit-battle" data-room="${escapeHTML(b.room)}" style="margin-right:6px;">Forfeit</button>
+          <button class="btn btn-danger btn-sm btn-leave-battle" data-room="${escapeHTML(b.room)}">Leave</button>
         </td>
       </tr>`;
     });
     html += "</tbody></table></div>";
     container.innerHTML = html;
+
+    // attach battle forfeit and leave handlers
+    container.querySelectorAll(".btn-forfeit-battle").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const roomName = this.getAttribute("data-room");
+        if (confirm("Are you sure you want the bot to forfeit battle " + roomName + "?")) {
+          postJSON("/api/battles/forfeit", { room: roomName }, function (err) {
+            if (err) showAlert("error", "Failed to forfeit battle: " + err);
+            else {
+              showAlert("success", "Forfeited and left battle " + roomName);
+              updateStatus();
+            }
+          });
+        }
+      });
+    });
+
+    container.querySelectorAll(".btn-leave-battle").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const roomName = this.getAttribute("data-room");
+        postJSON("/api/battles/leave", { room: roomName }, function (err) {
+          if (err) showAlert("error", "Failed to leave battle: " + err);
+          else {
+            showAlert("success", "Left battle room " + roomName);
+            updateStatus();
+          }
+        });
+      });
+    });
   }
 
   // render activity logs with filtering
@@ -486,8 +523,10 @@ document.addEventListener("DOMContentLoaded", function () {
     const user = document.getElementById("cfg-username").value.trim();
     const pass = document.getElementById("cfg-password").value;
     const avatar = document.getElementById("cfg-avatar").value.trim();
-    const cmdChar = document.getElementById("cfg-command-char").value.trim() || ".";
-    const autoBattle = document.getElementById("cfg-auto-battle").checked;
+    const autoBattle = document.getElementById("cfg-auto-battle") ? document.getElementById("cfg-auto-battle").checked : false;
+    const autoLeave = document.getElementById("cfg-auto-leave-battle") ? document.getElementById("cfg-auto-leave-battle").checked : true;
+    const winMsg = document.getElementById("cfg-battle-win-msg") ? document.getElementById("cfg-battle-win-msg").value.trim() : "";
+    const loseMsg = document.getElementById("cfg-battle-lose-msg") ? document.getElementById("cfg-battle-lose-msg").value.trim() : "";
     const formatsRaw = document.getElementById("cfg-battle-formats").value.trim();
     const team = document.getElementById("cfg-battle-team").value.trim();
 
@@ -503,6 +542,9 @@ document.addEventListener("DOMContentLoaded", function () {
       avatar: avatar,
       command_char: cmdChar,
       auto_battle: autoBattle,
+      auto_leave_battle: autoLeave,
+      battle_win_msg: winMsg,
+      battle_lose_msg: loseMsg,
       battle_formats: formats,
       battle_team: team,
       reconnect: reconnect,

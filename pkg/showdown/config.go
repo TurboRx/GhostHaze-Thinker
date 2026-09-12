@@ -35,9 +35,12 @@ type Config struct {
 	ThrottleDelay  time.Duration
 	CommandChar    string
 	HTTPClient     *http.Client
-	AutoBattle     bool
-	BattleFormats  []string
-	BattleTeam     string
+	AutoBattle      bool
+	AutoLeaveBattle *bool
+	BattleWinMsg    string
+	BattleLoseMsg   string
+	BattleFormats   []string
+	BattleTeam      string
 }
 
 func (c *Config) ApplyDefaults() {
@@ -109,6 +112,18 @@ func (c *Config) ApplyDefaults() {
 	if c.AutoBattle && len(c.BattleFormats) == 0 {
 		c.BattleFormats = []string{"gen9randombattle"}
 	}
+	if c.AutoLeaveBattle == nil {
+		leave := true
+		c.AutoLeaveBattle = &leave
+	}
+}
+
+// shouldautoleavebattle returns whether finished battles should be automatically left
+func (c *Config) ShouldAutoLeaveBattle() bool {
+	if c.AutoLeaveBattle == nil {
+		return true
+	}
+	return *c.AutoLeaveBattle
 }
 
 // resolveserver queries the showdown crossdomain discovery service and configures server parameters

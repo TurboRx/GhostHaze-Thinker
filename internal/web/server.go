@@ -132,6 +132,8 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/config/update", s.handleAPIConfigUpdate)
 	mux.HandleFunc("/api/bot/reconnect", s.handleAPIBotReconnect)
 	mux.HandleFunc("/api/bot/avatar", s.handleAPIBotAvatar)
+	mux.HandleFunc("/api/battles/forfeit", s.handleAPIBattlesForfeit)
+	mux.HandleFunc("/api/battles/leave", s.handleAPIBattlesLeave)
 
 	return mux, nil
 }
@@ -172,11 +174,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		"Avatar":        cfg.Avatar,
 		"CommandChar":   cfg.CommandChar,
 		"Rooms":         s.client.Rooms(),
-		"ActiveBattles": battlesData,
-		"AutoBattle":    s.client.AutoBattle(),
-		"BattleFormats": strings.Join(s.client.BattleFormats(), ", "),
-		"BattleTeam":    s.client.BattleTeam(),
-		"Uptime":        s.Uptime(),
+		"ActiveBattles":   battlesData,
+		"AutoBattle":      s.client.AutoBattle(),
+		"AutoLeaveBattle": cfg.ShouldAutoLeaveBattle(),
+		"BattleWinMsg":    cfg.BattleWinMsg,
+		"BattleLoseMsg":   cfg.BattleLoseMsg,
+		"BattleFormats":   strings.Join(s.client.BattleFormats(), ", "),
+		"BattleTeam":      s.client.BattleTeam(),
+		"Uptime":          s.Uptime(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -231,6 +236,9 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"avatar":                cfg.Avatar,
 		"command_char":          cfg.CommandChar,
 		"auto_battle":           s.client.AutoBattle(),
+		"auto_leave_battle":     cfg.ShouldAutoLeaveBattle(),
+		"battle_win_msg":        cfg.BattleWinMsg,
+		"battle_lose_msg":       cfg.BattleLoseMsg,
 		"battle_formats":        s.client.BattleFormats(),
 		"battle_team":           s.client.BattleTeam(),
 		"rooms":                 s.client.Rooms(),
@@ -437,18 +445,21 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ServerID      string   `json:"server_id"`
-		ServerHost    string   `json:"server_host"`
-		ServerPort    int      `json:"server_port"`
-		ServerSSL     bool     `json:"server_ssl"`
-		Username      string   `json:"username"`
-		Password      string   `json:"password"`
-		Avatar        string   `json:"avatar"`
-		CommandChar   string   `json:"command_char"`
-		AutoBattle    bool     `json:"auto_battle"`
-		BattleFormats []string `json:"battle_formats"`
-		BattleTeam    string   `json:"battle_team"`
-		Reconnect     bool     `json:"reconnect"`
+		ServerID        string   `json:"server_id"`
+		ServerHost      string   `json:"server_host"`
+		ServerPort      int      `json:"server_port"`
+		ServerSSL       *bool    `json:"server_ssl"`
+		Username        string   `json:"username"`
+		Password        string   `json:"password"`
+		Avatar          string   `json:"avatar"`
+		CommandChar     string   `json:"command_char"`
+		AutoBattle      *bool    `json:"auto_battle"`
+		AutoLeaveBattle *bool    `json:"auto_leave_battle"`
+		BattleWinMsg    string   `json:"battle_win_msg"`
+		BattleLoseMsg   string   `json:"battle_lose_msg"`
+		BattleFormats   []string `json:"battle_formats"`
+		BattleTeam      string   `json:"battle_team"`
+		Reconnect       bool     `json:"reconnect"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
@@ -465,7 +476,9 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if req.ServerPort > 0 {
 			cfg.ServerPort = req.ServerPort
 		}
-		cfg.ServerSSL = &req.ServerSSL
+		if req.ServerSSL != nil {
+			cfg.ServerSSL = req.ServerSSL
+		}
 		if req.Username != "" {
 			cfg.Username = req.Username
 		}
@@ -478,7 +491,18 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if req.CommandChar != "" {
 			cfg.CommandChar = req.CommandChar
 		}
-		cfg.AutoBattle = req.AutoBattle
+		if req.AutoBattle != nil {
+			cfg.AutoBattle = *req.AutoBattle
+		}
+		if req.AutoLeaveBattle != nil {
+			cfg.AutoLeaveBattle = req.AutoLeaveBattle
+		}
+		if req.BattleWinMsg != "" {
+			cfg.BattleWinMsg = req.BattleWinMsg
+		}
+		if req.BattleLoseMsg != "" {
+			cfg.BattleLoseMsg = req.BattleLoseMsg
+		}
 		if len(req.BattleFormats) > 0 {
 			cfg.BattleFormats = req.BattleFormats
 		}
@@ -499,6 +523,56 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "configuration saved"})
+}
+
+// handleapibattlesforfeit forfeits an active battle and leaves the room
+func (s *Server) handleAPIBattlesForfeit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Room string `json:"room"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Room) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid or missing room"})
+		return
+	}
+
+	trimmed := strings.TrimSpace(req.Room)
+	if err := s.client.ForfeitBattle(trimmed); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("battle", trimmed, "Forfeited and left battle")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "battle forfeited"})
+}
+
+// handleapibattlesleave leaves a battle room
+func (s *Server) handleAPIBattlesLeave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Room string `json:"room"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Room) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid or missing room"})
+		return
+	}
+
+	trimmed := strings.TrimSpace(req.Room)
+	if err := s.client.LeaveBattle(trimmed); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("battle", trimmed, "Left battle room")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "left battle room"})
 }
 
 // handleapibotreconnect triggers a reconnection

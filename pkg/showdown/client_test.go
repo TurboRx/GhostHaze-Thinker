@@ -938,3 +938,81 @@ func TestBattleRoomMessageRouting(t *testing.T) {
 	}
 }
 
+func TestBattleAutoLeaveAndForfeit(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	sentChan := make(chan string, 10)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			sentChan <- string(msg)
+		}
+	}))
+	defer s.Close()
+
+	leave := true
+	client := NewClient(Config{
+		Username:        "GhostHaze Thinker",
+		AutoLeaveBattle: &leave,
+		BattleWinMsg:    "GG",
+		BattleLoseMsg:   "gg",
+		ServerID:        "dummytest",
+		ServerHost:      "testserver.psim.us",
+	})
+	client.username = "GhostHaze Thinker"
+
+	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
+	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer wsConn.Close()
+	client.wsConn = wsConn
+	client.connected = true
+
+	battleRoom := "battle-gen9randombattle-300"
+	client.handleRawPayload(">" + battleRoom + "\n|init|battle\n|player|p1|GhostHaze Thinker\n|player|p2|EnemyTrainer")
+
+	if _, ok := client.Battle(battleRoom); !ok {
+		t.Fatalf("expected battle to be active")
+	}
+
+	// activebattles should include this battle
+	active := client.ActiveBattles()
+	if len(active) != 1 || active[0].Room != battleRoom {
+		t.Fatalf("expected 1 active battle, got %d", len(active))
+	}
+
+	// test manual forfeit
+	if err := client.ForfeitBattle(battleRoom); err != nil {
+		t.Fatalf("unexpected error forfeiting battle: %v", err)
+	}
+
+	// verify battle removed from activebattles
+	if len(client.ActiveBattles()) != 0 {
+		t.Fatalf("expected 0 active battles after forfeit, got %d", len(client.ActiveBattles()))
+	}
+
+	// test autoleave on win
+	battleRoom2 := "battle-gen9randombattle-301"
+	client.handleRawPayload(">" + battleRoom2 + "\n|init|battle\n|player|p1|GhostHaze Thinker\n|player|p2|EnemyTrainer")
+	client.handleRawPayload(">" + battleRoom2 + "\n|win|GhostHaze Thinker")
+
+	// battle should be marked ended and omitted from activebattles immediately
+	b2, ok := client.Battle(battleRoom2)
+	if !ok || !b2.IsEnded() {
+		t.Fatalf("expected battle2 to be ended")
+	}
+	if len(client.ActiveBattles()) != 0 {
+		t.Fatalf("expected active battles to filter out ended battle, got %d", len(client.ActiveBattles()))
+	}
+}
+
+

@@ -151,6 +151,21 @@ func TestWebServerEndpoints(t *testing.T) {
 		if reconnectRR.Code != http.StatusOK {
 			t.Errorf("expected 200, got %d", reconnectRR.Code)
 		}
+
+		// test battle forfeit and leave endpoints
+		forfeitReq := httptest.NewRequest(http.MethodPost, "/api/battles/forfeit", bytes.NewBufferString(`{"room":"battle-gen9randombattle-9999"}`))
+		forfeitRR := httptest.NewRecorder()
+		mux.ServeHTTP(forfeitRR, forfeitReq)
+		if forfeitRR.Code != http.StatusOK && forfeitRR.Code != http.StatusInternalServerError {
+			t.Errorf("unexpected status for forfeit: %d", forfeitRR.Code)
+		}
+
+		leaveReq := httptest.NewRequest(http.MethodPost, "/api/battles/leave", bytes.NewBufferString(`{"room":"battle-gen9randombattle-9999"}`))
+		leaveRR := httptest.NewRecorder()
+		mux.ServeHTTP(leaveRR, leaveReq)
+		if leaveRR.Code != http.StatusOK && leaveRR.Code != http.StatusInternalServerError {
+			t.Errorf("unexpected status for leave: %d", leaveRR.Code)
+		}
 	})
 }
 

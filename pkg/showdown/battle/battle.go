@@ -322,7 +322,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			}
 		}
 
-	case "win", "tie":
+	case "win", "tie", "prematureend", "expire":
 		b.Ended = true
 		if len(parts) > 1 {
 			b.Winner = parts[1]
@@ -440,7 +440,7 @@ func toID(s string) string {
 	return b.String()
 }
 
-// Generation returns the pokemon generation number (1-9) parsed from tier, defaulting to 9.
+// generation returns the pokemon generation number (1-9) parsed from tier, defaulting to 9
 func (b *Battle) Generation() int {
 	tier := strings.ToLower(b.Tier)
 	for g := 1; g <= 9; g++ {
@@ -452,8 +452,22 @@ func (b *Battle) Generation() int {
 	return 9
 }
 
-// IsRandomBattle returns true if the battle format is a random battle variant.
+// israndombattle returns true if the battle format is a random battle variant
 func (b *Battle) IsRandomBattle() bool {
 	return strings.Contains(strings.ToLower(b.Tier), "random")
+}
+
+// isended returns whether the battle has concluded
+func (b *Battle) IsEnded() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.Ended
+}
+
+// winnername returns the recorded winner of the battle
+func (b *Battle) WinnerName() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.Winner
 }
 

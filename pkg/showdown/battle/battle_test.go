@@ -501,8 +501,22 @@ func TestBattleHandleLine(t *testing.T) {
 
 	// win line
 	b.HandleLine([]string{"win", "GhostHaze Thinker"}, "GhostHaze Thinker")
-	if !b.Ended || b.Winner != "GhostHaze Thinker" {
-		t.Fatalf("expected battle ended with winner GhostHaze Thinker, got ended=%v, winner=%s", b.Ended, b.Winner)
+	if !b.IsEnded() || b.WinnerName() != "GhostHaze Thinker" {
+		t.Fatalf("expected battle ended with winner GhostHaze Thinker, got ended=%v, winner=%s", b.IsEnded(), b.WinnerName())
+	}
+
+	// test prematureend
+	b2 := NewBattle("battle-gen9randombattle-101", nil)
+	b2.HandleLine([]string{"prematureend"}, "GhostHaze Thinker")
+	if !b2.IsEnded() {
+		t.Fatalf("expected prematureend to end battle")
+	}
+
+	// test expire
+	b3 := NewBattle("battle-gen9randombattle-102", nil)
+	b3.HandleLine([]string{"expire"}, "GhostHaze Thinker")
+	if !b3.IsEnded() {
+		t.Fatalf("expected expire to end battle")
 	}
 }
 

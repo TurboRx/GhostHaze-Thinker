@@ -75,6 +75,14 @@ func Load() (*Config, error) {
 
 	cfg.BattleTeam = os.Getenv("PS_BATTLE_TEAM")
 
+	if autoLeaveRaw := os.Getenv("PS_AUTO_LEAVE_BATTLE"); autoLeaveRaw != "" {
+		autoLeave := autoLeaveRaw == "true" || autoLeaveRaw == "1"
+		cfg.AutoLeaveBattle = &autoLeave
+	}
+
+	cfg.BattleWinMsg = os.Getenv("PS_BATTLE_WIN_MSG")
+	cfg.BattleLoseMsg = os.Getenv("PS_BATTLE_LOSE_MSG")
+
 	// if a web url was supplied or auto-discovery was requested, resolve server parameters
 	autoDiscover := os.Getenv("PS_DISCOVER_SERVER") == "true" || os.Getenv("PS_DISCOVER_SERVER") == "1"
 	if strings.HasPrefix(cfg.ServerURL, "http://") || strings.HasPrefix(cfg.ServerURL, "https://") || autoDiscover {

@@ -188,6 +188,39 @@ func main() {
 		}
 	})
 
+	bot.HandleCommand("forfeit", func(room, user, args string) {
+		targetRoom := strings.TrimSpace(args)
+		if targetRoom == "" && strings.HasPrefix(room, "battle-") {
+			targetRoom = room
+		}
+		if targetRoom == "" {
+			_ = bot.Reply(room, user, "Usage: forfeit <battle-room-id>")
+			return
+		}
+		if err := bot.ForfeitBattle(targetRoom); err != nil {
+			_ = bot.Reply(room, user, fmt.Sprintf("Failed to forfeit battle: %v", err))
+		} else {
+			_ = bot.Reply(room, user, fmt.Sprintf("Forfeited and left battle %s.", targetRoom))
+		}
+	})
+
+	bot.HandleCommand("leave", func(room, user, args string) {
+		targetRoom := strings.TrimSpace(args)
+		if targetRoom == "" {
+			targetRoom = room
+		}
+		if targetRoom == "" {
+			_ = bot.Reply(room, user, "Usage: leave [room-id]")
+			return
+		}
+		if strings.HasPrefix(targetRoom, "battle-") {
+			_ = bot.LeaveBattle(targetRoom)
+		} else {
+			_ = bot.LeaveRoom(targetRoom)
+		}
+		_ = bot.Reply(room, user, fmt.Sprintf("Left room %s.", targetRoom))
+	})
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

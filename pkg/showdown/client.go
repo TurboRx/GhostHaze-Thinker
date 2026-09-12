@@ -291,12 +291,69 @@ func (c *Client) JoinRoom(room string) error {
 	return c.Send(fmt.Sprintf("|/join %s", trimmed))
 }
 
+// leaveroom requests leaving a room and vacates battle if applicable
 func (c *Client) LeaveRoom(room string) error {
 	trimmed := strings.TrimSpace(room)
 	if trimmed == "" {
 		return errors.New("cannot leave room: room name is empty")
 	}
+	if strings.HasPrefix(trimmed, "battle-") {
+		_ = c.SendToRoom(trimmed, "/leavebattle")
+		roomID := ToRoomID(trimmed)
+		c.battleMu.Lock()
+		delete(c.battles, roomID)
+		c.battleMu.Unlock()
+	}
 	return c.Send(fmt.Sprintf("|/leave %s", trimmed))
+}
+
+// forfeitbattle sends forfeit to the battle room and vacates the room
+func (c *Client) ForfeitBattle(room string) error {
+	trimmed := strings.TrimSpace(room)
+	if trimmed == "" {
+		return errors.New("cannot forfeit: room is empty")
+	}
+	_ = c.SendToRoom(trimmed, "/forfeit")
+	_ = c.SendToRoom(trimmed, "/leavebattle")
+	err := c.LeaveRoom(trimmed)
+
+	roomID := ToRoomID(trimmed)
+	c.battleMu.Lock()
+	delete(c.battles, roomID)
+	c.battleMu.Unlock()
+
+	c.stateMu.Lock()
+	delete(c.roomUsers, roomID)
+	delete(c.roomInIntro, roomID)
+	delete(c.roomAway, roomID)
+	delete(c.roomTitles, roomID)
+	c.stateMu.Unlock()
+
+	return err
+}
+
+// leavebattle vacates the battle player slot and leaves the battle room
+func (c *Client) LeaveBattle(room string) error {
+	trimmed := strings.TrimSpace(room)
+	if trimmed == "" {
+		return errors.New("cannot leave battle: room is empty")
+	}
+	_ = c.SendToRoom(trimmed, "/leavebattle")
+	err := c.LeaveRoom(trimmed)
+
+	roomID := ToRoomID(trimmed)
+	c.battleMu.Lock()
+	delete(c.battles, roomID)
+	c.battleMu.Unlock()
+
+	c.stateMu.Lock()
+	delete(c.roomUsers, roomID)
+	delete(c.roomInIntro, roomID)
+	delete(c.roomAway, roomID)
+	delete(c.roomTitles, roomID)
+	c.stateMu.Unlock()
+
+	return err
 }
 
 func (c *Client) SetAvatar(avatar string) error {
@@ -507,7 +564,9 @@ func (c *Client) ActiveBattles() []*battle.Battle {
 	defer c.battleMu.RUnlock()
 	res := make([]*battle.Battle, 0, len(c.battles))
 	for _, b := range c.battles {
-		res = append(res, b)
+		if !b.IsEnded() {
+			res = append(res, b)
+		}
 	}
 	return res
 }
@@ -943,17 +1002,64 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 		_ = c.SendToRoom(room, choice)
 	}
 
-	if msg.Type == "win" || msg.Type == "tie" {
+	if msg.Type == "win" || msg.Type == "tie" || msg.Type == "prematureend" || msg.Type == "expire" {
 		winner := ""
 		if len(msg.Parts) > 0 {
 			winner = msg.Parts[0]
 		}
 		c.dispatchBattleEnd(b, winner)
+
+		c.stateMu.RLock()
+		autoLeave := c.config.ShouldAutoLeaveBattle()
+		winMsg := c.config.BattleWinMsg
+		loseMsg := c.config.BattleLoseMsg
+		c.stateMu.RUnlock()
+
+		if autoLeave {
+			go c.autoLeaveBattleAfterDelay(room, winner, myNick, winMsg, loseMsg)
+		}
 	} else if msg.Type == "deinit" {
 		c.battleMu.Lock()
 		delete(c.battles, roomID)
 		c.battleMu.Unlock()
 	}
+}
+
+// autoleavebattleafterdelay handles optional win/lose messages and cleanly leaves the battle room
+func (c *Client) autoLeaveBattleAfterDelay(room, winner, myNick, winMsg, loseMsg string) {
+	// optional win or lose message before leaving
+	cleanWinner := ToID(winner)
+	cleanNick := ToID(myNick)
+	if cleanWinner != "" && cleanNick != "" {
+		if cleanWinner == cleanNick {
+			if winMsg != "" {
+				_ = c.SendToRoom(room, winMsg)
+			}
+		} else {
+			if loseMsg != "" {
+				_ = c.SendToRoom(room, loseMsg)
+			}
+		}
+	}
+
+	// brief delay to allow victory banner and chat messages to appear cleanly
+	time.Sleep(1 * time.Second)
+
+	_ = c.SendToRoom(room, "/leavebattle")
+	_ = c.LeaveRoom(room)
+
+	// clean up battle state
+	roomID := ToRoomID(room)
+	c.battleMu.Lock()
+	delete(c.battles, roomID)
+	c.battleMu.Unlock()
+
+	c.stateMu.Lock()
+	delete(c.roomUsers, roomID)
+	delete(c.roomInIntro, roomID)
+	delete(c.roomAway, roomID)
+	delete(c.roomTitles, roomID)
+	c.stateMu.Unlock()
 }
 
 func (c *Client) handleUsersList(room, userListStr string) {
