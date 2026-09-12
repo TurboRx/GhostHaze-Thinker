@@ -103,9 +103,11 @@ func Load() (*Config, error) {
 			webPort = p
 		}
 	}
-	webHost := os.Getenv("WEB_HOST")
-	if webHost == "" {
-		webHost = "0.0.0.0"
+	webHost := "0.0.0.0"
+	if val := os.Getenv("WEB_BIND"); val != "" {
+		webHost = val
+	} else if val := os.Getenv("WEB_HOST"); val == "127.0.0.1" || val == "0.0.0.0" || val == "localhost" {
+		webHost = val
 	}
 
 	return &Config{
