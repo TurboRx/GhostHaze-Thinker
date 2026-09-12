@@ -81,11 +81,7 @@ func main() {
 	})
 
 	bot.HandleCommand("ping", func(room, user, args string) {
-		if room != "" {
-			_ = bot.SendToRoom(room, "pong!")
-		} else {
-			_ = bot.SendPM(user, "pong!")
-		}
+		_ = bot.Reply(room, user, "pong!")
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

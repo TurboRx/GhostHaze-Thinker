@@ -59,11 +59,7 @@ Register commands in `cmd/ghosthaze-thinker/main.go`:
 
 ```go
 bot.HandleCommand("hello", func(room, user, args string) {
-    if room != "" {
-        _ = bot.SendToRoom(room, "Hello, " + user + "!")
-    } else {
-        _ = bot.SendPM(user, "Hello!")
-    }
+    _ = bot.Reply(room, user, "Hello, " + user + "!")
 })
 ```
 
@@ -92,11 +88,7 @@ func main() {
     })
 
     client.HandleCommand("ping", func(room, user, args string) {
-        if room != "" {
-            _ = client.SendToRoom(room, "pong!")
-        } else {
-            _ = client.SendPM(user, "pong!")
-        }
+        _ = client.Reply(room, user, "pong!")
     })
 
     _ = client.Run(context.Background())

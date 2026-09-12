@@ -39,6 +39,8 @@ type Client struct {
 	currentRoom      string
 	username         string
 	reconnectWake    chan struct{}
+	roomInIntro      map[string]bool
+	roomUsers        map[string]map[string]string
 
 	onConnect     []func()
 	onDisconnect  []func(error)
@@ -56,8 +58,10 @@ func NewClient(cfg Config) *Client {
 	cfg.ApplyDefaults()
 
 	return &Client{
-		config:   cfg,
-		commands: make(map[string]CommandHandler),
+		config:      cfg,
+		commands:    make(map[string]CommandHandler),
+		roomInIntro: make(map[string]bool),
+		roomUsers:   make(map[string]map[string]string),
 	}
 }
 
@@ -155,12 +159,17 @@ func (c *Client) SendToRoom(room, message string) error {
 		return errors.New("cannot send to room: room is empty")
 	}
 	lines := strings.Split(message, "\n")
+	sent := 0
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
 		if strings.TrimSpace(line) != "" {
+			if sent > 0 {
+				time.Sleep(100 * time.Millisecond)
+			}
 			if err := c.Send(fmt.Sprintf("%s|%s", trimmedRoom, line)); err != nil {
 				return err
 			}
+			sent++
 		}
 	}
 	return nil
@@ -172,15 +181,27 @@ func (c *Client) SendPM(targetUser, message string) error {
 		return errors.New("cannot send PM: target user is empty")
 	}
 	lines := strings.Split(message, "\n")
+	sent := 0
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
 		if strings.TrimSpace(line) != "" {
+			if sent > 0 {
+				time.Sleep(100 * time.Millisecond)
+			}
 			if err := c.Send(fmt.Sprintf("|/pm %s,%s", target, line)); err != nil {
 				return err
 			}
+			sent++
 		}
 	}
 	return nil
+}
+
+func (c *Client) Reply(room, user, message string) error {
+	if strings.TrimSpace(room) != "" {
+		return c.SendToRoom(room, message)
+	}
+	return c.SendPM(user, message)
 }
 
 func (c *Client) JoinRoom(room string) error {
@@ -205,6 +226,52 @@ func (c *Client) SetAvatar(avatar string) error {
 		return errors.New("cannot set avatar: avatar ID is empty")
 	}
 	return c.Send(fmt.Sprintf("|/avatar %s", trimmed))
+}
+
+func (c *Client) RoomUsers(room string) []string {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+
+	roomID := ToRoomID(room)
+	usersMap, exists := c.roomUsers[roomID]
+	if !exists {
+		return nil
+	}
+
+	users := make([]string, 0, len(usersMap))
+	for _, u := range usersMap {
+		users = append(users, u)
+	}
+	return users
+}
+
+func (c *Client) IsInRoom(room, user string) bool {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+
+	roomID := ToRoomID(room)
+	usersMap, exists := c.roomUsers[roomID]
+	if !exists {
+		return false
+	}
+	_, found := usersMap[ToID(user)]
+	return found
+}
+
+func (c *Client) UserRankInRoom(room, user string) string {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+
+	roomID := ToRoomID(room)
+	usersMap, exists := c.roomUsers[roomID]
+	if !exists {
+		return ""
+	}
+	nameWithRank, found := usersMap[ToID(user)]
+	if !found {
+		return ""
+	}
+	return UserRank(nameWithRank)
 }
 
 func (c *Client) Run(ctx context.Context) error {
@@ -395,23 +462,63 @@ func (c *Client) processMessage(msg RawMessage) {
 			}
 		}
 
+	case ":":
+		// end of room intro backlog
+		c.stateMu.Lock()
+		c.roomInIntro[ToRoomID(msg.Room)] = false
+		c.stateMu.Unlock()
+
 	case "init":
 		roomType := ""
 		if len(msg.Parts) > 0 {
 			roomType = msg.Parts[0]
 		}
+		c.stateMu.Lock()
+		c.roomInIntro[ToRoomID(msg.Room)] = true
+		c.stateMu.Unlock()
 		c.dispatchRoomJoin(msg.Room, roomType)
 
 	case "deinit":
+		c.stateMu.Lock()
+		delete(c.roomInIntro, ToRoomID(msg.Room))
+		delete(c.roomUsers, ToRoomID(msg.Room))
+		c.stateMu.Unlock()
 		c.dispatchRoomLeave(msg.Room)
+
+	case "users":
+		if len(msg.Parts) > 0 {
+			c.handleUsersList(msg.Room, msg.Parts[0])
+		}
+
+	case "J", "j":
+		if len(msg.Parts) > 0 {
+			c.handleUserJoin(msg.Room, msg.Parts[0])
+		}
+
+	case "L", "l":
+		if len(msg.Parts) > 0 {
+			c.handleUserLeave(msg.Room, msg.Parts[0])
+		}
+
+	case "N", "n":
+		if len(msg.Parts) >= 2 {
+			c.handleUserRename(msg.Room, msg.Parts[0], msg.Parts[1])
+		}
 
 	case "popup":
 		c.dispatchPopup(strings.Join(msg.Parts, "|"))
 
 	case "c", "chat", "c:":
 		if chat, ok := ParseChatMessage(msg); ok {
+			c.stateMu.RLock()
+			isIntro := c.roomInIntro[ToRoomID(chat.Room)]
+			c.stateMu.RUnlock()
+			chat.IsIntro = isIntro
+
 			c.dispatchChat(chat)
-			c.routeCommand(chat.Room, chat.User, chat.Text)
+			if !isIntro {
+				c.routeCommand(chat.Room, chat.User, chat.Text)
+			}
 		}
 
 	case "pm":
@@ -422,22 +529,108 @@ func (c *Client) processMessage(msg RawMessage) {
 	}
 }
 
+func (c *Client) handleUsersList(room, userListStr string) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	roomID := ToRoomID(room)
+	if c.roomUsers[roomID] == nil {
+		c.roomUsers[roomID] = make(map[string]string)
+	}
+
+	parts := strings.Split(userListStr, ",")
+	if len(parts) <= 1 {
+		return
+	}
+
+	for _, user := range parts[1:] {
+		trimmed := strings.TrimSpace(user)
+		if trimmed != "" {
+			c.roomUsers[roomID][ToID(trimmed)] = trimmed
+		}
+	}
+}
+
+func (c *Client) handleUserJoin(room, user string) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	roomID := ToRoomID(room)
+	if c.roomUsers[roomID] == nil {
+		c.roomUsers[roomID] = make(map[string]string)
+	}
+	trimmed := strings.TrimSpace(user)
+	if trimmed != "" {
+		c.roomUsers[roomID][ToID(trimmed)] = trimmed
+	}
+}
+
+func (c *Client) handleUserLeave(room, user string) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	roomID := ToRoomID(room)
+	if c.roomUsers[roomID] != nil {
+		delete(c.roomUsers[roomID], ToID(user))
+	}
+}
+
+func (c *Client) handleUserRename(room, newUser, oldID string) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	roomID := ToRoomID(room)
+	if c.roomUsers[roomID] == nil {
+		c.roomUsers[roomID] = make(map[string]string)
+	}
+	delete(c.roomUsers[roomID], ToID(oldID))
+	trimmed := strings.TrimSpace(newUser)
+	if trimmed != "" {
+		c.roomUsers[roomID][ToID(trimmed)] = trimmed
+	}
+}
+
 func (c *Client) authenticate(challstr string) {
 	if c.config.Username == "" {
 		return
 	}
 
-	form := url.Values{}
-	form.Set("name", c.config.Username)
-	form.Set("pass", c.config.Password)
-	form.Set("challstr", challstr)
+	var req *http.Request
+	var err error
 
-	req, err := http.NewRequest("POST", c.config.LoginURL, strings.NewReader(form.Encode()))
+	if c.config.Password == "" {
+		// unregistered account assertion (GET request)
+		params := url.Values{}
+		params.Set("act", "getassertion")
+		params.Set("userid", ToID(c.config.Username))
+		params.Set("challstr", challstr)
+
+		reqURL := c.config.LoginURL
+		if strings.Contains(reqURL, "?") {
+			reqURL += "&" + params.Encode()
+		} else {
+			reqURL += "?" + params.Encode()
+		}
+
+		req, err = http.NewRequest("GET", reqURL, nil)
+	} else {
+		// registered account login (POST request)
+		form := url.Values{}
+		form.Set("act", "login")
+		form.Set("name", ToID(c.config.Username))
+		form.Set("pass", c.config.Password)
+		form.Set("challstr", challstr)
+
+		req, err = http.NewRequest("POST", c.config.LoginURL, strings.NewReader(form.Encode()))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+	}
+
 	if err != nil {
 		log.Printf("Failed to create login request: %v", err)
 		return
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.config.HTTPClient.Do(req)
 	if err != nil {
@@ -446,33 +639,44 @@ func (c *Client) authenticate(challstr string) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Failed to read login response: %v", err)
 		return
 	}
+	bodyStr := string(bodyBytes)
 
-	// showdown returns a ']' prefix before the json payload
-	body = bytes.TrimPrefix(body, []byte("]"))
-
-	var result loginResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		log.Printf("Failed to decode login JSON: %v (raw: %s)", err, string(body))
-		return
+	var assertion string
+	if c.config.Password == "" {
+		if bodyStr == ";" {
+			log.Printf("Login failed — nickname '%s' is registered but no password was provided", c.config.Username)
+			return
+		}
+		if strings.HasPrefix(bodyStr, ";;") {
+			log.Printf("Login assertion rejected: %s", bodyStr[2:])
+			return
+		}
+		assertion = strings.TrimSpace(bodyStr)
+	} else {
+		cleanBody := bytes.TrimPrefix(bodyBytes, []byte("]"))
+		var result loginResponse
+		if err := json.Unmarshal(cleanBody, &result); err != nil {
+			log.Printf("Failed to decode login JSON: %v (raw: %s)", err, bodyStr)
+			return
+		}
+		if strings.HasPrefix(result.Assertion, ";;") {
+			log.Printf("Login assertion rejected by server: %s", result.Assertion[2:])
+			return
+		}
+		assertion = result.Assertion
 	}
 
-	if result.Assertion == "" {
+	if assertion == "" {
 		log.Printf("Login failed — empty assertion received")
 		return
 	}
 
-	// assertions starting with ';;' indicate server rejection
-	if strings.HasPrefix(result.Assertion, ";;") {
-		log.Printf("Login assertion rejected by server: %s", result.Assertion[2:])
-		return
-	}
-
-	_ = c.Send(fmt.Sprintf("|/trn %s,0,%s", c.config.Username, result.Assertion))
+	_ = c.Send(fmt.Sprintf("|/trn %s,0,%s", c.config.Username, assertion))
 }
 
 func (c *Client) onPostLogin() {

@@ -95,11 +95,18 @@ func ParsePrivateMessage(msg RawMessage) (PrivateMessage, bool) {
 	to := strings.TrimSpace(msg.Parts[1])
 	text := strings.Join(msg.Parts[2:], "|")
 
+	isHidden := false
+	if strings.HasPrefix(text, "/botmsg ") {
+		text = strings.TrimPrefix(text, "/botmsg ")
+		isHidden = true
+	}
+
 	return PrivateMessage{
-		From: from,
-		To:   to,
-		Text: text,
-		Raw:  msg.Raw,
+		From:     from,
+		To:       to,
+		Text:     text,
+		IsHidden: isHidden,
+		Raw:      msg.Raw,
 	}, true
 }
 

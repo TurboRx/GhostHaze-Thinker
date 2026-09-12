@@ -83,18 +83,56 @@ func TestParseChatMessage(t *testing.T) {
 }
 
 func TestParsePrivateMessage(t *testing.T) {
-	msg := RawMessage{
-		Type:  "pm",
-		Parts: []string{"brock", "ghosthaze thinker", "Rock on!"},
-		Raw:   "|pm|brock|ghosthaze thinker|Rock on!",
+	t.Run("Standard PM", func(t *testing.T) {
+		msg := RawMessage{
+			Type:  "pm",
+			Parts: []string{"brock", "ghosthaze thinker", "Rock on!"},
+			Raw:   "|pm|brock|ghosthaze thinker|Rock on!",
+		}
+
+		pm, ok := ParsePrivateMessage(msg)
+		if !ok {
+			t.Fatal("expected ok to be true")
+		}
+		if pm.From != "brock" || pm.To != "ghosthaze thinker" || pm.Text != "Rock on!" || pm.IsHidden {
+			t.Errorf("unexpected PM: %+v", pm)
+		}
+	})
+
+	t.Run("Botmsg hidden PM", func(t *testing.T) {
+		msg := RawMessage{
+			Type:  "pm",
+			Parts: []string{"~admin", "ghosthaze thinker", "/botmsg .ping test"},
+			Raw:   "|pm|~admin|ghosthaze thinker|/botmsg .ping test",
+		}
+
+		pm, ok := ParsePrivateMessage(msg)
+		if !ok {
+			t.Fatal("expected ok to be true")
+		}
+		if pm.From != "~admin" || pm.To != "ghosthaze thinker" || pm.Text != ".ping test" || !pm.IsHidden {
+			t.Errorf("unexpected hidden PM: %+v", pm)
+		}
+	})
+}
+
+func TestToRoomID(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"botdevelopment", "botdevelopment"},
+		{"Bot Development", "botdevelopment"},
+		{"battle-gen9ou-12345", "battle-gen9ou-12345"},
+		{"groupchat-botdevelopment-secret", "groupchat-botdevelopment-secret"},
+		{"Lobby!", "lobby"},
+		{"--room--", "--room--"},
 	}
 
-	pm, ok := ParsePrivateMessage(msg)
-	if !ok {
-		t.Fatal("expected ok to be true")
-	}
-	if pm.From != "brock" || pm.To != "ghosthaze thinker" || pm.Text != "Rock on!" {
-		t.Errorf("unexpected PM: %+v", pm)
+	for _, tt := range tests {
+		if got := ToRoomID(tt.input); got != tt.expected {
+			t.Errorf("ToRoomID(%q) = %q, expected %q", tt.input, got, tt.expected)
+		}
 	}
 }
 
