@@ -46,6 +46,31 @@ func TestApplyDefaults(t *testing.T) {
 	if cfgNoThrottle.ThrottleDelay != 0 {
 		t.Errorf("expected throttle delay 0 when negative, got %v", cfgNoThrottle.ThrottleDelay)
 	}
+
+	// test side server auto-derivation by ServerID using dummy server name
+	cfgSideServer := Config{ServerID: "testserver"}
+	cfgSideServer.ApplyDefaults()
+	if cfgSideServer.ServerURL != "wss://testserver.psim.us/showdown/websocket" {
+		t.Errorf("expected side server url wss://testserver.psim.us/showdown/websocket, got %s", cfgSideServer.ServerURL)
+	}
+	if cfgSideServer.LoginURL != "https://play.pokemonshowdown.com/~~testserver/action.php" {
+		t.Errorf("expected side server login url https://play.pokemonshowdown.com/~~testserver/action.php, got %s", cfgSideServer.LoginURL)
+	}
+
+	// test custom server host, port, and non-ssl with dummy host
+	useSSL := false
+	cfgCustom := Config{ServerHost: "127.0.0.1", ServerPort: 8000, ServerSSL: &useSSL}
+	cfgCustom.ApplyDefaults()
+	if cfgCustom.ServerURL != "ws://127.0.0.1:8000/showdown/websocket" {
+		t.Errorf("expected ws://127.0.0.1:8000/showdown/websocket, got %s", cfgCustom.ServerURL)
+	}
+
+	// test explicit override preserved
+	cfgExplicit := Config{ServerURL: "wss://custom.example.com/ws", LoginURL: "https://custom.example.com/login"}
+	cfgExplicit.ApplyDefaults()
+	if cfgExplicit.ServerURL != "wss://custom.example.com/ws" || cfgExplicit.LoginURL != "https://custom.example.com/login" {
+		t.Errorf("expected explicit URLs preserved, got server=%s login=%s", cfgExplicit.ServerURL, cfgExplicit.LoginURL)
+	}
 }
 
 func TestRouteCommand(t *testing.T) {

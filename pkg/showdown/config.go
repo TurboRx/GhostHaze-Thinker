@@ -2,11 +2,16 @@ package showdown
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 )
 
 const (
+	DefaultServerID       = "showdown"
+	DefaultServerHost     = "sim3.psim.us"
+	DefaultServerPort     = 443
 	DefaultServerURL      = "wss://sim3.psim.us/showdown/websocket"
+	DefaultLoginServer    = "play.pokemonshowdown.com"
 	DefaultLoginURL       = "https://play.pokemonshowdown.com/api/login"
 	DefaultRoom           = "botdevelopment"
 	DefaultReconnectDelay = 10 * time.Second
@@ -15,7 +20,12 @@ const (
 )
 
 type Config struct {
+	ServerID       string
+	ServerHost     string
+	ServerPort     int
+	ServerSSL      *bool
 	ServerURL      string
+	LoginServer    string
 	LoginURL       string
 	Username       string
 	Password       string
@@ -31,12 +41,52 @@ type Config struct {
 }
 
 func (c *Config) ApplyDefaults() {
+	if c.ServerID == "" {
+		c.ServerID = DefaultServerID
+	}
+
+	// if ServerURL is not explicitly specified, derive it from ServerID, ServerHost, ServerPort, ServerSSL
 	if c.ServerURL == "" {
-		c.ServerURL = DefaultServerURL
+		host := c.ServerHost
+		port := c.ServerPort
+		ssl := true
+		if c.ServerSSL != nil {
+			ssl = *c.ServerSSL
+		}
+
+		if host == "" {
+			if c.ServerID != "" && c.ServerID != DefaultServerID {
+				host = c.ServerID + ".psim.us"
+			} else {
+				host = DefaultServerHost
+			}
+		}
+
+		protocol := "ws"
+		if ssl {
+			protocol = "wss"
+		}
+
+		if port > 0 && port != 80 && port != 443 {
+			c.ServerURL = protocol + "://" + host + ":" + strconv.Itoa(port) + "/showdown/websocket"
+		} else {
+			c.ServerURL = protocol + "://" + host + "/showdown/websocket"
+		}
 	}
+
+	// if LoginURL is not explicitly specified, derive it from LoginServer and ServerID
 	if c.LoginURL == "" {
-		c.LoginURL = DefaultLoginURL
+		loginHost := c.LoginServer
+		if loginHost == "" {
+			loginHost = DefaultLoginServer
+		}
+		if c.ServerID != "" && c.ServerID != DefaultServerID {
+			c.LoginURL = "https://" + loginHost + "/~~" + c.ServerID + "/action.php"
+		} else {
+			c.LoginURL = "https://" + loginHost + "/api/login"
+		}
 	}
+
 	if len(c.Rooms) == 0 {
 		c.Rooms = []string{DefaultRoom}
 	}

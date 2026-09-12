@@ -14,13 +14,27 @@ func Load() (*showdown.Config, error) {
 	_ = LoadEnvFile(".env")
 
 	cfg := &showdown.Config{
-		ServerURL:      getEnv("PS_SERVER_URL", showdown.DefaultServerURL),
-		LoginURL:       getEnv("PS_LOGIN_URL", showdown.DefaultLoginURL),
+		ServerID:       strings.TrimSpace(os.Getenv("PS_SERVER_ID")),
+		ServerHost:     strings.TrimSpace(os.Getenv("PS_SERVER_HOST")),
+		ServerURL:      strings.TrimSpace(os.Getenv("PS_SERVER_URL")),
+		LoginServer:    strings.TrimSpace(os.Getenv("PS_LOGIN_SERVER")),
+		LoginURL:       strings.TrimSpace(os.Getenv("PS_LOGIN_URL")),
 		Username:       strings.TrimSpace(os.Getenv("PS_USERNAME")),
 		Password:       os.Getenv("PS_PASSWORD"),
 		Avatar:         strings.TrimSpace(os.Getenv("PS_AVATAR")),
 		CommandChar:    getEnv("PS_COMMAND_CHAR", showdown.DefaultCommandChar),
 		ReconnectDelay: showdown.DefaultReconnectDelay,
+	}
+
+	if portRaw := strings.TrimSpace(os.Getenv("PS_SERVER_PORT")); portRaw != "" {
+		if p, err := strconv.Atoi(portRaw); err == nil && p > 0 {
+			cfg.ServerPort = p
+		}
+	}
+
+	if sslRaw := strings.TrimSpace(os.Getenv("PS_SERVER_SSL")); sslRaw != "" {
+		ssl := sslRaw == "true" || sslRaw == "1"
+		cfg.ServerSSL = &ssl
 	}
 
 	if roomsRaw := os.Getenv("PS_ROOMS"); roomsRaw != "" {
