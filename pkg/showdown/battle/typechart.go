@@ -235,7 +235,12 @@ var speciesTypes = map[string][]string{
 
 // getspeciestypes returns the known types of a species, or default normal if unknown.
 func GetSpeciesTypes(species string) []string {
-	clean := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(species, "-", ""), " ", ""))
+	clean := cleanID(species)
+	// check embedded pokedex dataset first
+	if entry, exists := getEmbeddedPokedex()[clean]; exists && len(entry.Types) > 0 {
+		return entry.Types
+	}
+	// fallback to manual hardcoded definitions
 	if types, exists := speciesTypes[clean]; exists {
 		return types
 	}

@@ -1,0 +1,2 @@
+# treat large data files as vendored to keep repository language stats pure go
+pkg/showdown/battle/data/*.json linguist-vendored

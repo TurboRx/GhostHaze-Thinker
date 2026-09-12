@@ -528,3 +528,127 @@ func TestBattleRequestParsingAndChoice(t *testing.T) {
 		t.Fatalf("expected wait request to not send choice, got send=%v, choice=%s", waitSend, waitChoice)
 	}
 }
+
+func TestEmbeddedDataset(t *testing.T) {
+	// test expanded moves from embedded dataset
+	knockOff := GetMoveData("Knock Off")
+	if knockOff.Type != "dark" || knockOff.BasePower != 65 || knockOff.Category != CategoryPhysical {
+		t.Fatalf("unexpected data for knock off: %+v", knockOff)
+	}
+
+	freezeDry := GetMoveData("Freeze-Dry")
+	if freezeDry.Type != "ice" || freezeDry.BasePower != 70 || freezeDry.Category != CategorySpecial {
+		t.Fatalf("unexpected data for freeze-dry: %+v", freezeDry)
+	}
+
+	ceaselessEdge := GetMoveData("Ceaseless Edge")
+	if !ceaselessEdge.IsHazard || ceaselessEdge.BasePower != 65 {
+		t.Fatalf("unexpected data for ceaseless edge: %+v", ceaselessEdge)
+	}
+
+	// test expanded species types from embedded dataset
+	clodsireTypes := GetSpeciesTypes("Clodsire")
+	if len(clodsireTypes) != 2 || clodsireTypes[0] != "poison" || clodsireTypes[1] != "ground" {
+		t.Fatalf("unexpected types for clodsire: %v", clodsireTypes)
+	}
+
+	samurottTypes := GetSpeciesTypes("Samurott-Hisui")
+	if len(samurottTypes) != 2 || samurottTypes[0] != "water" || samurottTypes[1] != "dark" {
+		t.Fatalf("unexpected types for samurott-hisui: %v", samurottTypes)
+	}
+
+	// test base stats lookups
+	blisseyStats := GetSpeciesBaseStats("Blissey")
+	if blisseyStats["def"] != 10 || blisseyStats["spd"] != 135 {
+		t.Fatalf("unexpected blissey stats: %v", blisseyStats)
+	}
+
+	cloysterStats := GetSpeciesBaseStats("Cloyster")
+	if cloysterStats["def"] != 180 || cloysterStats["spd"] != 45 {
+		t.Fatalf("unexpected cloyster stats: %v", cloysterStats)
+	}
+
+	// test unknown species base stats fallback
+	unknownStats := GetSpeciesBaseStats("NonExistentMon")
+	if unknownStats["def"] != 80 || unknownStats["spd"] != 80 {
+		t.Fatalf("unexpected default stats for unknown mon: %v", unknownStats)
+	}
+
+	// test full pokedex entry lookup
+	entry, found := GetSpeciesPokedexEntry("Garchomp")
+	if !found || len(entry.Types) != 2 || entry.BaseStats["atk"] != 130 {
+		t.Fatalf("unexpected entry for garchomp: %+v (found=%v)", entry, found)
+	}
+
+	_, notFound := GetSpeciesPokedexEntry("NonExistentMon")
+	if notFound {
+		t.Fatalf("expected not found for nonexistent species")
+	}
+}
+
+func TestStatAwareDamageEvaluation(t *testing.T) {
+	b := NewBattle("battle-gen9randombattle-301", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	// opponent is blissey: 10 def vs 135 spd
+	b.OpponentActive = OpponentActivePoke{
+		Ident:     "p2a: Blissey",
+		Species:   "Blissey",
+		Types:     []string{"normal"},
+		HPPercent: 1.0,
+		Boosts:    make(map[string]int),
+	}
+
+	// active pokemon has aura sphere (special, 80 bp) and close combat (physical, 120 bp)
+	// against blissey's 10 def vs 135 spd, close combat deals vastly more damage
+	reqJSON := `{
+		"rqid": 1,
+		"active": [{
+			"moves": [
+				{"id": "aurasphere", "move": "Aura Sphere", "pp": 20},
+				{"id": "closecombat", "move": "Close Combat", "pp": 5}
+			]
+		}],
+		"side": {
+			"pokemon": [{
+				"ident": "p1a: Lucario",
+				"details": "Lucario, L80",
+				"condition": "250/250",
+				"active": true,
+				"stats": {"atk": 110, "def": 70, "spa": 115, "spd": 70, "spe": 90}
+			}]
+		}
+	}`
+
+	choice, shouldSend := b.HandleLine([]string{"request", reqJSON}, "GhostHaze Thinker")
+	if !shouldSend {
+		t.Fatalf("expected shouldSend to be true")
+	}
+	// should pick close combat (slot 2) against physically fragile blissey
+	if choice != "/choose move 2|1" {
+		t.Fatalf("expected move 2 against blissey, got %s", choice)
+	}
+
+	// now test against cloyster: 180 def vs 45 spd
+	bCloyster := NewBattle("battle-gen9randombattle-302", nil)
+	bCloyster.MyPlayerID = "p1"
+	bCloyster.OpponentID = "p2"
+	bCloyster.OpponentActive = OpponentActivePoke{
+		Ident:     "p2a: Cloyster",
+		Species:   "Cloyster",
+		Types:     []string{"water", "ice"},
+		HPPercent: 1.0,
+		Boosts:    make(map[string]int),
+	}
+
+	choiceCloyster, shouldSendCloyster := bCloyster.HandleLine([]string{"request", reqJSON}, "GhostHaze Thinker")
+	if !shouldSendCloyster {
+		t.Fatalf("expected shouldSendCloyster to be true")
+	}
+	// against cloyster (180 def vs 45 spd), special aura sphere (slot 1) should deal much more damage than physical close combat
+	if choiceCloyster != "/choose move 1|1" {
+		t.Fatalf("expected move 1 (aura sphere) against physically bulky cloyster, got %s", choiceCloyster)
+	}
+}
+

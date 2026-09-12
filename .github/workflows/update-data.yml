@@ -1,0 +1,45 @@
+name: Update Showdown Data
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-data:
+    name: Update Datasets from smogon/pokemon-showdown
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Checkout smogon/pokemon-showdown
+        uses: actions/checkout@v7
+        with:
+          repository: smogon/pokemon-showdown
+          path: smogon-showdown
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run dataset updater from smogon/pokemon-showdown
+        run: go run ./cmd/updater -showdown-dir ./smogon-showdown
+
+      - name: Commit and push changes if updated
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pkg/showdown/battle/data/
+          if git diff --staged --quiet; then
+            echo "No dataset changes detected."
+          else
+            git commit -m "Update Showdown data from smogon/pokemon-showdown"
+            git push
+          fi

@@ -215,6 +215,34 @@ func (e *DefaultEngine) decideActiveTurn(b *Battle, req BattleRequest) BattleDec
 					}
 				}
 
+				// evaluate target defense using known opponent base stats and stage boosts
+				oppBaseStats := GetSpeciesBaseStats(b.OpponentActive.Species)
+				isPsyshockLike := cleanID(data.ID) == "psyshock" || cleanID(data.ID) == "psystrike" || cleanID(data.ID) == "secretsword"
+				if data.Category == CategoryPhysical || isPsyshockLike {
+					def = oppBaseStats["def"]
+					if b.OpponentActive.Boosts != nil {
+						stage := b.OpponentActive.Boosts["def"]
+						if stage > 0 {
+							def = int(float64(def) * float64(2+stage) / 2.0)
+						} else if stage < 0 {
+							def = int(float64(def) * 2.0 / float64(2-stage))
+						}
+					}
+				} else {
+					def = oppBaseStats["spd"]
+					if b.OpponentActive.Boosts != nil {
+						stage := b.OpponentActive.Boosts["spd"]
+						if stage > 0 {
+							def = int(float64(def) * float64(2+stage) / 2.0)
+						} else if stage < 0 {
+							def = int(float64(def) * 2.0 / float64(2-stage))
+						}
+					}
+				}
+				if def <= 0 {
+					def = 80
+				}
+
 				isBurned := strings.Contains(activePoke.Status(), "brn")
 				isPhysical := data.Category == CategoryPhysical
 				dmg := CalculateDamage(level, data.BasePower, atk, def, stab, eff, isBurned, isPhysical)

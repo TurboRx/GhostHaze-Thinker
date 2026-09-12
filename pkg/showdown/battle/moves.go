@@ -1,8 +1,6 @@
 package battle
 
-import (
-	"strings"
-)
+
 
 type MoveCategory string
 
@@ -13,17 +11,17 @@ const (
 )
 
 type MoveData struct {
-	ID        string
-	Name      string
-	Type      string
-	Category  MoveCategory
-	BasePower int
-	Accuracy  int
-	Priority  int
-	IsHealing bool
-	IsHazard  bool
-	IsSetup   bool
-	IsStatus  bool
+	ID        string       `json:"id"`
+	Name      string       `json:"name"`
+	Type      string       `json:"type"`
+	Category  MoveCategory `json:"category"`
+	BasePower int          `json:"basePower"`
+	Accuracy  int          `json:"accuracy"`
+	Priority  int          `json:"priority"`
+	IsHealing bool         `json:"isHealing"`
+	IsHazard  bool         `json:"isHazard"`
+	IsSetup   bool         `json:"isSetup"`
+	IsStatus  bool         `json:"isStatus"`
 }
 
 var movesDatabase = map[string]MoveData{
@@ -168,7 +166,12 @@ var movesDatabase = map[string]MoveData{
 
 // getmovedata retrieves the stats for a given move id, or returns sensible defaults.
 func GetMoveData(moveID string) MoveData {
-	clean := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(moveID, "-", ""), " ", ""))
+	clean := cleanID(moveID)
+	// check embedded moves dataset first
+	if m, exists := getEmbeddedMoves()[clean]; exists {
+		return m
+	}
+	// fallback to manual hardcoded definitions
 	if m, exists := movesDatabase[clean]; exists {
 		return m
 	}
