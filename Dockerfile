@@ -11,7 +11,7 @@ COPY pkg/ ./pkg/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/ghosthaze-thinker ./cmd/ghosthaze-thinker
 
-FROM alpine:3.21 AS production
+FROM alpine:3.24 AS production
 
 LABEL org.opencontainers.image.source="https://github.com/TurboRx/GhostHaze-Thinker"
 LABEL org.opencontainers.image.description="A Pokémon Showdown bot and client library in Go"
