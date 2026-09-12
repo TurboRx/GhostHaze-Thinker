@@ -11,6 +11,7 @@ type ChatMessage struct {
 	Text      string
 	Timestamp time.Time
 	IsIntro   bool
+	Away      bool
 	Raw       string
 }
 
@@ -27,6 +28,7 @@ type PrivateMessage struct {
 	To       string
 	Text     string
 	IsHidden bool
+	Away     bool
 	Raw      string
 }
 
@@ -42,6 +44,13 @@ type UserUpdate struct {
 	Username string
 	IsGuest  bool
 	Avatar   string
+	Away     bool
+}
+
+type Format struct {
+	ID      string
+	Name    string
+	Section string
 }
 
 type RawMessage struct {
@@ -66,10 +75,24 @@ func UserRank(name string) string {
 
 func CleanUsername(name string) string {
 	trimmed := strings.TrimSpace(name)
+	trimmed = strings.TrimSuffix(trimmed, "@!")
 	for len(trimmed) > 0 && !isAlphanumeric(rune(trimmed[0])) {
 		trimmed = strings.TrimSpace(trimmed[1:])
 	}
+	trimmed = strings.TrimSuffix(trimmed, "@!")
 	return trimmed
+}
+
+func IsAway(name string) bool {
+	return strings.HasSuffix(strings.TrimSpace(name), "@!")
+}
+
+func EscapeChat(message string) string {
+	trimmed := strings.TrimLeft(message, " \t")
+	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "!") {
+		return " " + message
+	}
+	return message
 }
 
 func ToID(s string) string {

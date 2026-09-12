@@ -170,3 +170,87 @@ func TestParseChallstr(t *testing.T) {
 		t.Errorf("unexpected challstr: %s", challstr)
 	}
 }
+
+func TestEscapeChat(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"/wall hello", " /wall hello"},
+		{"!dt pikachu", " !dt pikachu"},
+		{"/kick user", " /kick user"},
+		{"normal message", "normal message"},
+		{"  /nested", "   /nested"},
+	}
+
+	for _, tt := range tests {
+		if got := EscapeChat(tt.input); got != tt.expected {
+			t.Errorf("EscapeChat(%q) = %q, expected %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestAwayStatusParsing(t *testing.T) {
+	if !IsAway("+Alice@!") {
+		t.Error("expected +Alice@! to be away")
+	}
+	if IsAway("+Alice") {
+		t.Error("expected +Alice not to be away")
+	}
+	if CleanUsername("+Alice@!") != "Alice" {
+		t.Errorf("expected 'Alice', got %q", CleanUsername("+Alice@!"))
+	}
+
+	chat, ok := ParseChatMessage(RawMessage{
+		Room:  "botdevelopment",
+		Type:  "c",
+		Parts: []string{"+Alice@!", "hello"},
+	})
+	if !ok || !chat.Away || chat.CleanUser() != "Alice" {
+		t.Errorf("unexpected chat away result: %+v", chat)
+	}
+
+	pm, ok := ParsePrivateMessage(RawMessage{
+		Type:  "pm",
+		Parts: []string{"Bob@!", "ghosthaze thinker", "ping"},
+	})
+	if !ok || !pm.Away || pm.CleanFrom() != "Bob" {
+		t.Errorf("unexpected PM away result: %+v", pm)
+	}
+
+	uu, ok := ParseUserUpdate(RawMessage{
+		Type:  "updateuser",
+		Parts: []string{"ghosthaze thinker@!", "1", "169"},
+	})
+	if !ok || !uu.Away || uu.Username != "ghosthaze thinker" {
+		t.Errorf("unexpected updateuser away result: %+v", uu)
+	}
+}
+
+func TestParseFormats(t *testing.T) {
+	msg := RawMessage{
+		Type: "formats",
+		Parts: []string{
+			",[Gen 9] Singles",
+			"gen9ou,1",
+			"gen9ubers,1",
+			",[Gen 9] Doubles",
+			"gen9doublesou,2",
+		},
+	}
+
+	formats := ParseFormats(msg)
+	if len(formats) != 3 {
+		t.Fatalf("expected 3 formats, got %d", len(formats))
+	}
+
+	if formats[0].ID != "gen9ou" || formats[0].Name != "gen9ou" || formats[0].Section != "[Gen 9] Singles" {
+		t.Errorf("unexpected format 0: %+v", formats[0])
+	}
+	if formats[1].ID != "gen9ubers" || formats[1].Section != "[Gen 9] Singles" {
+		t.Errorf("unexpected format 1: %+v", formats[1])
+	}
+	if formats[2].ID != "gen9doublesou" || formats[2].Section != "[Gen 9] Doubles" {
+		t.Errorf("unexpected format 2: %+v", formats[2])
+	}
+}

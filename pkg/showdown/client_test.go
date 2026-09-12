@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestApplyDefaults(t *testing.T) {
@@ -30,8 +32,18 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.CommandChar != DefaultCommandChar {
 		t.Errorf("expected command char %s, got %s", DefaultCommandChar, cfg.CommandChar)
 	}
+	if cfg.ThrottleDelay != DefaultThrottleDelay {
+		t.Errorf("expected throttle delay %v, got %v", DefaultThrottleDelay, cfg.ThrottleDelay)
+	}
 	if cfg.HTTPClient == nil {
 		t.Error("expected non-nil HTTPClient")
+	}
+
+	// test disabling throttle
+	cfgNoThrottle := Config{ThrottleDelay: -1}
+	cfgNoThrottle.ApplyDefaults()
+	if cfgNoThrottle.ThrottleDelay != 0 {
+		t.Errorf("expected throttle delay 0 when negative, got %v", cfgNoThrottle.ThrottleDelay)
 	}
 }
 
@@ -398,4 +410,194 @@ func TestDualAuthentication(t *testing.T) {
 			t.Errorf("unexpected POST body: %s", receivedBody)
 		}
 	})
+}
+
+func TestRoomTitleAndRename(t *testing.T) {
+	client := NewClient(Config{Username: "ghosthaze thinker"})
+
+	type renameEvent struct {
+		oldRoom, newRoom, title string
+	}
+	renameCh := make(chan renameEvent, 1)
+	client.OnRoomRename(func(oldRoom, newRoom, title string) {
+		renameCh <- renameEvent{oldRoom, newRoom, title}
+	})
+
+	type failEvent struct {
+		room, reason, message string
+	}
+	failCh := make(chan failEvent, 1)
+	client.OnRoomJoinFailure(func(room, reason, message string) {
+		failCh <- failEvent{room, reason, message}
+	})
+
+	// set title
+	client.processMessage(RawMessage{
+		Room:  "botdevelopment",
+		Type:  "title",
+		Parts: []string{"Bot Development"},
+	})
+	if title := client.RoomTitle("botdevelopment"); title != "Bot Development" {
+		t.Errorf("expected 'Bot Development', got %q", title)
+	}
+
+	// add user to old room
+	client.processMessage(RawMessage{
+		Room:  "battle-gen9ou-1",
+		Type:  "users",
+		Parts: []string{"1,+Alice"},
+	})
+
+	// room rename
+	client.processMessage(RawMessage{
+		Room:  "battle-gen9ou-1",
+		Type:  "noinit",
+		Parts: []string{"rename", "battle-gen9ou-2", "New Battle"},
+	})
+
+	select {
+	case ev := <-renameCh:
+		if ev.oldRoom != "battle-gen9ou-1" || ev.newRoom != "battle-gen9ou-2" || ev.title != "New Battle" {
+			t.Errorf("unexpected rename event: %+v", ev)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for room rename event")
+	}
+
+	if !client.IsInRoom("battle-gen9ou-2", "alice") {
+		t.Error("expected alice to be migrated to renamed room")
+	}
+
+	// join failure
+	client.processMessage(RawMessage{
+		Room:  "secret-room",
+		Type:  "noinit",
+		Parts: []string{"joinfailure", "room is private"},
+	})
+
+	select {
+	case ev := <-failCh:
+		if ev.room != "secret-room" || ev.reason != "joinfailure" || ev.message != "room is private" {
+			t.Errorf("unexpected join failure event: %+v", ev)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for join failure event")
+	}
+}
+
+func TestUserAwayStatusInRoom(t *testing.T) {
+	client := NewClient(Config{Username: "ghosthaze thinker"})
+
+	client.processMessage(RawMessage{
+		Room:  "botdevelopment",
+		Type:  "users",
+		Parts: []string{"2,+Alice@!,Bob"},
+	})
+
+	if !client.IsUserAway("botdevelopment", "alice") {
+		t.Error("expected alice to be away")
+	}
+	if client.IsUserAway("botdevelopment", "bob") {
+		t.Error("expected bob not to be away")
+	}
+
+	// rename bob to away
+	client.processMessage(RawMessage{
+		Room:  "botdevelopment",
+		Type:  "N",
+		Parts: []string{"Bob@!", "bob"},
+	})
+	if !client.IsUserAway("botdevelopment", "bob") {
+		t.Error("expected bob to be away after rename")
+	}
+}
+
+func TestFormatsTracking(t *testing.T) {
+	client := NewClient(Config{Username: "ghosthaze thinker"})
+
+	formatsCh := make(chan []Format, 1)
+	client.OnFormats(func(formats []Format) {
+		formatsCh <- formats
+	})
+
+	client.processMessage(RawMessage{
+		Type: "formats",
+		Parts: []string{
+			",[Gen 9] Singles",
+			"gen9ou,1",
+			"gen9vgc2024,2",
+		},
+	})
+
+	select {
+	case receivedFormats := <-formatsCh:
+		if len(receivedFormats) != 2 {
+			t.Fatalf("expected 2 received formats, got %d", len(receivedFormats))
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for formats event")
+	}
+
+	formats := client.Formats()
+	if len(formats) != 2 {
+		t.Fatalf("expected 2 client formats, got %d", len(formats))
+	}
+
+	f, ok := client.Format("gen9ou")
+	if !ok || f.Name != "gen9ou" {
+		t.Errorf("unexpected format lookup: %+v", f)
+	}
+
+	_, ok = client.Format("nonexistent")
+	if ok {
+		t.Error("expected nonexistent format not to be found")
+	}
+}
+
+func TestSafeReply(t *testing.T) {
+	client := NewClient(Config{})
+
+	err := client.SafeReply("botdevelopment", "alice", "/ban user")
+	if err == nil || !strings.Contains(err.Error(), "websocket is not connected") {
+		t.Errorf("expected disconnected error, got %v", err)
+	}
+}
+
+func TestThrottleDelay(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer s.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
+	client := NewClient(Config{
+		ThrottleDelay: 30 * time.Millisecond,
+	})
+
+	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer wsConn.Close()
+	client.wsConn = wsConn
+
+	start := time.Now()
+	_ = client.Send("msg1")
+	_ = client.Send("msg2")
+	elapsed := time.Since(start)
+
+	if elapsed < 25*time.Millisecond {
+		t.Errorf("expected throttle delay of at least 25ms, took %v", elapsed)
+	}
 }

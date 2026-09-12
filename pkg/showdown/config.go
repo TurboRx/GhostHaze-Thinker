@@ -11,6 +11,7 @@ const (
 	DefaultRoom           = "botdevelopment"
 	DefaultReconnectDelay = 10 * time.Second
 	DefaultCommandChar    = "."
+	DefaultThrottleDelay  = 100 * time.Millisecond
 )
 
 type Config struct {
@@ -21,6 +22,7 @@ type Config struct {
 	Rooms          []string
 	Avatar         string
 	ReconnectDelay time.Duration
+	ThrottleDelay  time.Duration
 	CommandChar    string
 	HTTPClient     *http.Client
 }
@@ -37,6 +39,11 @@ func (c *Config) ApplyDefaults() {
 	}
 	if c.ReconnectDelay <= 0 {
 		c.ReconnectDelay = DefaultReconnectDelay
+	}
+	if c.ThrottleDelay == 0 {
+		c.ThrottleDelay = DefaultThrottleDelay
+	} else if c.ThrottleDelay < 0 {
+		c.ThrottleDelay = 0
 	}
 	if c.CommandChar == "" {
 		c.CommandChar = DefaultCommandChar

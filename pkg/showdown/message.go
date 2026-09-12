@@ -54,6 +54,7 @@ func ParseChatMessage(msg RawMessage) (ChatMessage, bool) {
 			User:      user,
 			Text:      text,
 			Timestamp: time.Now().UTC(),
+			Away:      IsAway(user),
 			Raw:       msg.Raw,
 		}, true
 
@@ -78,6 +79,7 @@ func ParseChatMessage(msg RawMessage) (ChatMessage, bool) {
 			User:      user,
 			Text:      text,
 			Timestamp: ts,
+			Away:      IsAway(user),
 			Raw:       msg.Raw,
 		}, true
 
@@ -106,6 +108,7 @@ func ParsePrivateMessage(msg RawMessage) (PrivateMessage, bool) {
 		To:       to,
 		Text:     text,
 		IsHidden: isHidden,
+		Away:     IsAway(from),
 		Raw:      msg.Raw,
 	}, true
 }
@@ -116,6 +119,8 @@ func ParseUserUpdate(msg RawMessage) (UserUpdate, bool) {
 	}
 
 	rawName := strings.TrimSpace(msg.Parts[0])
+	away := IsAway(rawName)
+	username := CleanUsername(rawName)
 	isGuest := msg.Parts[1] == "0"
 	avatar := ""
 	if len(msg.Parts) > 2 {
@@ -123,9 +128,10 @@ func ParseUserUpdate(msg RawMessage) (UserUpdate, bool) {
 	}
 
 	return UserUpdate{
-		Username: rawName,
+		Username: username,
 		IsGuest:  isGuest,
 		Avatar:   avatar,
+		Away:     away,
 	}, true
 }
 
@@ -134,4 +140,36 @@ func ParseChallstr(msg RawMessage) (string, bool) {
 		return "", false
 	}
 	return strings.Join(msg.Parts, "|"), true
+}
+
+func ParseFormats(msg RawMessage) []Format {
+	if msg.Type != "formats" {
+		return nil
+	}
+	var formats []Format
+	currentSection := ""
+	for _, part := range msg.Parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" || trimmed == ",LL" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, ",") {
+			currentSection = strings.TrimPrefix(trimmed, ",")
+			continue
+		}
+		name := trimmed
+		commaIdx := strings.LastIndex(name, ",")
+		if commaIdx >= 0 {
+			name = strings.TrimSpace(name[:commaIdx])
+		}
+		id := ToID(name)
+		if id != "" {
+			formats = append(formats, Format{
+				ID:      id,
+				Name:    name,
+				Section: currentSection,
+			})
+		}
+	}
+	return formats
 }

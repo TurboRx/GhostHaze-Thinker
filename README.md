@@ -10,10 +10,10 @@ Connects to Pokémon Showdown over WebSockets, handles authentication, auto-join
 
 ## Features
 
-- **WebSocket Client**: Persistent connection with automatic reconnection and keepalive pings.
-- **Authentication**: Challenge string (`challstr`) login assertion with guest fallback.
-- **Room Management**: Configurable room auto-joining (`botdevelopment`).
-- **Command Router**: Prefix-based command handling with self-command loop prevention.
+- **WebSocket Client**: Persistent connection with automatic reconnection, keepalive pings, and outbound throttle rate limiting.
+- **Authentication**: Challenge string (`challstr`) login assertion with support for registered accounts and guest/unregistered bots.
+- **Room State Tracking**: Active user lists, user ranks, away status, room titles, and room renames.
+- **Security & Command Routing**: Intro backlog ignore, command injection prevention (`EscapeChat`), and prefix-based routing.
 - **Lightweight Docker**: ~6 MB Alpine image published to GitHub Container Registry (`ghcr.io/turborx/ghosthaze-thinker`).
 
 ## Getting Started

@@ -41,17 +41,25 @@ type Client struct {
 	reconnectWake    chan struct{}
 	roomInIntro      map[string]bool
 	roomUsers        map[string]map[string]string
+	roomAway         map[string]map[string]bool
+	roomTitles       map[string]string
+	formats          []Format
+	formatsMap       map[string]Format
+	lastSend         time.Time
 
-	onConnect     []func()
-	onDisconnect  []func(error)
-	onLogin       []func(username string, isGuest bool)
-	onChat        []ChatHandler
-	onPM          []PMHandler
-	onRoomJoin    []func(room, roomType string)
-	onRoomLeave   []func(room string)
-	onPopup       []func(text string)
-	onRawMessages []MessageHandler
-	commands      map[string]CommandHandler
+	onConnect         []func()
+	onDisconnect      []func(error)
+	onLogin           []func(username string, isGuest bool)
+	onChat            []ChatHandler
+	onPM              []PMHandler
+	onRoomJoin        []func(room, roomType string)
+	onRoomLeave       []func(room string)
+	onRoomRename      []func(oldRoom, newRoom, title string)
+	onRoomJoinFailure []func(room, reason, message string)
+	onFormats         []func([]Format)
+	onPopup           []func(text string)
+	onRawMessages     []MessageHandler
+	commands          map[string]CommandHandler
 }
 
 func NewClient(cfg Config) *Client {
@@ -62,6 +70,9 @@ func NewClient(cfg Config) *Client {
 		commands:    make(map[string]CommandHandler),
 		roomInIntro: make(map[string]bool),
 		roomUsers:   make(map[string]map[string]string),
+		roomAway:    make(map[string]map[string]bool),
+		roomTitles:  make(map[string]string),
+		formatsMap:  make(map[string]Format),
 	}
 }
 
@@ -107,6 +118,24 @@ func (c *Client) OnRoomLeave(fn func(room string)) {
 	c.onRoomLeave = append(c.onRoomLeave, fn)
 }
 
+func (c *Client) OnRoomRename(fn func(oldRoom, newRoom, title string)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.onRoomRename = append(c.onRoomRename, fn)
+}
+
+func (c *Client) OnRoomJoinFailure(fn func(room, reason, message string)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.onRoomJoinFailure = append(c.onRoomJoinFailure, fn)
+}
+
+func (c *Client) OnFormats(fn func(formats []Format)) {
+	c.handlerMu.Lock()
+	defer c.handlerMu.Unlock()
+	c.onFormats = append(c.onFormats, fn)
+}
+
 func (c *Client) OnPopup(fn func(text string)) {
 	c.handlerMu.Lock()
 	defer c.handlerMu.Unlock()
@@ -149,8 +178,19 @@ func (c *Client) Send(message string) error {
 		return errors.New("cannot send: websocket is not connected")
 	}
 
+	if c.config.ThrottleDelay > 0 && !c.lastSend.IsZero() {
+		elapsed := time.Since(c.lastSend)
+		if elapsed < c.config.ThrottleDelay {
+			time.Sleep(c.config.ThrottleDelay - elapsed)
+		}
+	}
+
 	_ = c.wsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	return c.wsConn.WriteMessage(websocket.TextMessage, []byte(message))
+	err := c.wsConn.WriteMessage(websocket.TextMessage, []byte(message))
+	if err == nil {
+		c.lastSend = time.Now()
+	}
+	return err
 }
 
 func (c *Client) SendToRoom(room, message string) error {
@@ -163,7 +203,7 @@ func (c *Client) SendToRoom(room, message string) error {
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
 		if strings.TrimSpace(line) != "" {
-			if sent > 0 {
+			if sent > 0 && c.config.ThrottleDelay == 0 {
 				time.Sleep(100 * time.Millisecond)
 			}
 			if err := c.Send(fmt.Sprintf("%s|%s", trimmedRoom, line)); err != nil {
@@ -185,7 +225,7 @@ func (c *Client) SendPM(targetUser, message string) error {
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
 		if strings.TrimSpace(line) != "" {
-			if sent > 0 {
+			if sent > 0 && c.config.ThrottleDelay == 0 {
 				time.Sleep(100 * time.Millisecond)
 			}
 			if err := c.Send(fmt.Sprintf("|/pm %s,%s", target, line)); err != nil {
@@ -202,6 +242,10 @@ func (c *Client) Reply(room, user, message string) error {
 		return c.SendToRoom(room, message)
 	}
 	return c.SendPM(user, message)
+}
+
+func (c *Client) SafeReply(room, user, message string) error {
+	return c.Reply(room, user, EscapeChat(message))
 }
 
 func (c *Client) JoinRoom(room string) error {
@@ -272,6 +316,43 @@ func (c *Client) UserRankInRoom(room, user string) string {
 		return ""
 	}
 	return UserRank(nameWithRank)
+}
+
+func (c *Client) IsUserAway(room, user string) bool {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+
+	roomID := ToRoomID(room)
+	awayMap, exists := c.roomAway[roomID]
+	if !exists {
+		return false
+	}
+	return awayMap[ToID(user)]
+}
+
+func (c *Client) RoomTitle(room string) string {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+
+	roomID := ToRoomID(room)
+	return c.roomTitles[roomID]
+}
+
+func (c *Client) Formats() []Format {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+
+	res := make([]Format, len(c.formats))
+	copy(res, c.formats)
+	return res
+}
+
+func (c *Client) Format(id string) (Format, bool) {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+
+	f, ok := c.formatsMap[ToID(id)]
+	return f, ok
 }
 
 func (c *Client) Run(ctx context.Context) error {
@@ -468,6 +549,46 @@ func (c *Client) processMessage(msg RawMessage) {
 		c.roomInIntro[ToRoomID(msg.Room)] = false
 		c.stateMu.Unlock()
 
+	case "formats":
+		formats := ParseFormats(msg)
+		if len(formats) > 0 {
+			c.stateMu.Lock()
+			c.formats = formats
+			c.formatsMap = make(map[string]Format, len(formats))
+			for _, f := range formats {
+				c.formatsMap[f.ID] = f
+			}
+			c.stateMu.Unlock()
+			c.dispatchFormats(formats)
+		}
+
+	case "title":
+		if len(msg.Parts) > 0 {
+			c.stateMu.Lock()
+			c.roomTitles[ToRoomID(msg.Room)] = msg.Parts[0]
+			c.stateMu.Unlock()
+		}
+
+	case "noinit":
+		if len(msg.Parts) > 0 {
+			action := msg.Parts[0]
+			if action == "rename" && len(msg.Parts) >= 2 {
+				newRoom := msg.Parts[1]
+				title := ""
+				if len(msg.Parts) > 2 {
+					title = msg.Parts[2]
+				}
+				c.handleRoomRename(msg.Room, newRoom, title)
+			} else {
+				reason := action
+				details := ""
+				if len(msg.Parts) > 1 {
+					details = strings.Join(msg.Parts[1:], "|")
+				}
+				c.dispatchRoomJoinFailure(msg.Room, reason, details)
+			}
+		}
+
 	case "init":
 		roomType := ""
 		if len(msg.Parts) > 0 {
@@ -482,6 +603,8 @@ func (c *Client) processMessage(msg RawMessage) {
 		c.stateMu.Lock()
 		delete(c.roomInIntro, ToRoomID(msg.Room))
 		delete(c.roomUsers, ToRoomID(msg.Room))
+		delete(c.roomAway, ToRoomID(msg.Room))
+		delete(c.roomTitles, ToRoomID(msg.Room))
 		c.stateMu.Unlock()
 		c.dispatchRoomLeave(msg.Room)
 
@@ -537,6 +660,9 @@ func (c *Client) handleUsersList(room, userListStr string) {
 	if c.roomUsers[roomID] == nil {
 		c.roomUsers[roomID] = make(map[string]string)
 	}
+	if c.roomAway[roomID] == nil {
+		c.roomAway[roomID] = make(map[string]bool)
+	}
 
 	parts := strings.Split(userListStr, ",")
 	if len(parts) <= 1 {
@@ -546,7 +672,9 @@ func (c *Client) handleUsersList(room, userListStr string) {
 	for _, user := range parts[1:] {
 		trimmed := strings.TrimSpace(user)
 		if trimmed != "" {
-			c.roomUsers[roomID][ToID(trimmed)] = trimmed
+			id := ToID(trimmed)
+			c.roomUsers[roomID][id] = trimmed
+			c.roomAway[roomID][id] = IsAway(trimmed)
 		}
 	}
 }
@@ -559,9 +687,14 @@ func (c *Client) handleUserJoin(room, user string) {
 	if c.roomUsers[roomID] == nil {
 		c.roomUsers[roomID] = make(map[string]string)
 	}
+	if c.roomAway[roomID] == nil {
+		c.roomAway[roomID] = make(map[string]bool)
+	}
 	trimmed := strings.TrimSpace(user)
 	if trimmed != "" {
-		c.roomUsers[roomID][ToID(trimmed)] = trimmed
+		id := ToID(trimmed)
+		c.roomUsers[roomID][id] = trimmed
+		c.roomAway[roomID][id] = IsAway(trimmed)
 	}
 }
 
@@ -571,7 +704,9 @@ func (c *Client) handleUserLeave(room, user string) {
 
 	roomID := ToRoomID(room)
 	if c.roomUsers[roomID] != nil {
-		delete(c.roomUsers[roomID], ToID(user))
+		id := ToID(user)
+		delete(c.roomUsers[roomID], id)
+		delete(c.roomAway[roomID], id)
 	}
 }
 
@@ -583,11 +718,44 @@ func (c *Client) handleUserRename(room, newUser, oldID string) {
 	if c.roomUsers[roomID] == nil {
 		c.roomUsers[roomID] = make(map[string]string)
 	}
+	if c.roomAway[roomID] == nil {
+		c.roomAway[roomID] = make(map[string]bool)
+	}
 	delete(c.roomUsers[roomID], ToID(oldID))
+	delete(c.roomAway[roomID], ToID(oldID))
+
 	trimmed := strings.TrimSpace(newUser)
 	if trimmed != "" {
-		c.roomUsers[roomID][ToID(trimmed)] = trimmed
+		id := ToID(trimmed)
+		c.roomUsers[roomID][id] = trimmed
+		c.roomAway[roomID][id] = IsAway(trimmed)
 	}
+}
+
+func (c *Client) handleRoomRename(oldRoom, newRoom, title string) {
+	oldID := ToRoomID(oldRoom)
+	newID := ToRoomID(newRoom)
+
+	c.stateMu.Lock()
+	if users, ok := c.roomUsers[oldID]; ok {
+		c.roomUsers[newID] = users
+		delete(c.roomUsers, oldID)
+	}
+	if away, ok := c.roomAway[oldID]; ok {
+		c.roomAway[newID] = away
+		delete(c.roomAway, oldID)
+	}
+	if intro, ok := c.roomInIntro[oldID]; ok {
+		c.roomInIntro[newID] = intro
+		delete(c.roomInIntro, oldID)
+	}
+	delete(c.roomTitles, oldID)
+	if title != "" {
+		c.roomTitles[newID] = title
+	}
+	c.stateMu.Unlock()
+
+	c.dispatchRoomRename(oldRoom, newRoom, title)
 }
 
 func (c *Client) authenticate(challstr string) {
@@ -652,6 +820,10 @@ func (c *Client) authenticate(challstr string) {
 			log.Printf("Login failed — nickname '%s' is registered but no password was provided", c.config.Username)
 			return
 		}
+		if strings.Contains(strings.ToLower(bodyStr), "heavy load") {
+			log.Printf("Login failed — Showdown login server is under heavy load; please retry later")
+			return
+		}
 		if strings.HasPrefix(bodyStr, ";;") {
 			log.Printf("Login assertion rejected: %s", bodyStr[2:])
 			return
@@ -659,6 +831,15 @@ func (c *Client) authenticate(challstr string) {
 		assertion = strings.TrimSpace(bodyStr)
 	} else {
 		cleanBody := bytes.TrimPrefix(bodyBytes, []byte("]"))
+		lowerBody := strings.ToLower(string(cleanBody))
+		if strings.Contains(lowerBody, "wrong password") {
+			log.Printf("Login failed — wrong password for user '%s'", c.config.Username)
+			return
+		}
+		if strings.Contains(lowerBody, "heavy load") {
+			log.Printf("Login failed — Showdown login server is under heavy load; please retry later")
+			return
+		}
 		var result loginResponse
 		if err := json.Unmarshal(cleanBody, &result); err != nil {
 			log.Printf("Failed to decode login JSON: %v (raw: %s)", err, bodyStr)
@@ -804,6 +985,36 @@ func (c *Client) dispatchRoomLeave(room string) {
 
 	for _, h := range handlers {
 		go h(room)
+	}
+}
+
+func (c *Client) dispatchRoomRename(oldRoom, newRoom, title string) {
+	c.handlerMu.RLock()
+	handlers := append([]func(string, string, string){}, c.onRoomRename...)
+	c.handlerMu.RUnlock()
+
+	for _, h := range handlers {
+		go h(oldRoom, newRoom, title)
+	}
+}
+
+func (c *Client) dispatchRoomJoinFailure(room, reason, message string) {
+	c.handlerMu.RLock()
+	handlers := append([]func(string, string, string){}, c.onRoomJoinFailure...)
+	c.handlerMu.RUnlock()
+
+	for _, h := range handlers {
+		go h(room, reason, message)
+	}
+}
+
+func (c *Client) dispatchFormats(formats []Format) {
+	c.handlerMu.RLock()
+	handlers := append([]func([]Format){}, c.onFormats...)
+	c.handlerMu.RUnlock()
+
+	for _, h := range handlers {
+		go h(formats)
 	}
 }
 
