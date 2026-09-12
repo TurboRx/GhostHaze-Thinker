@@ -37,6 +37,8 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "Update Showdown data from smogon/pokemon-showdown"
+          author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          committer: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
           title: "Automatic Showdown Data Update"
           body: "Automated update of battle datasets."
           branch: automation/update-data
