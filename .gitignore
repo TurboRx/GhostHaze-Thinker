@@ -11,3 +11,6 @@ bin/
 
 # OS files
 .DS_Store
+
+# Temporary Showdown data checkout
+smogon-showdown/
