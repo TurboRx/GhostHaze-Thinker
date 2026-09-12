@@ -129,6 +129,9 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/send", s.handleAPISend)
 	mux.HandleFunc("/api/challenge", s.handleAPIChallenge)
 	mux.HandleFunc("/api/tools/get-server", s.handleAPIGetServer)
+	mux.HandleFunc("/api/config/update", s.handleAPIConfigUpdate)
+	mux.HandleFunc("/api/bot/reconnect", s.handleAPIBotReconnect)
+	mux.HandleFunc("/api/bot/avatar", s.handleAPIBotAvatar)
 
 	return mux, nil
 }
@@ -153,16 +156,26 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	ssl := true
+	if cfg.ServerSSL != nil {
+		ssl = *cfg.ServerSSL
+	}
+
 	data := map[string]any{
 		"Connected":     s.client.IsConnected(),
 		"LoggedIn":      s.client.IsLoggedIn(),
 		"Username":      s.client.Username(),
 		"ServerID":      cfg.ServerID,
 		"ServerHost":    cfg.ServerHost,
+		"ServerPort":    cfg.ServerPort,
+		"ServerSSL":     ssl,
+		"Avatar":        cfg.Avatar,
 		"CommandChar":   cfg.CommandChar,
 		"Rooms":         s.client.Rooms(),
 		"ActiveBattles": battlesData,
 		"AutoBattle":    s.client.AutoBattle(),
+		"BattleFormats": strings.Join(s.client.BattleFormats(), ", "),
+		"BattleTeam":    s.client.BattleTeam(),
 		"Uptime":        s.Uptime(),
 	}
 
@@ -192,15 +205,40 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	connectedAt := s.client.ConnectedAt()
+	var connectedAtMs int64
+	var uptimeSec int64
+	if !connectedAt.IsZero() && s.client.IsConnected() {
+		connectedAtMs = connectedAt.UnixMilli()
+		uptimeSec = int64(time.Since(connectedAt).Seconds())
+	}
+	serverUptimeSec := int64(time.Since(s.startTime).Seconds())
+
+	ssl := true
+	if cfg.ServerSSL != nil {
+		ssl = *cfg.ServerSSL
+	}
+
 	resp := map[string]any{
-		"connected":      s.client.IsConnected(),
-		"logged_in":      s.client.IsLoggedIn(),
-		"username":       s.client.Username(),
-		"server_id":      cfg.ServerID,
-		"server_host":    cfg.ServerHost,
-		"rooms":          s.client.Rooms(),
-		"active_battles": battlesData,
-		"uptime":         s.Uptime(),
+		"connected":             s.client.IsConnected(),
+		"logged_in":             s.client.IsLoggedIn(),
+		"username":              s.client.Username(),
+		"server_id":             cfg.ServerID,
+		"server_host":           cfg.ServerHost,
+		"server_port":           cfg.ServerPort,
+		"server_ssl":            ssl,
+		"server_url":            cfg.ServerURL,
+		"avatar":                cfg.Avatar,
+		"command_char":          cfg.CommandChar,
+		"auto_battle":           s.client.AutoBattle(),
+		"battle_formats":        s.client.BattleFormats(),
+		"battle_team":           s.client.BattleTeam(),
+		"rooms":                 s.client.Rooms(),
+		"active_battles":        battlesData,
+		"connected_at_ms":       connectedAtMs,
+		"uptime_seconds":        uptimeSec,
+		"server_uptime_seconds": serverUptimeSec,
+		"uptime":                s.Uptime(),
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -389,6 +427,120 @@ func (s *Server) handleAPIGetServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleapiconfigupdate updates bot configuration dynamically
+func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ServerID      string   `json:"server_id"`
+		ServerHost    string   `json:"server_host"`
+		ServerPort    int      `json:"server_port"`
+		ServerSSL     bool     `json:"server_ssl"`
+		Username      string   `json:"username"`
+		Password      string   `json:"password"`
+		Avatar        string   `json:"avatar"`
+		CommandChar   string   `json:"command_char"`
+		AutoBattle    bool     `json:"auto_battle"`
+		BattleFormats []string `json:"battle_formats"`
+		BattleTeam    string   `json:"battle_team"`
+		Reconnect     bool     `json:"reconnect"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+
+	s.client.UpdateConfig(func(cfg *showdown.Config) {
+		if req.ServerID != "" {
+			cfg.ServerID = req.ServerID
+		}
+		if req.ServerHost != "" {
+			cfg.ServerHost = req.ServerHost
+		}
+		if req.ServerPort > 0 {
+			cfg.ServerPort = req.ServerPort
+		}
+		cfg.ServerSSL = &req.ServerSSL
+		if req.Username != "" {
+			cfg.Username = req.Username
+		}
+		if req.Password != "" {
+			cfg.Password = req.Password
+		}
+		if req.Avatar != "" {
+			cfg.Avatar = req.Avatar
+		}
+		if req.CommandChar != "" {
+			cfg.CommandChar = req.CommandChar
+		}
+		cfg.AutoBattle = req.AutoBattle
+		if len(req.BattleFormats) > 0 {
+			cfg.BattleFormats = req.BattleFormats
+		}
+		cfg.BattleTeam = req.BattleTeam
+		cfg.ServerURL = ""
+		cfg.ApplyDefaults()
+	})
+
+	s.AddLog("system", "Control Panel", "Configuration updated")
+
+	if req.Avatar != "" {
+		_ = s.client.SetAvatar(req.Avatar)
+	}
+
+	if req.Reconnect {
+		s.AddLog("system", "Control Panel", "Reconnecting bot with updated configuration...")
+		s.client.Reconnect()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "configuration saved"})
+}
+
+// handleapibotreconnect triggers a reconnection
+func (s *Server) handleAPIBotReconnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.AddLog("system", "Control Panel", "Manual reconnect triggered")
+	s.client.Reconnect()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "bot reconnecting"})
+}
+
+// handleapibotavatar sets avatar directly
+func (s *Server) handleAPIBotAvatar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Avatar string `json:"avatar"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+
+	trimmed := strings.TrimSpace(req.Avatar)
+	if trimmed == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "avatar cannot be empty"})
+		return
+	}
+
+	if err := s.client.SetAvatar(trimmed); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", "Avatar updated to: "+trimmed)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "avatar": trimmed})
 }
 
 // start launches the http listener

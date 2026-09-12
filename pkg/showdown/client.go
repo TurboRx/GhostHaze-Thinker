@@ -36,6 +36,7 @@ type Client struct {
 	battleMu  sync.RWMutex
 
 	connected        bool
+	connectedAt      time.Time
 	loggedIn         bool
 	intentionalClose bool
 	currentRoom      string
@@ -346,8 +347,41 @@ func (c *Client) Rooms() []string {
 
 // clientconfig returns the current configuration
 func (c *Client) ClientConfig() Config {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
 	return c.config
 }
+
+// connectedat returns the timestamp of current connection establishment
+func (c *Client) ConnectedAt() time.Time {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return c.connectedAt
+}
+
+// reconnect forces closing the websocket connection to trigger automatic reconnect
+func (c *Client) Reconnect() {
+	c.writeMu.Lock()
+	conn := c.wsConn
+	c.writeMu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
+// updateconfig updates client configuration safely
+func (c *Client) UpdateConfig(fn func(cfg *Config)) {
+	c.stateMu.Lock()
+	fn(&c.config)
+	c.stateMu.Unlock()
+
+	c.battleMu.Lock()
+	c.autoBattle = c.config.AutoBattle
+	c.battleFormats = append([]string{}, c.config.BattleFormats...)
+	c.battleTeam = c.config.BattleTeam
+	c.battleMu.Unlock()
+}
+
 
 func (c *Client) IsInRoom(room, user string) bool {
 	c.stateMu.RLock()
@@ -589,6 +623,7 @@ func (c *Client) Disconnect() {
 	c.stateMu.Lock()
 	c.intentionalClose = true
 	c.connected = false
+	c.connectedAt = time.Time{}
 	c.loggedIn = false
 	conn := c.wsConn
 	c.wsConn = nil
@@ -624,6 +659,7 @@ func (c *Client) connectAndListen(ctx context.Context) error {
 	c.stateMu.Lock()
 	c.wsConn = conn
 	c.connected = true
+	c.connectedAt = time.Now()
 	c.currentRoom = ""
 	c.stateMu.Unlock()
 	c.writeMu.Unlock()
@@ -670,6 +706,7 @@ func (c *Client) connectAndListen(ctx context.Context) error {
 			c.writeMu.Lock()
 			c.stateMu.Lock()
 			c.connected = false
+			c.connectedAt = time.Time{}
 			c.loggedIn = false
 			c.wsConn = nil
 			c.stateMu.Unlock()

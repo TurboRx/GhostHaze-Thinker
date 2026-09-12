@@ -20,11 +20,65 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
+  // state variables for smooth uptime timer
+  let isConnected = false;
+  let connectionTimeInitialMs = 0;
+  let activeLogFilter = "all";
+  let cachedLogs = [];
+
+  // format seconds into smooth human readable duration
+  function formatDuration(seconds) {
+    if (seconds <= 0) return "0 seconds";
+    const parts = [];
+    const s = seconds % 60;
+    const m = Math.floor(seconds / 60) % 60;
+    const h = Math.floor(seconds / 3600) % 24;
+    const d = Math.floor(seconds / 86400);
+
+    if (d > 0) parts.push(d + (d === 1 ? " day" : " days"));
+    if (h > 0) parts.push(h + (h === 1 ? " hour" : " hours"));
+    if (m > 0) parts.push(m + (m === 1 ? " minute" : " minutes"));
+    if (s > 0 || parts.length === 0) parts.push(s + (s === 1 ? " second" : " seconds"));
+    return parts.join(", ");
+  }
+
+  // smooth 1-second ticker for uptime
+  function tickUptime() {
+    const el = document.getElementById("stat-uptime");
+    const elDetail = document.getElementById("uptime-detail");
+
+    if (!isConnected || !connectionTimeInitialMs) {
+      if (el) el.textContent = isConnected ? "Connecting..." : "Offline";
+      if (elDetail) elDetail.textContent = isConnected ? "Connecting..." : "Not connected";
+      return;
+    }
+
+    const elapsedSec = Math.max(0, Math.floor((Date.now() - connectionTimeInitialMs) / 1000));
+    const formatted = formatDuration(elapsedSec);
+
+    if (el) el.textContent = formatted;
+    if (elDetail) elDetail.textContent = formatted;
+  }
+
+  setInterval(tickUptime, 1000);
+
   // periodic status polling
-  function updateStatus() {
+  function updateStatus(isInitial) {
     fetch("/api/status")
       .then((res) => res.json())
       .then((data) => {
+        isConnected = data.connected;
+
+        if (data.connected && data.connected_at_ms > 0) {
+          connectionTimeInitialMs = data.connected_at_ms;
+        } else if (data.connected && data.uptime_seconds > 0) {
+          connectionTimeInitialMs = Date.now() - data.uptime_seconds * 1000;
+        } else {
+          connectionTimeInitialMs = 0;
+        }
+
+        tickUptime();
+
         const dot = document.getElementById("status-dot");
         const statusText = document.getElementById("status-text");
         const statConn = document.getElementById("stat-conn");
@@ -32,12 +86,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const statUser = document.getElementById("stat-user");
         const statRooms = document.getElementById("stat-rooms");
         const statBattles = document.getElementById("stat-battles");
-        const statUptime = document.getElementById("stat-uptime");
+        const headerServerID = document.getElementById("header-server-id");
+
+        if (headerServerID) {
+          headerServerID.textContent = data.server_id || "showdown";
+        }
 
         if (dot && statusText) {
           if (data.connected) {
             dot.className = "status-dot online";
-            statusText.textContent = data.logged_in ? "Online (" + data.username + ")" : "Connecting...";
+            statusText.textContent = data.logged_in ? "Online (" + data.username + ")" : "Authenticating...";
           } else {
             dot.className = "status-dot offline";
             statusText.textContent = "Offline";
@@ -48,7 +106,7 @@ document.addEventListener("DOMContentLoaded", function () {
           statConn.textContent = data.connected ? (data.logged_in ? "Connected" : "Authenticating") : "Disconnected";
         }
         if (statServer) {
-          statServer.textContent = data.server_id + " (" + data.server_host + ")";
+          statServer.textContent = (data.server_id || "showdown") + " (" + (data.server_host || "sim3.psim.us") + ":" + (data.server_port || 443) + ")";
         }
         if (statUser) {
           statUser.textContent = data.username || "Guest";
@@ -59,16 +117,42 @@ document.addEventListener("DOMContentLoaded", function () {
         if (statBattles) {
           statBattles.textContent = data.active_battles ? data.active_battles.length : 0;
         }
-        if (statUptime) {
-          statUptime.textContent = data.uptime || "0s";
-        }
 
         renderRooms(data.rooms || []);
         renderBattles(data.active_battles || []);
+
+        if (isInitial) {
+          populateConfigForm(data);
+        }
       })
       .catch((err) => {
         console.error("status fetch error:", err);
       });
+  }
+
+  // populate configuration form fields
+  function populateConfigForm(data) {
+    const hostEl = document.getElementById("cfg-server-host");
+    const portEl = document.getElementById("cfg-server-port");
+    const idEl = document.getElementById("cfg-server-id");
+    const sslEl = document.getElementById("cfg-server-ssl");
+    const userEl = document.getElementById("cfg-username");
+    const avatarEl = document.getElementById("cfg-avatar");
+    const cmdEl = document.getElementById("cfg-command-char");
+    const autoBattleEl = document.getElementById("cfg-auto-battle");
+    const formatsEl = document.getElementById("cfg-battle-formats");
+    const teamEl = document.getElementById("cfg-battle-team");
+
+    if (hostEl) hostEl.value = data.server_host || "sim3.psim.us";
+    if (portEl) portEl.value = data.server_port || 443;
+    if (idEl) idEl.value = data.server_id || "showdown";
+    if (sslEl) sslEl.checked = data.server_ssl !== false;
+    if (userEl) userEl.value = data.username || "";
+    if (avatarEl) avatarEl.value = data.avatar || "";
+    if (cmdEl) cmdEl.value = data.command_char || ".";
+    if (autoBattleEl) autoBattleEl.checked = !!data.auto_battle;
+    if (formatsEl) formatsEl.value = data.battle_formats ? data.battle_formats.join(", ") : "gen9randombattle";
+    if (teamEl) teamEl.value = data.battle_team || "";
   }
 
   // render active room table
@@ -77,7 +161,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!tbody) return;
 
     if (rooms.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);">No active rooms joined</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);padding:16px;">No active rooms joined</td></tr>';
       return;
     }
 
@@ -85,19 +169,33 @@ document.addEventListener("DOMContentLoaded", function () {
     rooms.forEach((r) => {
       html += `<tr>
         <td><strong>${escapeHTML(r)}</strong></td>
-        <td><span class="chip">Active</span></td>
+        <td><span class="chip" style="background:var(--success-light);color:#34d399;">Active</span></td>
         <td style="text-align:right;">
+          <button class="btn btn-secondary btn-sm btn-quick-msg" data-room="${escapeHTML(r)}" style="margin-right:6px;">Message</button>
           <button class="btn btn-danger btn-sm btn-leave-room" data-room="${escapeHTML(r)}">Leave</button>
         </td>
       </tr>`;
     });
     tbody.innerHTML = html;
 
-    // attach leave handlers
+    // attach room action handlers
     tbody.querySelectorAll(".btn-leave-room").forEach((btn) => {
       btn.addEventListener("click", function () {
         const roomName = this.getAttribute("data-room");
         leaveRoom(roomName);
+      });
+    });
+
+    tbody.querySelectorAll(".btn-quick-msg").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const roomName = this.getAttribute("data-room");
+        const msg = prompt("Send message to " + roomName + ":");
+        if (msg && msg.trim()) {
+          postJSON("/api/send", { target: roomName, message: msg.trim(), is_pm: false }, function (err) {
+            if (err) showAlert("error", "Failed to send: " + err);
+            else showAlert("success", "Message sent to " + roomName);
+          });
+        }
       });
     });
   }
@@ -112,17 +210,52 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
-    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Room</th><th>Format</th><th>Turn</th><th>Opponent</th></tr></thead><tbody>';
+    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Room</th><th>Format</th><th>Turn</th><th>Opponent</th><th>Action</th></tr></thead><tbody>';
     battles.forEach((b) => {
       html += `<tr>
         <td><strong>${escapeHTML(b.room)}</strong></td>
-        <td>${escapeHTML(b.format || "random")}</td>
+        <td><span class="chip">${escapeHTML(b.format || "random")}</span></td>
         <td>${escapeHTML(b.turn || 0)}</td>
         <td>${escapeHTML(b.opponent || "Unknown")}</td>
+        <td>
+          <a href="https://play.pokemonshowdown.com/${escapeHTML(b.room)}" target="_blank" class="btn btn-secondary btn-sm">Watch</a>
+        </td>
       </tr>`;
     });
     html += "</tbody></table></div>";
     container.innerHTML = html;
+  }
+
+  // render activity logs with filtering
+  function renderLogs() {
+    const logBox = document.getElementById("activity-log-box");
+    if (!logBox) return;
+
+    let filtered = cachedLogs;
+    if (activeLogFilter !== "all") {
+      filtered = cachedLogs.filter((e) => e.type === activeLogFilter);
+    }
+
+    if (!filtered || filtered.length === 0) {
+      logBox.innerHTML = '<div style="color:var(--text-dim);padding:8px;">No log events found for this filter.</div>';
+      return;
+    }
+
+    let html = "";
+    filtered.forEach((e) => {
+      let badgeClass = "badge-system";
+      if (e.type === "chat") badgeClass = "badge-chat";
+      else if (e.type === "pm") badgeClass = "badge-pm";
+      else if (e.type === "battle") badgeClass = "badge-battle";
+      else if (e.type === "room") badgeClass = "badge-room";
+
+      html += `<div class="log-entry">
+        <span class="log-time">${escapeHTML(e.time)}</span>
+        <span class="log-badge ${badgeClass}">${escapeHTML(e.type)}</span>
+        <span class="log-msg"><strong>${escapeHTML(e.source)}:</strong> ${escapeHTML(e.message)}</span>
+      </div>`;
+    });
+    logBox.innerHTML = html;
   }
 
   // fetch activity logs
@@ -130,39 +263,37 @@ document.addEventListener("DOMContentLoaded", function () {
     fetch("/api/logs")
       .then((res) => res.json())
       .then((entries) => {
-        const logBox = document.getElementById("activity-log-box");
-        if (!logBox) return;
-
-        if (!entries || entries.length === 0) {
-          logBox.innerHTML = '<div style="color:var(--text-dim);">No activity logs recorded yet.</div>';
-          return;
-        }
-
-        let html = "";
-        entries.forEach((e) => {
-          let badgeClass = "badge-system";
-          if (e.type === "chat") badgeClass = "badge-chat";
-          else if (e.type === "pm") badgeClass = "badge-pm";
-          else if (e.type === "battle") badgeClass = "badge-battle";
-          else if (e.type === "room") badgeClass = "badge-room";
-
-          html += `<div class="log-entry">
-            <span class="log-time">${escapeHTML(e.time)}</span>
-            <span class="log-badge ${badgeClass}">${escapeHTML(e.type)}</span>
-            <span class="log-msg"><strong>${escapeHTML(e.source)}:</strong> ${escapeHTML(e.message)}</span>
-          </div>`;
-        });
-        logBox.innerHTML = html;
+        cachedLogs = entries || [];
+        renderLogs();
       })
       .catch((err) => {
         console.error("logs fetch error:", err);
       });
   }
 
-  // leave room handler
+  // log filter buttons
+  document.querySelectorAll(".log-filter-btn").forEach((btn) => {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".log-filter-btn").forEach((b) => b.classList.remove("active"));
+      this.classList.add("active");
+      activeLogFilter = this.getAttribute("data-filter") || "all";
+      renderLogs();
+    });
+  });
+
+  // clear logs button
+  const clearLogsBtn = document.getElementById("btn-clear-logs");
+  if (clearLogsBtn) {
+    clearLogsBtn.addEventListener("click", function () {
+      cachedLogs = [];
+      renderLogs();
+    });
+  }
+
+  // leave room helper
   function leaveRoom(room) {
     if (!confirm("Leave room " + room + "?")) return;
-    postJSON("/api/rooms/leave", { room: room }, function (err, res) {
+    postJSON("/api/rooms/leave", { room: room }, function (err) {
       if (err) {
         showAlert("error", "Failed to leave room: " + err);
       } else {
@@ -181,7 +312,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const room = input.value.trim();
       if (!room) return;
 
-      postJSON("/api/rooms/join", { room: room }, function (err, res) {
+      postJSON("/api/rooms/join", { room: room }, function (err) {
         if (err) {
           showAlert("error", "Failed to join room: " + err);
         } else {
@@ -207,7 +338,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
-      postJSON("/api/send", { target: target, message: message, is_pm: isPM }, function (err, res) {
+      postJSON("/api/send", { target: target, message: message, is_pm: isPM }, function (err) {
         if (err) {
           showAlert("error", "Failed to send message: " + err);
         } else {
@@ -232,7 +363,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
-      postJSON("/api/challenge", { user: user, format: format }, function (err, res) {
+      postJSON("/api/challenge", { user: user, format: format }, function (err) {
         if (err) {
           showAlert("error", "Failed to challenge user: " + err);
         } else {
@@ -244,7 +375,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // get-server discovery tool form
+  // get-server discovery tool
   const getServerForm = document.getElementById("form-get-server");
   if (getServerForm) {
     getServerForm.addEventListener("submit", function (e) {
@@ -267,9 +398,123 @@ document.addEventListener("DOMContentLoaded", function () {
             document.getElementById("res-tls").textContent = data.https ? "YES (TLS)" : "NO";
             document.getElementById("res-ws").textContent = data.websocket_url;
             document.getElementById("res-login").textContent = data.login_url;
+
+            // attach quick apply button
+            const applyBtn = document.getElementById("btn-apply-discovered");
+            if (applyBtn) {
+              applyBtn.onclick = function () {
+                document.getElementById("cfg-server-host").value = data.host;
+                document.getElementById("cfg-server-port").value = data.port;
+                document.getElementById("cfg-server-id").value = data.id;
+                document.getElementById("cfg-server-ssl").checked = !!data.https;
+                showAlert("success", "Applied discovered server values to Configuration tab!");
+              };
+            }
           }
         }
       });
+    });
+  }
+
+  // quick set default showdown values
+  const btnSetDefault = document.getElementById("btn-set-default-server");
+  if (btnSetDefault) {
+    btnSetDefault.addEventListener("click", function () {
+      document.getElementById("cfg-server-host").value = "sim3.psim.us";
+      document.getElementById("cfg-server-port").value = 443;
+      document.getElementById("cfg-server-id").value = "showdown";
+      document.getElementById("cfg-server-ssl").checked = true;
+      showAlert("success", "Loaded official Pokémon Showdown server defaults");
+    });
+  }
+
+  // configuration save form
+  const configForm = document.getElementById("form-bot-config");
+  if (configForm) {
+    configForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      saveBotConfig(false);
+    });
+  }
+
+  // save and reconnect button
+  const btnSaveReconnect = document.getElementById("btn-save-reconnect");
+  if (btnSaveReconnect) {
+    btnSaveReconnect.addEventListener("click", function () {
+      if (confirm("Save configuration and reconnect the bot immediately?")) {
+        saveBotConfig(true);
+      }
+    });
+  }
+
+  // manual reconnect button
+  const btnReconnect = document.getElementById("btn-manual-reconnect");
+  if (btnReconnect) {
+    btnReconnect.addEventListener("click", function () {
+      if (confirm("Reconnect bot now?")) {
+        postJSON("/api/bot/reconnect", {}, function (err) {
+          if (err) showAlert("error", "Reconnect failed: " + err);
+          else showAlert("success", "Reconnection signal sent");
+        });
+      }
+    });
+  }
+
+  // quick avatar form
+  const avatarForm = document.getElementById("form-quick-avatar");
+  if (avatarForm) {
+    avatarForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const av = document.getElementById("input-quick-avatar").value.trim();
+      if (!av) return;
+      postJSON("/api/bot/avatar", { avatar: av }, function (err) {
+        if (err) showAlert("error", "Avatar change failed: " + err);
+        else {
+          showAlert("success", "Avatar set to " + av);
+          document.getElementById("input-quick-avatar").value = "";
+        }
+      });
+    });
+  }
+
+  // save configuration helper
+  function saveBotConfig(reconnect) {
+    const host = document.getElementById("cfg-server-host").value.trim();
+    const port = parseInt(document.getElementById("cfg-server-port").value.trim(), 10) || 443;
+    const id = document.getElementById("cfg-server-id").value.trim();
+    const ssl = document.getElementById("cfg-server-ssl").checked;
+    const user = document.getElementById("cfg-username").value.trim();
+    const pass = document.getElementById("cfg-password").value;
+    const avatar = document.getElementById("cfg-avatar").value.trim();
+    const cmdChar = document.getElementById("cfg-command-char").value.trim() || ".";
+    const autoBattle = document.getElementById("cfg-auto-battle").checked;
+    const formatsRaw = document.getElementById("cfg-battle-formats").value.trim();
+    const team = document.getElementById("cfg-battle-team").value.trim();
+
+    const formats = formatsRaw.split(",").map((f) => f.trim()).filter((f) => f !== "");
+
+    const payload = {
+      server_id: id,
+      server_host: host,
+      server_port: port,
+      server_ssl: ssl,
+      username: user,
+      password: pass,
+      avatar: avatar,
+      command_char: cmdChar,
+      auto_battle: autoBattle,
+      battle_formats: formats,
+      battle_team: team,
+      reconnect: reconnect,
+    };
+
+    postJSON("/api/config/update", payload, function (err, res) {
+      if (err) {
+        showAlert("error", "Failed to save configuration: " + err);
+      } else {
+        showAlert("success", reconnect ? "Configuration saved! Bot is reconnecting..." : "Configuration saved successfully!");
+        updateStatus();
+      }
     });
   }
 
@@ -316,7 +561,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // initial fetch & interval loops
-  updateStatus();
+  updateStatus(true);
   updateLogs();
   setInterval(updateStatus, 3000);
   setInterval(updateLogs, 3000);

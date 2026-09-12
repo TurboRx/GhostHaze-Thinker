@@ -18,6 +18,7 @@
     <nav>
       <ul class="nav-tabs">
         <li><button class="nav-tab-btn active" data-tab="overview">Overview</button></li>
+        <li><button class="nav-tab-btn" data-tab="config">Configuration</button></li>
         <li><button class="nav-tab-btn" data-tab="rooms">Rooms</button></li>
         <li><button class="nav-tab-btn" data-tab="tools">Tools</button></li>
         <li><button class="nav-tab-btn" data-tab="battles">Battles</button></li>
@@ -30,7 +31,7 @@
         <span class="status-dot {{if .Connected}}online{{else}}offline{{end}}" id="status-dot"></span>
         <span id="status-text">{{if .Connected}}Online ({{.Username}}){{else}}Offline{{end}}</span>
       </div>
-      <span class="chip">{{.ServerID}}</span>
+      <span class="chip" id="header-server-id">{{.ServerID}}</span>
     </div>
   </header>
 
@@ -44,29 +45,36 @@
         <div class="card">
           <div class="stat-label">Connection Status</div>
           <div class="stat-value" id="stat-conn">{{if .Connected}}Connected{{else}}Disconnected{{end}}</div>
-          <div class="stat-sub" id="stat-server">{{.ServerID}} ({{.ServerHost}})</div>
+          <div class="stat-sub" id="stat-server">{{.ServerID}} ({{.ServerHost}}:{{.ServerPort}})</div>
         </div>
 
         <div class="card">
           <div class="stat-label">Bot Identity</div>
           <div class="stat-value" id="stat-user">{{if .Username}}{{.Username}}{{else}}Guest{{end}}</div>
-          <div class="stat-sub">Prefix: <code>{{.CommandChar}}</code></div>
+          <div class="stat-sub">Prefix: <code>{{.CommandChar}}</code> | Avatar: {{if .Avatar}}{{.Avatar}}{{else}}default{{end}}</div>
         </div>
 
         <div class="card">
           <div class="stat-label">Active Rooms</div>
           <div class="stat-value" id="stat-rooms">{{len .Rooms}}</div>
-          <div class="stat-sub">Joined channels</div>
+          <div class="stat-sub">Joined chat channels</div>
         </div>
 
         <div class="card">
-          <div class="stat-label">Uptime</div>
+          <div class="stat-label">Connection Uptime</div>
           <div class="stat-value" id="stat-uptime">{{.Uptime}}</div>
-          <div class="stat-sub">Active battles: <span id="stat-battles">{{len .ActiveBattles}}</span></div>
+          <div class="stat-sub" id="uptime-detail">Calculating...</div>
         </div>
       </div>
 
-      <!-- quick message card -->
+      <!-- quick actions bar -->
+      <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="btn-manual-reconnect">Reconnect Bot</button>
+        <button class="btn btn-secondary" onclick="document.querySelector('[data-tab=\'config\']').click();">Edit Configuration</button>
+        <button class="btn btn-secondary" onclick="document.querySelector('[data-tab=\'tools\']').click();">Server Discovery Tool</button>
+      </div>
+
+      <!-- quick announcement card -->
       <div class="card">
         <div class="card-header">
           <h2 class="card-title">Quick Announcement / Message</h2>
@@ -94,7 +102,97 @@
       </div>
     </section>
 
-    <!-- tab 2: rooms management -->
+    <!-- tab 2: configuration -->
+    <section id="tab-config" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Bot Configuration Manager</h2>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-set-default-server">Set Showdown Defaults</button>
+        </div>
+        <p style="color:var(--text-muted);margin-bottom:20px;">
+          Configure bot connection, identity, and battle parameters in real-time.
+        </p>
+
+        <form id="form-bot-config">
+          <h3 style="font-size:14px;color:var(--text-main);margin-bottom:12px;border-bottom:1px solid var(--border-color);padding-bottom:6px;">
+            Server Connection
+          </h3>
+          <div class="form-row" style="margin-bottom:16px;">
+            <div class="form-group">
+              <label class="form-label" for="cfg-server-host">Server Host</label>
+              <input type="text" id="cfg-server-host" class="form-input" value="{{.ServerHost}}" placeholder="sim3.psim.us" required>
+            </div>
+            <div class="form-group" style="max-width:120px;">
+              <label class="form-label" for="cfg-server-port">Port</label>
+              <input type="number" id="cfg-server-port" class="form-input" value="{{.ServerPort}}" placeholder="443" required>
+            </div>
+            <div class="form-group" style="max-width:180px;">
+              <label class="form-label" for="cfg-server-id">Server-ID</label>
+              <input type="text" id="cfg-server-id" class="form-input" value="{{.ServerID}}" placeholder="showdown" required>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:20px;">
+            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-muted);">
+              <input type="checkbox" id="cfg-server-ssl" {{if .ServerSSL}}checked{{end}}>
+              Use secure WebSocket connection (TLS / WSS)
+            </label>
+          </div>
+
+          <h3 style="font-size:14px;color:var(--text-main);margin-bottom:12px;border-bottom:1px solid var(--border-color);padding-bottom:6px;">
+            Identity &amp; Credentials
+          </h3>
+          <div class="form-row" style="margin-bottom:16px;">
+            <div class="form-group">
+              <label class="form-label" for="cfg-username">Username</label>
+              <input type="text" id="cfg-username" class="form-input" value="{{.Username}}" placeholder="Leave blank to join as guest">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="cfg-password">Password</label>
+              <input type="password" id="cfg-password" class="form-input" placeholder="Leave blank for unregistered/guest accounts">
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom:20px;">
+            <div class="form-group">
+              <label class="form-label" for="cfg-avatar">Avatar ID</label>
+              <input type="text" id="cfg-avatar" class="form-input" value="{{.Avatar}}" placeholder="e.g. 169">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="cfg-command-char">Command Prefix</label>
+              <input type="text" id="cfg-command-char" class="form-input" value="{{.CommandChar}}" placeholder="." maxlength="3">
+            </div>
+          </div>
+
+          <h3 style="font-size:14px;color:var(--text-main);margin-bottom:12px;border-bottom:1px solid var(--border-color);padding-bottom:6px;">
+            Battle Settings
+          </h3>
+          <div class="form-group" style="margin-bottom:14px;">
+            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-muted);">
+              <input type="checkbox" id="cfg-auto-battle" {{if .AutoBattle}}checked{{end}}>
+              Auto-accept battle challenges
+            </label>
+          </div>
+
+          <div class="form-group" style="margin-bottom:14px;">
+            <label class="form-label" for="cfg-battle-formats">Allowed Battle Formats (comma-separated)</label>
+            <input type="text" id="cfg-battle-formats" class="form-input" value="{{.BattleFormats}}" placeholder="gen9randombattle, gen9ou">
+          </div>
+
+          <div class="form-group" style="margin-bottom:24px;">
+            <label class="form-label" for="cfg-battle-team">Packed Team String (Optional)</label>
+            <textarea id="cfg-battle-team" class="form-textarea" placeholder="Packed team format string for custom tiers...">{{.BattleTeam}}</textarea>
+          </div>
+
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <button type="submit" class="btn btn-primary">Save Configuration</button>
+            <button type="button" class="btn btn-secondary" id="btn-save-reconnect">Save &amp; Reconnect</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- tab 3: rooms management -->
     <section id="tab-rooms" class="tab-pane">
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
@@ -125,14 +223,15 @@
               {{range .Rooms}}
               <tr>
                 <td><strong>{{.}}</strong></td>
-                <td><span class="chip">Active</span></td>
+                <td><span class="chip" style="background:var(--success-light);color:#34d399;">Active</span></td>
                 <td style="text-align:right;">
+                  <button class="btn btn-secondary btn-sm btn-quick-msg" data-room="{{.}}" style="margin-right:6px;">Message</button>
                   <button class="btn btn-danger btn-sm btn-leave-room" data-room="{{.}}">Leave</button>
                 </td>
               </tr>
               {{else}}
               <tr>
-                <td colspan="3" style="text-align:center;color:var(--text-dim);">No active rooms joined</td>
+                <td colspan="3" style="text-align:center;color:var(--text-dim);padding:16px;">No active rooms joined</td>
               </tr>
               {{end}}
             </tbody>
@@ -141,7 +240,7 @@
       </div>
     </section>
 
-    <!-- tab 3: tools (get-server, challenge) -->
+    <!-- tab 4: tools -->
     <section id="tab-tools" class="tab-pane">
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
@@ -164,16 +263,16 @@
           <div class="result-row"><span class="result-label">TLS / HTTPS:</span><span id="res-tls" class="result-val">-</span></div>
           <div class="result-row"><span class="result-label">WebSocket URL:</span><span id="res-ws" class="result-val">-</span></div>
           <div class="result-row"><span class="result-label">Login URL:</span><span id="res-login" class="result-val">-</span></div>
+          <div style="margin-top:12px;text-align:right;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-apply-discovered">Apply to Configuration Form</button>
+          </div>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
           <h2 class="card-title">Battle Challenge Tool</h2>
         </div>
-        <p style="color:var(--text-muted);margin-bottom:16px;">
-          Issue an automated battle challenge to another trainer.
-        </p>
         <form id="form-challenge">
           <div class="form-row">
             <div class="form-group">
@@ -188,9 +287,21 @@
           </div>
         </form>
       </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Quick Avatar Tool</h2>
+        </div>
+        <form id="form-quick-avatar" class="form-row">
+          <div class="form-group">
+            <input type="text" id="input-quick-avatar" class="form-input" placeholder="Avatar ID (e.g. 169, red, lance)" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Update Avatar</button>
+        </form>
+      </div>
     </section>
 
-    <!-- tab 4: battles -->
+    <!-- tab 5: battles -->
     <section id="tab-battles" class="tab-pane">
       <div class="card">
         <div class="card-header">
@@ -203,12 +314,20 @@
       </div>
     </section>
 
-    <!-- tab 5: activity logs -->
+    <!-- tab 6: activity logs -->
     <section id="tab-logs" class="tab-pane">
       <div class="card">
         <div class="card-header">
           <h2 class="card-title">Live Activity Log</h2>
-          <span class="chip">Auto-refreshing</span>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button class="nav-tab-btn log-filter-btn active" data-filter="all">All</button>
+            <button class="nav-tab-btn log-filter-btn" data-filter="chat">Chat</button>
+            <button class="nav-tab-btn log-filter-btn" data-filter="pm">PM</button>
+            <button class="nav-tab-btn log-filter-btn" data-filter="battle">Battle</button>
+            <button class="nav-tab-btn log-filter-btn" data-filter="room">Rooms</button>
+            <button class="nav-tab-btn log-filter-btn" data-filter="system">System</button>
+            <button class="btn btn-secondary btn-sm" id="btn-clear-logs" style="margin-left:8px;">Clear</button>
+          </div>
         </div>
         <div id="activity-log-box" class="log-box">
           <div style="color:var(--text-dim);">Listening for server and chat events...</div>

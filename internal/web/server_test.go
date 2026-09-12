@@ -121,4 +121,36 @@ func TestWebServerEndpoints(t *testing.T) {
 			t.Errorf("expected 404, got %d", rr.Code)
 		}
 	})
+
+	t.Run("config update and avatar endpoints", func(t *testing.T) {
+		configPayload := `{"server_id":"dummytest","server_host":"dummytest.psim.us","server_port":8000,"server_ssl":true,"command_char":"!","avatar":"123","auto_battle":true}`
+		req := httptest.NewRequest(http.MethodPost, "/api/config/update", bytes.NewBufferString(configPayload))
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+
+		// test avatar endpoint
+		avatarPayload := `{"avatar":"169"}`
+		avatarReq := httptest.NewRequest(http.MethodPost, "/api/bot/avatar", bytes.NewBufferString(avatarPayload))
+		avatarRR := httptest.NewRecorder()
+		mux.ServeHTTP(avatarRR, avatarReq)
+
+		// in disconnected mock state avatar returns 200 or 500 depending on conn
+		if avatarRR.Code != http.StatusOK && avatarRR.Code != http.StatusInternalServerError {
+			t.Errorf("unexpected status: %d", avatarRR.Code)
+		}
+
+		// test reconnect endpoint
+		reconnectReq := httptest.NewRequest(http.MethodPost, "/api/bot/reconnect", nil)
+		reconnectRR := httptest.NewRecorder()
+		mux.ServeHTTP(reconnectRR, reconnectReq)
+
+		if reconnectRR.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", reconnectRR.Code)
+		}
+	})
 }
+
