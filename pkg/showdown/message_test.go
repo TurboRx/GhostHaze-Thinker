@@ -5,7 +5,7 @@ import (
 )
 
 func TestParseRawStream(t *testing.T) {
-	raw := ">botdevelopment\n|init|chat\n|c|alice|Hello everyone!\n|c:|1710000000|bob|testing 123\n|pm|charlie|Bot|hi bot"
+	raw := ">botdevelopment\n|init|chat\n|c|alice|Hello everyone!\n|c:|1710000000|bob|testing 123\n|pm|charlie|ghosthaze thinker|hi bot"
 
 	messages, finalRoom := ParseRawStream(raw, "")
 
@@ -85,15 +85,15 @@ func TestParseChatMessage(t *testing.T) {
 func TestParsePrivateMessage(t *testing.T) {
 	msg := RawMessage{
 		Type:  "pm",
-		Parts: []string{"brock", "Bot", "Rock on!"},
-		Raw:   "|pm|brock|Bot|Rock on!",
+		Parts: []string{"brock", "ghosthaze thinker", "Rock on!"},
+		Raw:   "|pm|brock|ghosthaze thinker|Rock on!",
 	}
 
 	pm, ok := ParsePrivateMessage(msg)
 	if !ok {
 		t.Fatal("expected ok to be true")
 	}
-	if pm.From != "brock" || pm.To != "Bot" || pm.Text != "Rock on!" {
+	if pm.From != "brock" || pm.To != "ghosthaze thinker" || pm.Text != "Rock on!" {
 		t.Errorf("unexpected PM: %+v", pm)
 	}
 }
@@ -113,10 +113,10 @@ func TestParseUserUpdate(t *testing.T) {
 	t.Run("Registered user login", func(t *testing.T) {
 		msg := RawMessage{
 			Type:  "updateuser",
-			Parts: []string{"Bot", "1", "169"},
+			Parts: []string{"ghosthaze thinker", "1", "169"},
 		}
 		u, ok := ParseUserUpdate(msg)
-		if !ok || u.IsGuest || u.Username != "Bot" || u.Avatar != "169" {
+		if !ok || u.IsGuest || u.Username != "ghosthaze thinker" || u.Avatar != "169" {
 			t.Errorf("unexpected user update: %+v", u)
 		}
 	})

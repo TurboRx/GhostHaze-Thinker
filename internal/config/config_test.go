@@ -12,7 +12,7 @@ func TestLoadEnvFile(t *testing.T) {
 	envPath := filepath.Join(tempDir, ".env")
 
 	content := `
-PS_USERNAME="TestBot"
+PS_USERNAME="ghosthaze thinker"
 PS_PASSWORD='SecretPassword'
 PS_ROOMS=botdevelopment # target room
 PS_RECONNECT_DELAY_MS=5000
@@ -32,8 +32,8 @@ PS_COMMAND_CHAR=!
 		t.Fatalf("LoadEnvFile failed: %v", err)
 	}
 
-	if val := os.Getenv("PS_USERNAME"); val != "TestBot" {
-		t.Errorf("expected PS_USERNAME to be 'TestBot', got '%s'", val)
+	if val := os.Getenv("PS_USERNAME"); val != "ghosthaze thinker" {
+		t.Errorf("expected PS_USERNAME to be 'ghosthaze thinker', got '%s'", val)
 	}
 	if val := os.Getenv("PS_PASSWORD"); val != "SecretPassword" {
 		t.Errorf("expected PS_PASSWORD to be 'SecretPassword', got '%s'", val)
@@ -47,8 +47,8 @@ PS_COMMAND_CHAR=!
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if cfg.Username != "TestBot" {
-		t.Errorf("expected Username 'TestBot', got '%s'", cfg.Username)
+	if cfg.Username != "ghosthaze thinker" {
+		t.Errorf("expected Username 'ghosthaze thinker', got '%s'", cfg.Username)
 	}
 	if cfg.ReconnectDelay != 5*time.Second {
 		t.Errorf("expected ReconnectDelay 5s, got %v", cfg.ReconnectDelay)
