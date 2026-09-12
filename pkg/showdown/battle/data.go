@@ -13,6 +13,9 @@ var embeddedMovesJSON []byte
 //go:embed data/pokedex.json
 var embeddedPokedexJSON []byte
 
+//go:embed data/random_sets.json
+var embeddedRandomSetsJSON []byte
+
 // pokedexentry represents the core attributes of a pokemon species.
 type PokedexEntry struct {
 	Name      string         `json:"name"`
@@ -20,11 +23,27 @@ type PokedexEntry struct {
 	BaseStats map[string]int `json:"baseStats"`
 }
 
+// randombattleroleset represents a role set in official random battles.
+type RandomBattleRoleSet struct {
+	Role      string   `json:"role"`
+	Movepool  []string `json:"movepool"`
+	Abilities []string `json:"abilities"`
+	TeraTypes []string `json:"teraTypes"`
+}
+
+// randombattlespeciesdata represents the random battle parameters for a species.
+type RandomBattleSpeciesData struct {
+	Level int                   `json:"level"`
+	Sets  []RandomBattleRoleSet `json:"sets"`
+}
+
 var (
-	embeddedMovesOnce   sync.Once
-	embeddedMoves       map[string]MoveData
-	embeddedPokedexOnce sync.Once
-	embeddedPokedex     map[string]PokedexEntry
+	embeddedMovesOnce      sync.Once
+	embeddedMoves          map[string]MoveData
+	embeddedPokedexOnce    sync.Once
+	embeddedPokedex        map[string]PokedexEntry
+	embeddedRandomSetsOnce sync.Once
+	embeddedRandomSets     map[string]RandomBattleSpeciesData
 )
 
 // getembeddedmoves returns the parsed map of all known moves.
@@ -47,6 +66,17 @@ func getEmbeddedPokedex() map[string]PokedexEntry {
 		}
 	})
 	return embeddedPokedex
+}
+
+// getembeddedrandomsets returns the parsed map of official random battle sets.
+func getEmbeddedRandomSets() map[string]RandomBattleSpeciesData {
+	embeddedRandomSetsOnce.Do(func() {
+		embeddedRandomSets = make(map[string]RandomBattleSpeciesData)
+		if len(embeddedRandomSetsJSON) > 0 {
+			_ = json.Unmarshal(embeddedRandomSetsJSON, &embeddedRandomSets)
+		}
+	})
+	return embeddedRandomSets
 }
 
 // cleanid converts a string to lowercase and removes non-alphanumeric characters.
@@ -85,4 +115,12 @@ func GetSpeciesPokedexEntry(species string) (PokedexEntry, bool) {
 	clean := cleanID(species)
 	entry, exists := pokedex[clean]
 	return entry, exists
+}
+
+// getrandombattleset returns the official random battle sets for a given species.
+func GetRandomBattleSet(species string) (RandomBattleSpeciesData, bool) {
+	sets := getEmbeddedRandomSets()
+	clean := cleanID(species)
+	data, exists := sets[clean]
+	return data, exists
 }

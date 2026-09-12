@@ -584,6 +584,17 @@ func TestEmbeddedDataset(t *testing.T) {
 	if notFound {
 		t.Fatalf("expected not found for nonexistent species")
 	}
+
+	// test random battle sets lookup
+	venusaurSet, hasSet := GetRandomBattleSet("Venusaur")
+	if !hasSet || len(venusaurSet.Sets) == 0 || venusaurSet.Level <= 0 {
+		t.Fatalf("unexpected random set for venusaur: %+v (hasSet=%v)", venusaurSet, hasSet)
+	}
+
+	_, noSet := GetRandomBattleSet("NonExistentMon")
+	if noSet {
+		t.Fatalf("expected no random set for nonexistent mon")
+	}
 }
 
 func TestStatAwareDamageEvaluation(t *testing.T) {

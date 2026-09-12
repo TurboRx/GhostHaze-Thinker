@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	smogonBaseURL    = "https://raw.githubusercontent.com/smogon/pokemon-showdown/master/data"
-	smogonPokedexURL = smogonBaseURL + "/pokedex.ts"
-	smogonMovesURL   = smogonBaseURL + "/moves.ts"
+	smogonBaseURL       = "https://raw.githubusercontent.com/smogon/pokemon-showdown/master/data"
+	smogonPokedexURL    = smogonBaseURL + "/pokedex.ts"
+	smogonMovesURL      = smogonBaseURL + "/moves.ts"
+	smogonRandomSetsURL = smogonBaseURL + "/random-battles/gen9/sets.json"
 )
 
 var healingNames = map[string]bool{
@@ -69,16 +70,16 @@ func cleanKey(s string) string {
 	return b.String()
 }
 
-func readSource(showdownDir, filename, rawURL string) ([]byte, error) {
+func readSource(showdownDir, relPath, rawURL string) ([]byte, error) {
 	if showdownDir != "" {
-		localPath := filepath.Join(showdownDir, "data", filename)
+		localPath := filepath.Join(showdownDir, "data", relPath)
 		if _, err := os.Stat(localPath); err == nil {
-			fmt.Printf("reading %s from local checkout %s...\n", filename, localPath)
+			fmt.Printf("reading %s from local checkout %s...\n", relPath, localPath)
 			return os.ReadFile(localPath)
 		}
 	}
 
-	fmt.Printf("fetching %s from %s...\n", filename, rawURL)
+	fmt.Printf("fetching %s from %s...\n", relPath, rawURL)
 	client := &http.Client{Timeout: 45 * time.Second}
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
@@ -181,7 +182,6 @@ func updateMoves(showdownDir, destPath string) error {
 		isSetup := false
 		if cat == "Status" {
 			if boostsMatch := boostsRegex.FindStringSubmatch(block); len(boostsMatch) > 1 {
-				// check for positive boost numbers
 				if strings.Contains(boostsMatch[1], ": 1") ||
 					strings.Contains(boostsMatch[1], ": 2") ||
 					strings.Contains(boostsMatch[1], ": 3") {
@@ -297,6 +297,45 @@ func updatePokedex(showdownDir, destPath string) error {
 	return nil
 }
 
+func updateRandomSets(showdownDir, destPath string) error {
+	relPath := filepath.Join("random-battles", "gen9", "sets.json")
+	data, err := readSource(showdownDir, relPath, smogonRandomSetsURL)
+	if err != nil {
+		return err
+	}
+
+	var rawSets map[string]struct {
+		Level int `json:"level"`
+		Sets  []struct {
+			Role      string   `json:"role"`
+			Movepool  []string `json:"movepool"`
+			Abilities []string `json:"abilities"`
+			TeraTypes []string `json:"teraTypes"`
+		} `json:"sets"`
+	}
+
+	if err := json.Unmarshal(data, &rawSets); err != nil {
+		return fmt.Errorf("failed to unmarshal random sets: %w", err)
+	}
+
+	processed := make(map[string]any, len(rawSets))
+	for species, set := range rawSets {
+		cleanID := cleanKey(species)
+		processed[cleanID] = set
+	}
+
+	outData, err := json.Marshal(processed)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(destPath, outData, 0644); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %d random battle sets to %s\n", len(processed), destPath)
+	return nil
+}
+
 func main() {
 	showdownDir := flag.String("showdown-dir", "", "path to smogon/pokemon-showdown checkout")
 	flag.Parse()
@@ -319,6 +358,7 @@ func main() {
 
 	movesDest := filepath.Join(dataDir, "moves.json")
 	pokedexDest := filepath.Join(dataDir, "pokedex.json")
+	randomSetsDest := filepath.Join(dataDir, "random_sets.json")
 
 	if err := updateMoves(*showdownDir, movesDest); err != nil {
 		fmt.Fprintf(os.Stderr, "error updating moves: %v\n", err)
@@ -327,6 +367,11 @@ func main() {
 
 	if err := updatePokedex(*showdownDir, pokedexDest); err != nil {
 		fmt.Fprintf(os.Stderr, "error updating pokedex: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := updateRandomSets(*showdownDir, randomSetsDest); err != nil {
+		fmt.Fprintf(os.Stderr, "error updating random sets: %v\n", err)
 		os.Exit(1)
 	}
 
