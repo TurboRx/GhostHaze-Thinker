@@ -187,24 +187,17 @@ GhostHaze-Thinker/
 ├── .env.example           # Sample environment variables
 ├── Dockerfile             # Multi-stage static build (~6 MB image)
 ├── docker-compose.yml     # Docker Compose definition
-├── verify_docker.sh       # Automated validation script
 └── go.mod
 ```
 
 ---
 
-## Testing & Verification
+## Testing
 
-Run the unit test suite:
+Run the test suite:
 
 ```bash
 go test -v ./...
-```
-
-Run the automated Docker and setup verification:
-
-```bash
-bash verify_docker.sh
 ```
 
 ---

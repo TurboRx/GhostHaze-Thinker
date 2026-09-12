@@ -31,6 +31,3 @@ docker-compose.yml
 
 # CI/CD
 .github/
-
-# Verification script
-verify_docker.sh
