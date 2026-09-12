@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run static analysis
+        run: go vet ./...
+
+      - name: Run tests with race detector
+        run: go test -v -race ./...
