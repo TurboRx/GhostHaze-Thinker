@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -255,14 +256,10 @@ func (s *Server) AddLog(entryType, source, msg string) {
 		s.logs = s.logs[:s.maxLogs]
 	}
 
-	// append to disk log files
+	// append to disk daily security log matching showdown-chatbot format
 	_ = os.MkdirAll("logs", 0755)
+	dailyPath := fmt.Sprintf("logs/seclog_%s.log", now.Format("2006_01_02"))
 	logLine := fmt.Sprintf("[%s] [%s] [%s] %s\n", now.Format("2006-01-02 15:04:05"), entryType, source, msg)
-	if f, err := os.OpenFile("logs/security.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-		_, _ = f.WriteString(logLine)
-		_ = f.Close()
-	}
-	dailyPath := fmt.Sprintf("logs/%s.log", now.Format("2006-01-02"))
 	if f, err := os.OpenFile(dailyPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 		_, _ = f.WriteString(logLine)
 		_ = f.Close()
@@ -2271,7 +2268,7 @@ func sanitizeAdminPath(p string) (string, error) {
 	return clean, nil
 }
 
-// handleapiadminfiles lists security logs and data files
+// handleapiadminfiles lists security logs matching showdown-chatbot seclog
 func (s *Server) handleAPIAdminFiles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2279,33 +2276,48 @@ func (s *Server) handleAPIAdminFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = os.MkdirAll("logs", 0755)
-	_ = os.MkdirAll("data", 0755)
 
 	var result []AdminFileInfo
-	for _, dir := range []string{"logs", "data"} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
+	entries, err := os.ReadDir("logs")
+	if err == nil {
 		for _, e := range entries {
-			if e.IsDir() {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
 				continue
 			}
 			info, err := e.Info()
 			if err != nil {
 				continue
 			}
-			relPath := filepath.Join(dir, e.Name())
+			relPath := filepath.Join("logs", e.Name())
+
+			// calculate size in kb matching showdown-chatbot
+			kb := float64(info.Size()) / 1024.0
+			sizeStr := fmt.Sprintf("%.2f KB", kb)
+
+			// parse human-readable date matching showdown-chatbot (e.g. September 13, 2026)
+			dateStr := info.ModTime().Format("January 02, 2006")
+			parts := strings.Split(strings.TrimSuffix(e.Name(), ".log"), "_")
+			if len(parts) == 4 && parts[0] == "seclog" {
+				if t, err := time.Parse("2006_01_02", parts[1]+"_"+parts[2]+"_"+parts[3]); err == nil {
+					dateStr = t.Format("January 02, 2006")
+				}
+			}
+
 			result = append(result, AdminFileInfo{
 				Name:  e.Name(),
 				Path:  relPath,
-				Size:  formatByteSize(info.Size()),
+				Size:  sizeStr,
 				Bytes: info.Size(),
-				Date:  info.ModTime().Format("2006-01-02 15:04:05"),
-				IsLog: dir == "logs",
+				Date:  dateStr,
+				IsLog: true,
 			})
 		}
 	}
+
+	// sort most recent first matching showdown-chatbot
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name > result[j].Name
+	})
 
 	writeJSON(w, http.StatusOK, result)
 }
