@@ -261,3 +261,25 @@ func IsAbilityImmune(ability, moveType string) bool {
 	}
 	return strings.EqualFold(immuneType, moveType)
 }
+
+// getrandomspecies returns a random species name from the pokedex.
+func GetRandomSpecies() string {
+	pokedex := getEmbeddedPokedex()
+	for _, entry := range pokedex {
+		if entry.Name != "" {
+			return entry.Name
+		}
+	}
+	return "Pikachu"
+}
+
+// getrandommovename returns a random move name from moves data.
+func GetRandomMoveName() string {
+	moves := getEmbeddedMoves()
+	for _, m := range moves {
+		if m.Name != "" {
+			return m.Name
+		}
+	}
+	return "Thunderbolt"
+}

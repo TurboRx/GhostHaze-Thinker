@@ -20,11 +20,12 @@ type CustomCommand struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// commandstore manages dynamic commands and persistence
+// commandstore manages dynamic commands, aliases, and persistence
 type CommandStore struct {
 	mu       sync.RWMutex
 	filePath string
 	commands map[string]CustomCommand
+	aliases  map[string]string
 }
 
 // newcommandstore creates a new dynamic command store
@@ -32,6 +33,7 @@ func NewCommandStore(filePath string) *CommandStore {
 	store := &CommandStore{
 		filePath: filePath,
 		commands: make(map[string]CustomCommand),
+		aliases:  make(map[string]string),
 	}
 	if filePath != "" {
 		_ = store.Load()
@@ -111,17 +113,76 @@ func (s *CommandStore) List() []CustomCommand {
 	return res
 }
 
-// get returns a specific command by name
+// get returns a specific command by name or resolves an alias
 func (s *CommandStore) Get(name string) (*CustomCommand, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	cmd, ok := s.commands[strings.ToLower(strings.TrimSpace(name))]
+	clean := strings.ToLower(strings.TrimSpace(name))
+	if target, ok := s.aliases[clean]; ok {
+		clean = target
+	}
+
+	cmd, ok := s.commands[clean]
 	if !ok {
 		return nil, false
 	}
 	cpy := cmd
 	return &cpy, true
+}
+
+// setalias maps a shortcut alias to a command name
+func (s *CommandStore) SetAlias(alias, target string) {
+	cleanAlias := strings.ToLower(strings.TrimSpace(alias))
+	cleanAlias = strings.TrimPrefix(cleanAlias, ".")
+	cleanAlias = strings.TrimPrefix(cleanAlias, "!")
+
+	cleanTarget := strings.ToLower(strings.TrimSpace(target))
+	cleanTarget = strings.TrimPrefix(cleanTarget, ".")
+	cleanTarget = strings.TrimPrefix(cleanTarget, "!")
+
+	if cleanAlias == "" || cleanTarget == "" {
+		return
+	}
+
+	s.mu.Lock()
+	s.aliases[cleanAlias] = cleanTarget
+	s.mu.Unlock()
+}
+
+// getalias retrieves the target command for an alias
+func (s *CommandStore) GetAlias(alias string) (string, bool) {
+	cleanAlias := strings.ToLower(strings.TrimSpace(alias))
+	cleanAlias = strings.TrimPrefix(cleanAlias, ".")
+	cleanAlias = strings.TrimPrefix(cleanAlias, "!")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	target, ok := s.aliases[cleanAlias]
+	return target, ok
+}
+
+// deletealias removes an existing alias
+func (s *CommandStore) DeleteAlias(alias string) {
+	cleanAlias := strings.ToLower(strings.TrimSpace(alias))
+	cleanAlias = strings.TrimPrefix(cleanAlias, ".")
+	cleanAlias = strings.TrimPrefix(cleanAlias, "!")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.aliases, cleanAlias)
+}
+
+// listaliases returns a copy of all configured command aliases
+func (s *CommandStore) ListAliases() map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	cpy := make(map[string]string, len(s.aliases))
+	for k, v := range s.aliases {
+		cpy[k] = v
+	}
+	return cpy
 }
 
 // addorupdate creates or edits a custom command
