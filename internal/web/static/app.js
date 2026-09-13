@@ -364,7 +364,7 @@ document.addEventListener("DOMContentLoaded", function () {
     rooms.forEach((r) => {
       html += `<tr>
         <td><strong>${escapeHTML(r)}</strong></td>
-        <td><span class="chip" style="background:var(--success-light);color:#34d399;">Active</span></td>
+        <td><span class="chip" style="background:var(--success-light);color:#34d399;border-color:rgba(16,185,129,0.3);">Active</span></td>
         <td style="text-align:right;">
           <div class="table-actions">
             <button type="button" class="btn btn-secondary btn-sm btn-quick-msg" data-room="${escapeHTML(r)}">Message</button>
@@ -394,9 +394,11 @@ document.addEventListener("DOMContentLoaded", function () {
         <td>${escapeHTML(b.turn || 0)}</td>
         <td>${escapeHTML(b.opponent || "Unknown")}</td>
         <td style="text-align:right;">
-          <a href="https://play.pokemonshowdown.com/${escapeHTML(b.room)}" target="_blank" class="btn btn-secondary btn-sm" style="margin-right:6px;">Watch</a>
-          <button type="button" class="btn btn-secondary btn-sm btn-forfeit-battle" data-room="${escapeHTML(b.room)}" style="margin-right:6px;">Forfeit</button>
-          <button type="button" class="btn btn-danger btn-sm btn-leave-battle" data-room="${escapeHTML(b.room)}">Leave</button>
+          <div class="table-actions">
+            <a href="https://play.pokemonshowdown.com/${escapeHTML(b.room)}" target="_blank" class="btn btn-secondary btn-sm">Watch</a>
+            <button type="button" class="btn btn-secondary btn-sm btn-forfeit-battle" data-room="${escapeHTML(b.room)}">Forfeit</button>
+            <button type="button" class="btn btn-danger btn-sm btn-leave-battle" data-room="${escapeHTML(b.room)}">Leave</button>
+          </div>
         </td>
       </tr>`;
     });

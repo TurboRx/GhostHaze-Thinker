@@ -11,42 +11,59 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 24px;
+      background: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.08), transparent 70%), var(--background);
     }
     .login-card {
       width: 100%;
-      max-width: 420px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: var(--border-radius);
+      max-width: 400px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
       padding: 32px 28px;
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+      box-shadow: var(--shadow-lg);
+      animation: scaleFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     .login-header {
       text-align: center;
       margin-bottom: 24px;
     }
+    .login-icon-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius);
+      background-color: var(--secondary);
+      border: 1px solid var(--border);
+      color: var(--primary);
+      margin-bottom: 14px;
+    }
     .login-title {
-      font-size: 1.5rem;
+      font-size: 1.35rem;
       font-weight: 700;
-      color: var(--text-main);
+      color: var(--foreground);
       margin-bottom: 6px;
+      letter-spacing: -0.02em;
     }
     .login-subtitle {
-      font-size: 0.875rem;
-      color: var(--text-muted);
+      font-size: 0.85rem;
+      color: var(--muted-foreground);
+      line-height: 1.4;
     }
     .login-alert {
       display: none;
       padding: 10px 14px;
-      border-radius: var(--border-radius-sm);
+      border-radius: var(--radius-sm);
       font-size: 0.85rem;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
       line-height: 1.4;
+      animation: scaleFadeIn 0.2s ease forwards;
     }
     .login-alert.error {
       display: block;
-      background: rgba(239, 68, 68, 0.12);
+      background: var(--destructive-light);
       border: 1px solid rgba(239, 68, 68, 0.35);
       color: #fca5a5;
     }
@@ -56,23 +73,31 @@
   <div class="login-wrapper">
     <div class="login-card">
       <div class="login-header">
+        <div class="login-icon-wrap">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"></path>
+            <circle cx="9" cy="10" r="1"></circle>
+            <circle cx="15" cy="10" r="1"></circle>
+          </svg>
+        </div>
         <h1 class="login-title">GhostHaze-Thinker</h1>
-        <p class="login-subtitle">Control Panel Authentication</p>
+        <p class="login-subtitle">Control panel administration authentication</p>
       </div>
 
       <div id="login-alert" class="login-alert"></div>
 
       <form id="form-login">
-        <div class="form-group" style="margin-bottom: 18px;">
+        <div class="form-group" style="margin-bottom: 20px;">
           <label class="form-label" for="login-password">Admin Password</label>
           <div style="display: flex; gap: 8px;">
             <input type="password" id="login-password" class="form-input" placeholder="Enter control panel password" required autofocus autocomplete="current-password">
             <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-pw" style="white-space: nowrap;">Show</button>
           </div>
+          <span class="form-hint">Mandatory security enabled. Default password is <code>admin</code>.</span>
         </div>
 
-        <button type="submit" class="btn btn-primary" id="btn-submit" style="width: 100%; justify-content: center; padding: 10px 16px;">
-          Log In
+        <button type="submit" class="btn btn-primary" id="btn-submit" style="width: 100%; justify-content: center; height: 40px; font-size: 14px;">
+          Authenticate
         </button>
       </form>
     </div>
@@ -131,7 +156,7 @@
         alertBox.textContent = "Network error while logging in. Please try again.";
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = "Log In";
+        submitBtn.textContent = "Authenticate";
       }
     });
   </script>
