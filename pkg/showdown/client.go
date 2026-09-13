@@ -1278,7 +1278,7 @@ func (c *Client) processMessage(msg RawMessage) {
 
 			c.dispatchChat(chat)
 			if !isIntro {
-				// record trainer activity
+				// record user activity
 				if c.seen != nil && chat.User != "" && chat.Room != "" {
 					c.seen.Record(chat.User, chat.Room, chat.Text)
 				}

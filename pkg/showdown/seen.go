@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// seenentry records when and where a trainer was last active
+// seenentry records when and where a user was last active
 type SeenEntry struct {
 	UserID      string    `json:"user_id"`
 	Username    string    `json:"username"`
@@ -19,7 +19,7 @@ type SeenEntry struct {
 	LastSeen    time.Time `json:"last_seen"`
 }
 
-// seenstore maintains trainer activity records across chatrooms
+// seenstore maintains user activity records across chatrooms
 type SeenStore struct {
 	filePath string
 	mu       sync.RWMutex
