@@ -421,6 +421,174 @@ func TestWebServerEndpoints(t *testing.T) {
 			t.Fatalf("expected 200 for history clear, got %d", clearRR.Code)
 		}
 	})
+
+	t.Run("timers endpoints crud and trigger", func(t *testing.T) {
+		// save timer
+		tJSON := `{"name":"Welcome","room":"lobby","interval_minutes":15,"message":"Welcome to the chatroom!","enabled":true}`
+		saveReq := authReq(httptest.NewRequest(http.MethodPost, "/api/timers/save", bytes.NewBufferString(tJSON)))
+		saveReq.Header.Set("Content-Type", "application/json")
+		saveRR := httptest.NewRecorder()
+		mux.ServeHTTP(saveRR, saveReq)
+		if saveRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for timer save, got %d: %s", saveRR.Code, saveRR.Body.String())
+		}
+
+		// list timers
+		listReq := authReq(httptest.NewRequest(http.MethodGet, "/api/timers", nil))
+		listRR := httptest.NewRecorder()
+		mux.ServeHTTP(listRR, listReq)
+		if listRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for timers list, got %d", listRR.Code)
+		}
+		var listResp struct {
+			Timers []showdown.ChatroomTimer `json:"timers"`
+		}
+		if err := json.Unmarshal(listRR.Body.Bytes(), &listResp); err != nil || len(listResp.Timers) != 1 {
+			t.Fatalf("expected 1 timer, got %v", listResp.Timers)
+		}
+		timerID := listResp.Timers[0].ID
+
+		// toggle timer
+		togJSON := `{"id":"` + timerID + `"}`
+		togReq := authReq(httptest.NewRequest(http.MethodPost, "/api/timers/toggle", bytes.NewBufferString(togJSON)))
+		togReq.Header.Set("Content-Type", "application/json")
+		togRR := httptest.NewRecorder()
+		mux.ServeHTTP(togRR, togReq)
+		if togRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for timer toggle, got %d", togRR.Code)
+		}
+
+		// delete timer
+		delJSON := `{"id":"` + timerID + `"}`
+		delReq := authReq(httptest.NewRequest(http.MethodPost, "/api/timers/delete", bytes.NewBufferString(delJSON)))
+		delReq.Header.Set("Content-Type", "application/json")
+		delRR := httptest.NewRecorder()
+		mux.ServeHTTP(delRR, delReq)
+		if delRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for timer delete, got %d", delRR.Code)
+		}
+	})
+
+	t.Run("blacklist endpoints", func(t *testing.T) {
+		// add user to blacklist
+		blJSON := `{"username":"TrollMaster","reason":"Spamming commands"}`
+		addReq := authReq(httptest.NewRequest(http.MethodPost, "/api/blacklist/add", bytes.NewBufferString(blJSON)))
+		addReq.Header.Set("Content-Type", "application/json")
+		addRR := httptest.NewRecorder()
+		mux.ServeHTTP(addRR, addReq)
+		if addRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for blacklist add, got %d: %s", addRR.Code, addRR.Body.String())
+		}
+
+		// list blacklist
+		listReq := authReq(httptest.NewRequest(http.MethodGet, "/api/blacklist", nil))
+		listRR := httptest.NewRecorder()
+		mux.ServeHTTP(listRR, listReq)
+		if listRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for blacklist list, got %d", listRR.Code)
+		}
+		var blResp struct {
+			Blacklist []showdown.BlacklistEntry `json:"blacklist"`
+		}
+		if err := json.Unmarshal(listRR.Body.Bytes(), &blResp); err != nil || len(blResp.Blacklist) != 1 {
+			t.Fatalf("expected 1 blacklisted user, got %v", blResp.Blacklist)
+		}
+
+		// remove user from blacklist
+		rmJSON := `{"username":"TrollMaster"}`
+		rmReq := authReq(httptest.NewRequest(http.MethodPost, "/api/blacklist/remove", bytes.NewBufferString(rmJSON)))
+		rmReq.Header.Set("Content-Type", "application/json")
+		rmRR := httptest.NewRecorder()
+		mux.ServeHTTP(rmRR, rmReq)
+		if rmRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for blacklist remove, got %d", rmRR.Code)
+		}
+	})
+
+	t.Run("joinphrases endpoints", func(t *testing.T) {
+		// save join phrase
+		jpJSON := `{"username":"PokemonTrainer","room":"lobby","phrase":"Welcome {user}!","enabled":true}`
+		saveReq := authReq(httptest.NewRequest(http.MethodPost, "/api/joinphrases/save", bytes.NewBufferString(jpJSON)))
+		saveReq.Header.Set("Content-Type", "application/json")
+		saveRR := httptest.NewRecorder()
+		mux.ServeHTTP(saveRR, saveReq)
+		if saveRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for join phrase save, got %d: %s", saveRR.Code, saveRR.Body.String())
+		}
+
+		// list join phrases
+		listReq := authReq(httptest.NewRequest(http.MethodGet, "/api/joinphrases", nil))
+		listRR := httptest.NewRecorder()
+		mux.ServeHTTP(listRR, listReq)
+		if listRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for join phrases list, got %d", listRR.Code)
+		}
+		var jpResp struct {
+			JoinPhrases []showdown.JoinPhrase `json:"joinphrases"`
+		}
+		if err := json.Unmarshal(listRR.Body.Bytes(), &jpResp); err != nil || len(jpResp.JoinPhrases) != 1 {
+			t.Fatalf("expected 1 join phrase, got %v", jpResp.JoinPhrases)
+		}
+		jpID := jpResp.JoinPhrases[0].ID
+
+		// toggle join phrase
+		togJSON := `{"id":"` + jpID + `"}`
+		togReq := authReq(httptest.NewRequest(http.MethodPost, "/api/joinphrases/toggle", bytes.NewBufferString(togJSON)))
+		togReq.Header.Set("Content-Type", "application/json")
+		togRR := httptest.NewRecorder()
+		mux.ServeHTTP(togRR, togReq)
+		if togRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for join phrase toggle, got %d", togRR.Code)
+		}
+
+		// delete join phrase
+		delJSON := `{"id":"` + jpID + `"}`
+		delReq := authReq(httptest.NewRequest(http.MethodPost, "/api/joinphrases/delete", bytes.NewBufferString(delJSON)))
+		delReq.Header.Set("Content-Type", "application/json")
+		delRR := httptest.NewRecorder()
+		mux.ServeHTTP(delRR, delReq)
+		if delRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for join phrase delete, got %d", delRR.Code)
+		}
+	})
+
+	t.Run("moderation endpoints", func(t *testing.T) {
+		// get moderation config
+		getReq := authReq(httptest.NewRequest(http.MethodGet, "/api/moderation", nil))
+		getRR := httptest.NewRecorder()
+		mux.ServeHTTP(getRR, getReq)
+		if getRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for moderation get, got %d", getRR.Code)
+		}
+
+		// save moderation config
+		cfgJSON := `{"enabled":true,"banned_words":["badphrase"],"max_caps_percent":75,"caps_min_length":12,"action":"warn","custom_warning":"No caps please"}`
+		saveReq := authReq(httptest.NewRequest(http.MethodPost, "/api/moderation/save", bytes.NewBufferString(cfgJSON)))
+		saveReq.Header.Set("Content-Type", "application/json")
+		saveRR := httptest.NewRecorder()
+		mux.ServeHTTP(saveRR, saveReq)
+		if saveRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for moderation save, got %d: %s", saveRR.Code, saveRR.Body.String())
+		}
+	})
+
+	t.Run("ladder endpoints", func(t *testing.T) {
+		// get ladder status
+		getReq := authReq(httptest.NewRequest(http.MethodGet, "/api/ladder/status", nil))
+		getRR := httptest.NewRecorder()
+		mux.ServeHTTP(getRR, getReq)
+		if getRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for ladder status, got %d", getRR.Code)
+		}
+
+		// stop ladder
+		stopReq := authReq(httptest.NewRequest(http.MethodPost, "/api/ladder/stop", nil))
+		stopRR := httptest.NewRecorder()
+		mux.ServeHTTP(stopRR, stopReq)
+		if stopRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for ladder stop, got %d", stopRR.Code)
+		}
+	})
 }
 
 func TestWebAuthenticationAndLockout(t *testing.T) {

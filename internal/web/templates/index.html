@@ -32,6 +32,8 @@
           <li><button class="nav-tab-btn" data-tab="battles">Battles</button></li>
           <li><button class="nav-tab-btn" data-tab="teams">Teams</button></li>
           <li><button class="nav-tab-btn" data-tab="commands">Commands</button></li>
+          <li><button class="nav-tab-btn" data-tab="timers">Timers</button></li>
+          <li><button class="nav-tab-btn" data-tab="moderation">Moderation</button></li>
           <li><button class="nav-tab-btn" data-tab="logs">Activity Log</button></li>
         </ul>
       </nav>
@@ -110,6 +112,8 @@
       <li><button class="mobile-nav-btn" data-tab="battles">Battles</button></li>
       <li><button class="mobile-nav-btn" data-tab="teams">Teams</button></li>
       <li><button class="mobile-nav-btn" data-tab="commands">Commands</button></li>
+      <li><button class="mobile-nav-btn" data-tab="timers">Timers</button></li>
+      <li><button class="mobile-nav-btn" data-tab="moderation">Moderation</button></li>
       <li><button class="mobile-nav-btn" data-tab="logs">Activity Log</button></li>
       {{if .AuthRequired}}
       <li><button class="mobile-nav-btn" id="mobile-btn-logout" style="color:var(--destructive);">Logout</button></li>
@@ -650,6 +654,38 @@
 
     <!-- tab 5: battles -->
     <section id="tab-battles" class="tab-pane">
+      <!-- ranked ladder bot card -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header" style="flex-wrap:wrap;gap:10px;">
+          <div>
+            <h2 class="card-title">Ranked Ladder Bot</h2>
+            <p class="card-description">Automated matchmaking. Queues ladder games, makes competitive battle decisions using the minimax engine, and auto-rotates matches.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="badge badge-secondary" id="ladder-status-badge">Inactive</span>
+          </div>
+        </div>
+        <div class="form-row" style="align-items:flex-end;">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label" for="input-ladder-format">Matchmaking Format (Tier)</label>
+            <input type="text" id="input-ladder-format" class="form-input" placeholder="e.g. gen9randombattle or gen9ou" value="gen9randombattle">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" for="input-ladder-max">Max Games (0 = continuous)</label>
+            <input type="number" id="input-ladder-max" class="form-input" value="10" min="0" max="1000">
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="btn btn-primary" id="btn-ladder-start">Start Ladder</button>
+            <button type="button" class="btn btn-destructive" id="btn-ladder-stop" style="display:none;">Stop Ladder</button>
+          </div>
+        </div>
+        <div id="ladder-metrics-row" style="display:flex;gap:24px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;flex-wrap:wrap;">
+          <div><span style="color:var(--text-dim);">Matches Played:</span> <strong id="stat-ladder-played">0</strong></div>
+          <div><span style="color:var(--text-dim);">Session Record:</span> <strong id="stat-ladder-record">0W / 0L / 0T</strong></div>
+          <div><span style="color:var(--text-dim);">Current Status:</span> <span id="stat-ladder-current" style="color:var(--text-dim);">Idle</span></div>
+        </div>
+      </div>
+
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
           <div>
@@ -831,6 +867,203 @@
 
         <div id="commands-list-container">
           <p style="color:var(--text-dim);text-align:center;padding:24px;">Loading custom commands...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- tab: chatroom timers -->
+    <section id="tab-timers" class="tab-pane">
+      <div class="card">
+        <div class="card-header" style="flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 class="card-title">Chatroom Timers &amp; Announcements</h2>
+            <p class="card-description">Schedule periodic messages and automated announcements across chatrooms.</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-show-add-timer">+ New Timer</button>
+        </div>
+
+        <!-- add/edit timer form -->
+        <div id="timer-form-container" style="display:none;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:20px;">
+          <h3 class="section-subtitle" id="timer-form-title" style="margin-top:0;">Create Chatroom Timer</h3>
+          <form id="form-chatroom-timer">
+            <input type="hidden" id="input-timer-id" value="">
+            <div class="form-row">
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" for="input-timer-name">Timer Name</label>
+                <input type="text" id="input-timer-name" class="form-input" placeholder="e.g. Server Rules Reminder" required>
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" for="input-timer-room">Target Chatroom</label>
+                <input type="text" id="input-timer-room" class="form-input" placeholder="e.g. lobby or tournament" required>
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" for="input-timer-interval">Interval (Minutes)</label>
+                <input type="number" id="input-timer-interval" class="form-input" value="15" min="1" max="1440" required>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top:14px;">
+              <label class="form-label" for="input-timer-message">Announcement Message</label>
+              <textarea id="input-timer-message" class="form-textarea" rows="3" placeholder="Message to announce in the chatroom..." required></textarea>
+            </div>
+
+            <div class="form-row" style="margin-top:14px;align-items:center;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <label class="switch">
+                  <input type="checkbox" id="switch-timer-enabled" checked>
+                  <span class="slider"></span>
+                </label>
+                <span style="font-size:13px;font-weight:500;">Timer Active</span>
+              </div>
+              <div style="display:flex;gap:10px;margin-left:auto;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-timer">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm" id="btn-save-timer">Save Timer</button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div id="timers-list-container">
+          <p style="color:var(--text-dim);text-align:center;padding:24px;">Loading chatroom timers...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- tab: chatroom moderation & community safety -->
+    <section id="tab-moderation" class="tab-pane">
+      <!-- moderation card 1: automated moderation rules -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Chatroom Moderation Rules</h2>
+            <p class="card-description">Automated protection against banned words, vulgarities, and excessive caps in chatrooms.</p>
+          </div>
+        </div>
+        <form id="form-moderation-config">
+          <div class="form-row" style="align-items:center;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <label class="switch">
+                <input type="checkbox" id="switch-mod-enabled">
+                <span class="slider"></span>
+              </label>
+              <span style="font-size:14px;font-weight:600;">Enable Automated Chatroom Moderation</span>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:14px;">
+            <label class="form-label" for="input-mod-banned">Banned Words &amp; Phrases (comma or line-separated)</label>
+            <textarea id="input-mod-banned" class="form-textarea" rows="3" placeholder="badword, slur, advertisingphrase..."></textarea>
+            <span class="form-hint">Messages containing any of these words (case-insensitive) will trigger moderation action.</span>
+          </div>
+
+          <div class="form-row" style="margin-bottom:14px;">
+            <div class="form-group" style="flex:1;">
+              <label class="form-label" for="input-mod-caps-percent">Max Caps Percentage (%)</label>
+              <input type="number" id="input-mod-caps-percent" class="form-input" min="10" max="100" value="70">
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label class="form-label" for="input-mod-caps-min">Min Message Length for Caps Check</label>
+              <input type="number" id="input-mod-caps-min" class="form-input" min="3" max="100" value="10">
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label class="form-label" for="select-mod-action">Enforcement Action</label>
+              <select id="select-mod-action" class="form-input">
+                <option value="warn">Showdown /warn</option>
+                <option value="mute">Showdown /mute (7 minutes)</option>
+                <option value="message">Custom Warning Message</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom:14px;">
+            <div class="form-group" style="flex:2;">
+              <label class="form-label" for="input-mod-warning">Custom Warning Message</label>
+              <input type="text" id="input-mod-warning" class="form-input" value="Please refrain from profanity, spam, or excessive caps.">
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label class="form-label" for="input-mod-exempt">Exempt Ranks</label>
+              <input type="text" id="input-mod-exempt" class="form-input" value="+%@*#~">
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Save Moderation Rules</button>
+        </form>
+      </div>
+
+      <!-- moderation card 2: user blacklist -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header" style="flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 class="card-title">User Blacklist &amp; Guard</h2>
+            <p class="card-description">Users on this list are ignored by the bot and blocked from commands and battle challenges.</p>
+          </div>
+        </div>
+
+        <form id="form-add-blacklist" class="form-row" style="margin-bottom:18px;">
+          <div class="form-group" style="flex:1;">
+            <input type="text" id="input-bl-username" class="form-input" placeholder="Username to block" required>
+          </div>
+          <div class="form-group" style="flex:2;">
+            <input type="text" id="input-bl-reason" class="form-input" placeholder="Reason (e.g. spamming, offensive behavior)">
+          </div>
+          <button type="submit" class="btn btn-destructive">Block User</button>
+        </form>
+
+        <div id="blacklist-container">
+          <p style="color:var(--text-dim);text-align:center;padding:20px;">No blacklisted users.</p>
+        </div>
+      </div>
+
+      <!-- moderation card 3: join phrases -->
+      <div class="card">
+        <div class="card-header" style="flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 class="card-title">User Join Phrases (Custom Greetings)</h2>
+            <p class="card-description">Dispatches custom greeting phrases when specific users join a chatroom.</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-show-add-jp">+ New Join Phrase</button>
+        </div>
+
+        <!-- add join phrase form -->
+        <div id="jp-form-container" style="display:none;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:20px;">
+          <h3 class="section-subtitle" style="margin-top:0;">Add User Greeting</h3>
+          <form id="form-join-phrase">
+            <input type="hidden" id="input-jp-id" value="">
+            <div class="form-row">
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" for="input-jp-user">Username</label>
+                <input type="text" id="input-jp-user" class="form-input" placeholder="e.g. AshKetchum" required>
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" for="input-jp-room">Chatroom (leave blank for all)</label>
+                <input type="text" id="input-jp-room" class="form-input" placeholder="e.g. lobby (optional)">
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top:14px;">
+              <label class="form-label" for="input-jp-phrase">Greeting Phrase</label>
+              <input type="text" id="input-jp-phrase" class="form-input" placeholder="Welcome champion {user} to {room}!" required>
+              <span class="form-hint">Variables: {user} = joining user, {bot} = bot name, {room} = chatroom name.</span>
+            </div>
+
+            <div class="form-row" style="margin-top:14px;align-items:center;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <label class="switch">
+                  <input type="checkbox" id="switch-jp-enabled" checked>
+                  <span class="slider"></span>
+                </label>
+                <span style="font-size:13px;font-weight:500;">Greeting Active</span>
+              </div>
+              <div style="display:flex;gap:10px;margin-left:auto;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-jp">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm" id="btn-save-jp">Save Greeting</button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div id="joinphrases-container">
+          <p style="color:var(--text-dim);text-align:center;padding:20px;">Loading join phrases...</p>
         </div>
       </div>
     </section>

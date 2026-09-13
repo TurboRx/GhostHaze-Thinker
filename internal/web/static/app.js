@@ -794,6 +794,452 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // chatroom timers handlers
+  function fetchTimers() {
+    fetch("/api/timers")
+      .then((res) => res.json())
+      .then((data) => renderTimers(data.timers || []))
+      .catch((err) => console.error("failed to fetch timers", err));
+  }
+
+  function renderTimers(timers) {
+    const container = document.getElementById("timers-list-container");
+    if (!container) return;
+
+    if (!timers || timers.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:32px;">No chatroom timers configured yet. Click <strong>+ New Timer</strong> above to create your first announcement timer!</p>';
+      return;
+    }
+
+    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Name</th><th>Chatroom</th><th>Interval</th><th>Message</th><th>Last Run</th><th>Active</th><th style="text-align:right;">Actions</th></tr></thead><tbody>';
+    timers.forEach((t) => {
+      const lastRunStr = t.last_run && !t.last_run.startsWith("0001") ? new Date(t.last_run).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "Never";
+
+      html += `<tr>
+        <td><strong>${escapeHTML(t.name)}</strong></td>
+        <td><span class="chip">${escapeHTML(t.room)}</span></td>
+        <td>Every ${t.interval_minutes}m</td>
+        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(t.message)}">${escapeHTML(t.message)}</td>
+        <td style="color:var(--text-dim);font-size:12px;">${escapeHTML(lastRunStr)}</td>
+        <td>
+          <label class="switch">
+            <input type="checkbox" class="timer-toggle-enabled" data-id="${escapeHTML(t.id)}" ${t.enabled ? "checked" : ""}>
+            <span class="slider"></span>
+          </label>
+        </td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button type="button" class="btn btn-secondary btn-sm btn-trigger-timer" data-id="${escapeHTML(t.id)}" style="margin-right:6px;" title="Send Now">Send Now</button>
+          <button type="button" class="btn btn-secondary btn-sm btn-delete-timer" data-id="${escapeHTML(t.id)}" title="Delete Timer" style="color:var(--destructive);">&times;</button>
+        </td>
+      </tr>`;
+    });
+    html += "</tbody></table></div>";
+    container.innerHTML = html;
+
+    // toggle handlers
+    container.querySelectorAll(".timer-toggle-enabled").forEach((sw) => {
+      sw.addEventListener("change", function () {
+        const timerId = this.getAttribute("data-id");
+        postJSON("/api/timers/toggle", { id: timerId }, (err) => {
+          if (err) showAlert("error", "Failed to toggle timer: " + err);
+          else showAlert("success", "Updated timer status");
+        });
+      });
+    });
+
+    // trigger now handlers
+    container.querySelectorAll(".btn-trigger-timer").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const timerId = this.getAttribute("data-id");
+        postJSON("/api/timers/trigger", { id: timerId }, (err) => {
+          if (err) showAlert("error", "Failed to send timer announcement: " + err);
+          else {
+            showAlert("success", "Timer announcement dispatched to chatroom!");
+            fetchTimers();
+          }
+        });
+      });
+    });
+
+    // delete handlers
+    container.querySelectorAll(".btn-delete-timer").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const timerId = this.getAttribute("data-id");
+        postJSON("/api/timers/delete", { id: timerId }, (err) => {
+          if (err) showAlert("error", "Failed to delete timer: " + err);
+          else {
+            showAlert("success", "Timer deleted");
+            fetchTimers();
+          }
+        });
+      });
+    });
+  }
+
+  // timer form toggle and submit
+  const btnShowAddTimer = document.getElementById("btn-show-add-timer");
+  const btnCancelTimer = document.getElementById("btn-cancel-timer");
+  const timerFormContainer = document.getElementById("timer-form-container");
+  const formChatroomTimer = document.getElementById("form-chatroom-timer");
+
+  if (btnShowAddTimer && timerFormContainer) {
+    btnShowAddTimer.addEventListener("click", function () {
+      const isVisible = timerFormContainer.style.display !== "none";
+      timerFormContainer.style.display = isVisible ? "none" : "block";
+      if (!isVisible) {
+        document.getElementById("input-timer-name")?.focus();
+      }
+    });
+  }
+
+  if (btnCancelTimer && timerFormContainer) {
+    btnCancelTimer.addEventListener("click", function () {
+      timerFormContainer.style.display = "none";
+    });
+  }
+
+  if (formChatroomTimer) {
+    formChatroomTimer.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const payload = {
+        name: document.getElementById("input-timer-name")?.value.trim() || "",
+        room: document.getElementById("input-timer-room")?.value.trim() || "",
+        interval_minutes: parseInt(document.getElementById("input-timer-interval")?.value.trim() || "15", 10),
+        message: document.getElementById("input-timer-message")?.value.trim() || "",
+        enabled: document.getElementById("switch-timer-enabled")?.checked ?? true,
+      };
+
+      if (!payload.name || !payload.room || !payload.message) {
+        showAlert("error", "Please fill in timer name, target chatroom, and message.");
+        return;
+      }
+
+      postJSON("/api/timers/save", payload, function (err) {
+        if (err) showAlert("error", "Failed to save timer: " + err);
+        else {
+          showAlert("success", "Chatroom timer saved!");
+          formChatroomTimer.reset();
+          if (timerFormContainer) timerFormContainer.style.display = "none";
+          fetchTimers();
+        }
+      });
+    });
+  }
+
+  // moderation handlers
+  function fetchModeration() {
+    fetch("/api/moderation")
+      .then((res) => res.json())
+      .then((data) => {
+        const cfg = data.config;
+        if (!cfg) return;
+        const swEnabled = document.getElementById("switch-mod-enabled");
+        const txtBanned = document.getElementById("input-mod-banned");
+        const numCaps = document.getElementById("input-mod-caps-percent");
+        const numCapsMin = document.getElementById("input-mod-caps-min");
+        const selAction = document.getElementById("select-mod-action");
+        const txtWarning = document.getElementById("input-mod-warning");
+        const txtExempt = document.getElementById("input-mod-exempt");
+
+        if (swEnabled) swEnabled.checked = !!cfg.enabled;
+        if (txtBanned) txtBanned.value = (cfg.banned_words || []).join(", ");
+        if (numCaps) numCaps.value = cfg.max_caps_percent || 70;
+        if (numCapsMin) numCapsMin.value = cfg.caps_min_length || 10;
+        if (selAction) selAction.value = cfg.action || "warn";
+        if (txtWarning) txtWarning.value = cfg.custom_warning || "";
+        if (txtExempt) txtExempt.value = cfg.exempt_ranks || "+%@*#~";
+      })
+      .catch((err) => console.error("failed to fetch moderation config", err));
+  }
+
+  const formModerationConfig = document.getElementById("form-moderation-config");
+  if (formModerationConfig) {
+    formModerationConfig.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const rawBanned = document.getElementById("input-mod-banned")?.value || "";
+      const bannedWords = rawBanned.split(/[,\n]+/).map((w) => w.trim()).filter((w) => w !== "");
+
+      const payload = {
+        enabled: document.getElementById("switch-mod-enabled")?.checked ?? false,
+        banned_words: bannedWords,
+        max_caps_percent: parseInt(document.getElementById("input-mod-caps-percent")?.value || "70", 10),
+        caps_min_length: parseInt(document.getElementById("input-mod-caps-min")?.value || "10", 10),
+        action: document.getElementById("select-mod-action")?.value || "warn",
+        custom_warning: document.getElementById("input-mod-warning")?.value.trim() || "",
+        exempt_ranks: document.getElementById("input-mod-exempt")?.value.trim() || "+%@*#~",
+      };
+
+      postJSON("/api/moderation/save", payload, function (err) {
+        if (err) showAlert("error", "Failed to save moderation rules: " + err);
+        else showAlert("success", "Chatroom moderation rules saved!");
+      });
+    });
+  }
+
+  // blacklist handlers
+  function fetchBlacklist() {
+    fetch("/api/blacklist")
+      .then((res) => res.json())
+      .then((data) => renderBlacklist(data.blacklist || []))
+      .catch((err) => console.error("failed to fetch blacklist", err));
+  }
+
+  function renderBlacklist(list) {
+    const container = document.getElementById("blacklist-container");
+    if (!container) return;
+
+    if (!list || list.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:20px;">No blacklisted users. The bot is open to all visitors.</p>';
+      return;
+    }
+
+    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>User ID</th><th>Username</th><th>Reason</th><th>Date Blocked</th><th style="text-align:right;">Action</th></tr></thead><tbody>';
+    list.forEach((entry) => {
+      const dateStr = entry.added_at ? new Date(entry.added_at).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Recently";
+      html += `<tr>
+        <td><code>${escapeHTML(entry.user_id)}</code></td>
+        <td><strong>${escapeHTML(entry.username)}</strong></td>
+        <td style="color:var(--text-dim);font-size:13px;">${escapeHTML(entry.reason)}</td>
+        <td style="color:var(--text-dim);font-size:12px;">${escapeHTML(dateStr)}</td>
+        <td style="text-align:right;">
+          <button type="button" class="btn btn-secondary btn-sm btn-remove-blacklist" data-username="${escapeHTML(entry.username)}" title="Remove from blacklist" style="color:var(--destructive);">Unblock</button>
+        </td>
+      </tr>`;
+    });
+    html += "</tbody></table></div>";
+    container.innerHTML = html;
+
+    container.querySelectorAll(".btn-remove-blacklist").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const username = this.getAttribute("data-username");
+        postJSON("/api/blacklist/remove", { username: username }, (err) => {
+          if (err) showAlert("error", "Failed to remove user: " + err);
+          else {
+            showAlert("success", "Removed " + username + " from blacklist");
+            fetchBlacklist();
+          }
+        });
+      });
+    });
+  }
+
+  const formAddBlacklist = document.getElementById("form-add-blacklist");
+  if (formAddBlacklist) {
+    formAddBlacklist.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const user = document.getElementById("input-bl-username")?.value.trim();
+      const reason = document.getElementById("input-bl-reason")?.value.trim();
+
+      if (!user) {
+        showAlert("error", "Username is required to add to blacklist.");
+        return;
+      }
+
+      postJSON("/api/blacklist/add", { username: user, reason: reason }, function (err) {
+        if (err) showAlert("error", "Failed to add to blacklist: " + err);
+        else {
+          showAlert("success", "Blocked " + user);
+          formAddBlacklist.reset();
+          fetchBlacklist();
+        }
+      });
+    });
+  }
+
+  // join phrases handlers
+  function fetchJoinPhrases() {
+    fetch("/api/joinphrases")
+      .then((res) => res.json())
+      .then((data) => renderJoinPhrases(data.joinphrases || []))
+      .catch((err) => console.error("failed to fetch join phrases", err));
+  }
+
+  function renderJoinPhrases(phrases) {
+    const container = document.getElementById("joinphrases-container");
+    if (!container) return;
+
+    if (!phrases || phrases.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:20px;">No join greetings saved. Click <strong>+ New Join Phrase</strong> above to add custom greetings for users!</p>';
+      return;
+    }
+
+    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>User</th><th>Chatroom</th><th>Greeting Phrase</th><th>Active</th><th style="text-align:right;">Action</th></tr></thead><tbody>';
+    phrases.forEach((p) => {
+      const roomScope = p.room ? p.room : "All Chatrooms";
+      html += `<tr>
+        <td><strong>${escapeHTML(p.username)}</strong></td>
+        <td><span class="chip">${escapeHTML(roomScope)}</span></td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(p.phrase)}">${escapeHTML(p.phrase)}</td>
+        <td>
+          <label class="switch">
+            <input type="checkbox" class="jp-toggle-enabled" data-id="${escapeHTML(p.id)}" ${p.enabled ? "checked" : ""}>
+            <span class="slider"></span>
+          </label>
+        </td>
+        <td style="text-align:right;">
+          <button type="button" class="btn btn-secondary btn-sm btn-delete-jp" data-id="${escapeHTML(p.id)}" title="Delete Greeting" style="color:var(--destructive);">&times;</button>
+        </td>
+      </tr>`;
+    });
+    html += "</tbody></table></div>";
+    container.innerHTML = html;
+
+    container.querySelectorAll(".jp-toggle-enabled").forEach((sw) => {
+      sw.addEventListener("change", function () {
+        const jpId = this.getAttribute("data-id");
+        postJSON("/api/joinphrases/toggle", { id: jpId }, (err) => {
+          if (err) showAlert("error", "Failed to toggle greeting: " + err);
+          else showAlert("success", "Updated greeting status");
+        });
+      });
+    });
+
+    container.querySelectorAll(".btn-delete-jp").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const jpId = this.getAttribute("data-id");
+        postJSON("/api/joinphrases/delete", { id: jpId }, (err) => {
+          if (err) showAlert("error", "Failed to delete greeting: " + err);
+          else {
+            showAlert("success", "Deleted greeting phrase");
+            fetchJoinPhrases();
+          }
+        });
+      });
+    });
+  }
+
+  const btnShowAddJP = document.getElementById("btn-show-add-jp");
+  const btnCancelJP = document.getElementById("btn-cancel-jp");
+  const jpFormContainer = document.getElementById("jp-form-container");
+  const formJoinPhrase = document.getElementById("form-join-phrase");
+
+  if (btnShowAddJP && jpFormContainer) {
+    btnShowAddJP.addEventListener("click", function () {
+      const isVisible = jpFormContainer.style.display !== "none";
+      jpFormContainer.style.display = isVisible ? "none" : "block";
+      if (!isVisible) {
+        document.getElementById("input-jp-user")?.focus();
+      }
+    });
+  }
+
+  if (btnCancelJP && jpFormContainer) {
+    btnCancelJP.addEventListener("click", function () {
+      jpFormContainer.style.display = "none";
+    });
+  }
+
+  if (formJoinPhrase) {
+    formJoinPhrase.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const payload = {
+        username: document.getElementById("input-jp-user")?.value.trim() || "",
+        room: document.getElementById("input-jp-room")?.value.trim() || "",
+        phrase: document.getElementById("input-jp-phrase")?.value.trim() || "",
+        enabled: document.getElementById("switch-jp-enabled")?.checked ?? true,
+      };
+
+      if (!payload.username || !payload.phrase) {
+        showAlert("error", "Username and greeting phrase are required.");
+        return;
+      }
+
+      postJSON("/api/joinphrases/save", payload, function (err) {
+        if (err) showAlert("error", "Failed to save greeting: " + err);
+        else {
+          showAlert("success", "Join greeting saved!");
+          formJoinPhrase.reset();
+          if (jpFormContainer) jpFormContainer.style.display = "none";
+          fetchJoinPhrases();
+        }
+      });
+    });
+  }
+
+  // ranked ladder bot handlers
+  function fetchLadderStatus() {
+    fetch("/api/ladder/status")
+      .then((res) => res.json())
+      .then((data) => updateLadderUI(data.ladder))
+      .catch((err) => console.error("failed to fetch ladder status", err));
+  }
+
+  function updateLadderUI(ladder) {
+    if (!ladder) return;
+    const badge = document.getElementById("ladder-status-badge");
+    const btnStart = document.getElementById("btn-ladder-start");
+    const btnStop = document.getElementById("btn-ladder-stop");
+    const statPlayed = document.getElementById("stat-ladder-played");
+    const statRecord = document.getElementById("stat-ladder-record");
+    const statCurrent = document.getElementById("stat-ladder-current");
+
+    if (statPlayed) statPlayed.textContent = ladder.battles_played || 0;
+    if (statRecord) statRecord.textContent = `${ladder.wins || 0}W / ${ladder.losses || 0}L / ${ladder.ties || 0}T`;
+
+    if (ladder.active) {
+      if (btnStart) btnStart.style.display = "none";
+      if (btnStop) btnStop.style.display = "inline-block";
+
+      if (ladder.current_battle) {
+        if (badge) {
+          badge.className = "badge badge-success";
+          badge.textContent = "In Battle";
+        }
+        if (statCurrent) statCurrent.innerHTML = `<span style="color:#34d399;font-weight:600;">Active Battle: ${escapeHTML(ladder.current_battle)}</span>`;
+      } else if (ladder.searching) {
+        if (badge) {
+          badge.className = "badge badge-primary";
+          badge.textContent = "Searching Match...";
+        }
+        if (statCurrent) statCurrent.innerHTML = `<span style="color:#60a5fa;font-weight:600;">Searching ladder for [${escapeHTML(ladder.format)}]...</span>`;
+      } else {
+        if (badge) {
+          badge.className = "badge badge-secondary";
+          badge.textContent = "Active";
+        }
+        if (statCurrent) statCurrent.textContent = "Waiting for next queue...";
+      }
+    } else {
+      if (btnStart) btnStart.style.display = "inline-block";
+      if (btnStop) btnStop.style.display = "none";
+      if (badge) {
+        badge.className = "badge badge-secondary";
+        badge.textContent = "Inactive";
+      }
+      if (statCurrent) statCurrent.textContent = "Idle";
+    }
+  }
+
+  const btnLadderStart = document.getElementById("btn-ladder-start");
+  const btnLadderStop = document.getElementById("btn-ladder-stop");
+
+  if (btnLadderStart) {
+    btnLadderStart.addEventListener("click", function () {
+      const format = document.getElementById("input-ladder-format")?.value.trim() || "gen9randombattle";
+      const maxBattles = parseInt(document.getElementById("input-ladder-max")?.value.trim() || "10", 10);
+
+      postJSON("/api/ladder/start", { format: format, max_battles: maxBattles }, function (err, res) {
+        if (err) showAlert("error", "Ladder start failed: " + err);
+        else {
+          showAlert("success", "Ranked ladder matchmaking started in " + format);
+          updateLadderUI(res.ladder);
+        }
+      });
+    });
+  }
+
+  if (btnLadderStop) {
+    btnLadderStop.addEventListener("click", function () {
+      postJSON("/api/ladder/stop", {}, function (err, res) {
+        if (err) showAlert("error", "Ladder stop failed: " + err);
+        else {
+          showAlert("success", "Ranked ladder matchmaking stopped");
+          updateLadderUI(res.ladder);
+        }
+      });
+    });
+  }
+
   // render activity logs with category filtering
   function renderLogs() {
     const logBox = document.getElementById("activity-log-box");
@@ -1610,6 +2056,12 @@ document.addEventListener("DOMContentLoaded", function () {
   fetchBattleHistory();
   fetchTeams();
   fetchCommands();
+  fetchTimers();
+  fetchModeration();
+  fetchBlacklist();
+  fetchJoinPhrases();
+  fetchLadderStatus();
   setInterval(updateStatus, 3000);
   setInterval(updateLogs, 3000);
+  setInterval(fetchLadderStatus, 3000);
 });

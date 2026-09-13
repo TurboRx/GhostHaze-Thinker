@@ -61,6 +61,11 @@ type Client struct {
 	teams              *TeamStore
 	commandsStore      *CommandStore
 	history            *HistoryStore
+	timers             *TimerStore
+	blacklist          *BlacklistStore
+	joinPhrases        *JoinPhraseStore
+	moderation         *ModerationStore
+	ladder             *LadderController
 	incomingChallenges map[string]string
 
 	onConnect         []func()
@@ -84,7 +89,7 @@ type Client struct {
 func NewClient(cfg Config) *Client {
 	cfg.ApplyDefaults()
 
-	return &Client{
+	c := &Client{
 		config:             cfg,
 		commands:           make(map[string]CommandHandler),
 		roomInIntro:        make(map[string]bool),
@@ -100,8 +105,15 @@ func NewClient(cfg Config) *Client {
 		teams:              NewTeamStore("data/teams.json"),
 		commandsStore:      NewCommandStore("data/commands.json"),
 		history:            NewHistoryStore("data/history.json", 200),
+		timers:             NewTimerStore("data/timers.json"),
+		blacklist:          NewBlacklistStore("data/blacklist.json"),
+		joinPhrases:        NewJoinPhraseStore("data/joinphrases.json"),
+		moderation:         NewModerationStore("data/moderation.json"),
+		ladder:             NewLadderController(),
 		incomingChallenges: make(map[string]string),
 	}
+	c.timers.Start(c)
+	return c
 }
 
 func (c *Client) OnConnect(fn func()) {
@@ -460,6 +472,10 @@ func (c *Client) Start() {
 	wake := c.reconnectWake
 	c.stateMu.Unlock()
 
+	if c.timers != nil {
+		c.timers.Start(c)
+	}
+
 	if wake != nil {
 		select {
 		case <-wake:
@@ -478,6 +494,13 @@ func (c *Client) IsStopped() bool {
 
 // stop disconnects the bot and places it in a stopped state until start is called
 func (c *Client) Stop() {
+	if c.timers != nil {
+		c.timers.Stop()
+	}
+	if c.ladder != nil {
+		_ = c.ladder.Stop(c)
+	}
+
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
@@ -648,6 +671,36 @@ func (c *Client) DynamicCommands() *CommandStore {
 // history returns the battle match history store
 func (c *Client) History() *HistoryStore {
 	return c.history
+}
+
+// timers returns the chatroom timers store
+func (c *Client) Timers() *TimerStore {
+	return c.timers
+}
+
+// blacklist returns the user blacklist store
+func (c *Client) Blacklist() *BlacklistStore {
+	return c.blacklist
+}
+
+// joinphrases returns the join phrases store
+func (c *Client) JoinPhrases() *JoinPhraseStore {
+	return c.joinPhrases
+}
+
+// moderation returns the chatroom moderation store
+func (c *Client) Moderation() *ModerationStore {
+	return c.moderation
+}
+
+// ladder returns the ranked ladder controller
+func (c *Client) Ladder() *LadderController {
+	return c.ladder
+}
+
+// sendroommessage sends a message to a chatroom
+func (c *Client) SendRoomMessage(room, text string) error {
+	return c.SendToRoom(room, text)
 }
 
 // getteamforformat returns an active team for the given format, or fallback
@@ -1091,6 +1144,26 @@ func (c *Client) processMessage(msg RawMessage) {
 
 			c.dispatchChat(chat)
 			if !isIntro {
+				// automated chatroom moderation checks
+				if c.moderation != nil && chat.Room != "" {
+					cleanUser := CleanUsername(chat.User)
+					if violated, action, reason := c.moderation.CheckMessage(chat.User, chat.Text); violated {
+						switch action {
+						case "warn":
+							_ = c.SendToRoom(chat.Room, fmt.Sprintf("/warn %s, %s", cleanUser, reason))
+						case "mute":
+							_ = c.SendToRoom(chat.Room, fmt.Sprintf("/mute %s, 7m, %s", cleanUser, reason))
+						default:
+							cfg := c.moderation.GetConfig()
+							warnMsg := cfg.CustomWarning
+							if warnMsg == "" {
+								warnMsg = reason
+							}
+							_ = c.SendToRoom(chat.Room, fmt.Sprintf("%s: %s", cleanUser, warnMsg))
+						}
+					}
+				}
+
 				c.routeCommand(chat.Room, chat.User, chat.Text)
 			}
 		}
@@ -1103,6 +1176,17 @@ func (c *Client) processMessage(msg RawMessage) {
 			// check for direct challenge notification via pm
 			if strings.HasPrefix(pm.Text, "/challenge") {
 				c.handlePMChallenge(pm.From, pm.Text)
+			}
+		}
+
+	case "updatesearch":
+		if len(msg.Parts) > 0 && c.ladder != nil {
+			var us struct {
+				Searching []string `json:"searching"`
+			}
+			rawJSON := strings.Join(msg.Parts, "|")
+			if err := json.Unmarshal([]byte(rawJSON), &us); err == nil {
+				c.ladder.OnSearchUpdate(len(us.Searching) > 0)
 			}
 		}
 
@@ -1150,6 +1234,12 @@ func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
 		c.battleMu.Unlock()
 		c.dispatchChallenge(cleanFrom, baseFormat)
 
+		// check user blacklist
+		if c.blacklist != nil && (c.blacklist.IsBlacklisted(from) || c.blacklist.IsBlacklisted(cleanFrom)) {
+			_ = c.RejectChallenge(cleanFrom)
+			continue
+		}
+
 		if auto {
 			if currentBattles >= maxBattles {
 				continue
@@ -1193,6 +1283,12 @@ func (c *Client) handlePMChallenge(from, text string) {
 	c.incomingChallenges[ToID(cleanFrom)] = format
 	c.battleMu.Unlock()
 	c.dispatchChallenge(cleanFrom, format)
+
+	// check user blacklist
+	if c.blacklist != nil && (c.blacklist.IsBlacklisted(from) || c.blacklist.IsBlacklisted(cleanFrom)) {
+		_ = c.RejectChallenge(cleanFrom)
+		return
+	}
 
 	c.battleMu.RLock()
 	auto := c.autoBattle
@@ -1244,6 +1340,9 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 		b = battle.NewBattle(room, c.battleEngine)
 		c.battles[roomID] = b
 		c.battleMu.Unlock()
+		if c.ladder != nil {
+			c.ladder.OnBattleStart(roomID)
+		}
 		c.dispatchBattleStart(b)
 		// enable timer to prevent stalling
 		_ = c.SendToRoom(room, "/timer on")
@@ -1276,16 +1375,17 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 		}
 		c.dispatchBattleEnd(b, winner)
 
+		cleanWinner := ToID(winner)
+		cleanNick := ToID(myNick)
+		outcome := "loss"
+		if cleanWinner != "" && cleanNick != "" && cleanWinner == cleanNick {
+			outcome = "win"
+		} else if msg.Type == "tie" || winner == "" {
+			outcome = "tie"
+		}
+
 		// record battle result in history store
 		if c.history != nil {
-			cleanWinner := ToID(winner)
-			cleanNick := ToID(myNick)
-			outcome := "loss"
-			if cleanWinner != "" && cleanNick != "" && cleanWinner == cleanNick {
-				outcome = "win"
-			} else if msg.Type == "tie" || winner == "" {
-				outcome = "tie"
-			}
 			format := b.Tier
 			if format == "" {
 				parts := strings.Split(room, "-")
@@ -1306,6 +1406,11 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 				Turns:      b.Turn,
 				FinishedAt: time.Now(),
 			})
+		}
+
+		// notify ladder controller
+		if c.ladder != nil {
+			c.ladder.OnBattleEnd(c, room, outcome)
 		}
 
 		c.stateMu.RLock()
@@ -1399,8 +1504,6 @@ func (c *Client) handleUserJoin(room, user string) {
 	}
 
 	c.stateMu.Lock()
-	defer c.stateMu.Unlock()
-
 	if c.roomUsers[roomID] == nil {
 		c.roomUsers[roomID] = make(map[string]string)
 	}
@@ -1412,6 +1515,18 @@ func (c *Client) handleUserJoin(room, user string) {
 		id := ToID(trimmed)
 		c.roomUsers[roomID][id] = trimmed
 		c.roomAway[roomID][id] = IsAway(trimmed)
+	}
+	isIntro := c.roomInIntro[roomID]
+	botNick := c.username
+	c.stateMu.Unlock()
+
+	// check join phrases for custom greeting
+	if c.joinPhrases != nil && !isIntro && trimmed != "" {
+		if phrase, ok := c.joinPhrases.Match(trimmed, roomID, botNick, time.Now()); ok {
+			go func(targetRoom, msg string) {
+				_ = c.SendToRoom(targetRoom, msg)
+			}(roomID, phrase)
+		}
 	}
 }
 
@@ -1660,6 +1775,11 @@ func (c *Client) routeCommand(room, user, text string) {
 		if currentBotNick != "" && userID == ToID(currentBotNick) {
 			return
 		}
+	}
+
+	// ignore commands from blacklisted users
+	if c.blacklist != nil && c.blacklist.IsBlacklisted(user) {
+		return
 	}
 
 	trimmed := strings.TrimSpace(text)

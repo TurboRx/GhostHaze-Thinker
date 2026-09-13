@@ -373,6 +373,28 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/battles/history", s.handleAPIBattlesHistory)
 	mux.HandleFunc("/api/battles/history/clear", s.handleAPIBattlesHistoryClear)
 
+	mux.HandleFunc("/api/timers", s.handleAPITimers)
+	mux.HandleFunc("/api/timers/save", s.handleAPITimersSave)
+	mux.HandleFunc("/api/timers/delete", s.handleAPITimersDelete)
+	mux.HandleFunc("/api/timers/toggle", s.handleAPITimersToggle)
+	mux.HandleFunc("/api/timers/trigger", s.handleAPITimersTrigger)
+
+	mux.HandleFunc("/api/blacklist", s.handleAPIBlacklist)
+	mux.HandleFunc("/api/blacklist/add", s.handleAPIBlacklistAdd)
+	mux.HandleFunc("/api/blacklist/remove", s.handleAPIBlacklistRemove)
+
+	mux.HandleFunc("/api/joinphrases", s.handleAPIJoinPhrases)
+	mux.HandleFunc("/api/joinphrases/save", s.handleAPIJoinPhrasesSave)
+	mux.HandleFunc("/api/joinphrases/delete", s.handleAPIJoinPhrasesDelete)
+	mux.HandleFunc("/api/joinphrases/toggle", s.handleAPIJoinPhrasesToggle)
+
+	mux.HandleFunc("/api/moderation", s.handleAPIModeration)
+	mux.HandleFunc("/api/moderation/save", s.handleAPIModerationSave)
+
+	mux.HandleFunc("/api/ladder/status", s.handleAPILadderStatus)
+	mux.HandleFunc("/api/ladder/start", s.handleAPILadderStart)
+	mux.HandleFunc("/api/ladder/stop", s.handleAPILadderStop)
+
 	return s.authMiddleware(mux), nil
 }
 
@@ -1630,4 +1652,402 @@ func (s *Server) handleAPIBattlesHistoryClear(w http.ResponseWriter, r *http.Req
 
 	s.AddLog("system", "Control Panel", "Cleared battle match history")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapitimers lists all chatroom timers
+func (s *Server) handleAPITimers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var timers []showdown.ChatroomTimer
+	if s.client.Timers() != nil {
+		timers = s.client.Timers().List()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"timers": timers})
+}
+
+// handleapitimerssave creates or updates a chatroom timer
+func (s *Server) handleAPITimersSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req showdown.ChatroomTimer
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.Room == "" || req.Message == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "chatroom and message are required"})
+		return
+	}
+
+	if req.IntervalMinutes < 1 {
+		req.IntervalMinutes = 5
+	}
+
+	if s.client.Timers() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "timers store not initialized"})
+		return
+	}
+
+	if err := s.client.Timers().Save(req); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Saved chatroom timer for '%s' (interval: %dm)", req.Room, req.IntervalMinutes))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapitimersdelete removes a chatroom timer
+func (s *Server) handleAPITimersDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "timer id is required"})
+		return
+	}
+
+	if s.client.Timers() == nil || !s.client.Timers().Delete(req.ID) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "timer not found"})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Deleted chatroom timer '%s'", req.ID))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapitimerstoggle toggles enabled state of a timer
+func (s *Server) handleAPITimersToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "timer id is required"})
+		return
+	}
+
+	if s.client.Timers() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "timers store not initialized"})
+		return
+	}
+
+	enabled, err := s.client.Timers().Toggle(req.ID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": enabled})
+}
+
+// handleapitimerstrigger dispatches a timer announcement immediately
+func (s *Server) handleAPITimersTrigger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "timer id is required"})
+		return
+	}
+
+	if s.client.Timers() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "timers store not initialized"})
+		return
+	}
+
+	if err := s.client.Timers().TriggerNow(req.ID, s.client); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Triggered chatroom timer '%s' immediately", req.ID))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "sent"})
+}
+
+// handleapiblacklist returns blacklisted users
+func (s *Server) handleAPIBlacklist(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var list []showdown.BlacklistEntry
+	if s.client.Blacklist() != nil {
+		list = s.client.Blacklist().List()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"blacklist": list})
+}
+
+// handleapiblacklistadd adds a user to the blacklist
+func (s *Server) handleAPIBlacklistAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Reason   string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Username) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username is required"})
+		return
+	}
+
+	if s.client.Blacklist() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "blacklist store not initialized"})
+		return
+	}
+
+	entry := s.client.Blacklist().Add(req.Username, req.Reason)
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Added '%s' to blacklist: %s", entry.Username, entry.Reason))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "entry": entry})
+}
+
+// handleapiblacklistremove removes a user from the blacklist
+func (s *Server) handleAPIBlacklistRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Username) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username is required"})
+		return
+	}
+
+	if s.client.Blacklist() == nil || !s.client.Blacklist().Remove(req.Username) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found in blacklist"})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Removed '%s' from blacklist", req.Username))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapijoinphrases returns all configured join phrases
+func (s *Server) handleAPIJoinPhrases(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var phrases []showdown.JoinPhrase
+	if s.client.JoinPhrases() != nil {
+		phrases = s.client.JoinPhrases().List()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"joinphrases": phrases})
+}
+
+// handleapijoinphrasessave creates or updates a join phrase
+func (s *Server) handleAPIJoinPhrasesSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req showdown.JoinPhrase
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if s.client.JoinPhrases() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "join phrases store not initialized"})
+		return
+	}
+
+	saved, err := s.client.JoinPhrases().Save(req)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Saved join phrase for user '%s'", saved.Username))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "entry": saved})
+}
+
+// handleapijoinphrasesdelete removes a join phrase
+func (s *Server) handleAPIJoinPhrasesDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "phrase id is required"})
+		return
+	}
+
+	if s.client.JoinPhrases() == nil || !s.client.JoinPhrases().Delete(req.ID) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "phrase not found"})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Deleted join phrase '%s'", req.ID))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapijoinphrasestoggle toggles enabled state of a join phrase
+func (s *Server) handleAPIJoinPhrasesToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "phrase id is required"})
+		return
+	}
+
+	if s.client.JoinPhrases() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "join phrases store not initialized"})
+		return
+	}
+
+	enabled, err := s.client.JoinPhrases().Toggle(req.ID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": enabled})
+}
+
+// handleapimoderation retrieves chatroom moderation rules
+func (s *Server) handleAPIModeration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var cfg showdown.ModerationConfig
+	if s.client.Moderation() != nil {
+		cfg = s.client.Moderation().GetConfig()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"config": cfg})
+}
+
+// handleapimoderationsave updates chatroom moderation rules
+func (s *Server) handleAPIModerationSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var cfg showdown.ModerationConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if s.client.Moderation() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "moderation store not initialized"})
+		return
+	}
+
+	if err := s.client.Moderation().SaveConfig(cfg); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", "Updated chatroom automated moderation rules")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "config": cfg})
+}
+
+// handleapiladderstatus returns the active state and metrics of the ladder bot
+func (s *Server) handleAPILadderStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var status showdown.LadderStatus
+	if s.client.Ladder() != nil {
+		status = s.client.Ladder().Status()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ladder": status})
+}
+
+// handleapiladderstart initiates automated ranked ladder matchmaking
+func (s *Server) handleAPILadderStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Format     string `json:"format"`
+		MaxBattles int    `json:"max_battles"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if req.Format == "" {
+		req.Format = "gen9randombattle"
+	}
+
+	if s.client.Ladder() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "ladder bot not initialized"})
+		return
+	}
+
+	if err := s.client.Ladder().Start(s.client, req.Format, req.MaxBattles); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Started ranked ladder matchmaking in '%s'", req.Format))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ladder": s.client.Ladder().Status()})
+}
+
+// handleapiladderstop cancels automated ranked ladder matchmaking
+func (s *Server) handleAPILadderStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.client.Ladder() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "ladder bot not initialized"})
+		return
+	}
+
+	if err := s.client.Ladder().Stop(s.client); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", "Stopped ranked ladder matchmaking")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ladder": s.client.Ladder().Status()})
 }
