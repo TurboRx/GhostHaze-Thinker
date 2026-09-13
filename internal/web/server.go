@@ -984,6 +984,13 @@ func (s *Server) handleAPIChallenge(w http.ResponseWriter, r *http.Request) {
 		format = "gen9randombattle"
 	}
 
+	if s.client.IsGuest() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "The bot is currently connected as an anonymous Guest. Pokémon Showdown requires a registered bot account (username & password) to send battle challenges. Please login using the Bot Login Tool or enter credentials in Configuration.",
+		})
+		return
+	}
+
 	if err := s.client.ChallengeUser(user, format); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1146,6 +1153,9 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if req.Reconnect {
 		s.AddLog("system", "Control Panel", "Reconnecting bot with updated configuration...")
 		s.client.Reconnect()
+	} else if req.Username != "" && req.Password != "" && !strings.HasPrefix(strings.ToLower(req.Username), "guest") {
+		s.AddLog("system", "Control Panel", fmt.Sprintf("Initiating login for '%s' with updated credentials...", req.Username))
+		_ = s.client.Login(req.Username, req.Password)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "configuration saved"})

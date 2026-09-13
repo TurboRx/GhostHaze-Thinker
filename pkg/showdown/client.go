@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -663,10 +662,11 @@ func (c *Client) AcceptChallenge(user string) error {
 	c.stateMu.RLock()
 	isGuest := !c.loggedIn
 	challstr := c.lastChallstr
+	hasCreds := c.config.Username != "" && !strings.HasPrefix(strings.ToLower(c.config.Username), "guest")
 	c.stateMu.RUnlock()
 
-	// if bot is still an un-named guest on showdown, authenticate immediately before accepting
-	if isGuest && challstr != "" {
+	// if bot has credentials configured but is still a guest, authenticate before accepting
+	if isGuest && hasCreds && challstr != "" {
 		c.authenticate(challstr)
 		time.Sleep(300 * time.Millisecond)
 	}
@@ -702,10 +702,11 @@ func (c *Client) ChallengeUser(user, format string) error {
 	c.stateMu.RLock()
 	isGuest := !c.loggedIn
 	challstr := c.lastChallstr
+	hasCreds := c.config.Username != "" && !strings.HasPrefix(strings.ToLower(c.config.Username), "guest")
 	c.stateMu.RUnlock()
 
-	// if bot is still an un-named guest on showdown, authenticate immediately before challenging
-	if isGuest && challstr != "" {
+	// if bot has credentials configured but is still a guest, authenticate before challenging
+	if isGuest && hasCreds && challstr != "" {
 		c.authenticate(challstr)
 		time.Sleep(300 * time.Millisecond)
 	}
@@ -1407,14 +1408,14 @@ func (c *Client) handleRoomRename(oldRoom, newRoom, title string) {
 }
 
 func (c *Client) authenticate(challstr string) {
+	c.stateMu.RLock()
 	username := strings.TrimSpace(c.config.Username)
-	isGuestDefault := username == "" || (strings.HasPrefix(strings.ToLower(username), "guest") && c.config.Password == "")
-	if isGuestDefault && (c.config.LoginURL == "" || strings.Contains(c.config.LoginURL, "pokemonshowdown.com")) {
-		// on pokemon showdown, unnamed guests (guest1234) cannot battle or chat.
-		// automatically assign an unregistered bot name so the bot can accept challenges and battle.
-		username = fmt.Sprintf("TurBOOT%04d", rand.Intn(9000)+1000)
-	}
+	password := c.config.Password
+	loginURL := c.config.LoginURL
+	httpClient := c.config.HTTPClient
+	c.stateMu.RUnlock()
 
+	// do not attempt login if username is blank
 	if username == "" {
 		return
 	}
@@ -1422,14 +1423,26 @@ func (c *Client) authenticate(challstr string) {
 	var req *http.Request
 	var err error
 
-	if c.config.Password == "" {
+	parts := strings.SplitN(challstr, "|", 2)
+	keyID := ""
+	challengeToken := ""
+	if len(parts) == 2 {
+		keyID = parts[0]
+		challengeToken = parts[1]
+	}
+
+	if password == "" {
 		// unregistered account assertion (get request)
 		params := url.Values{}
 		params.Set("act", "getassertion")
 		params.Set("userid", ToID(username))
 		params.Set("challstr", challstr)
+		if keyID != "" && challengeToken != "" {
+			params.Set("challengekeyid", keyID)
+			params.Set("challenge", challengeToken)
+		}
 
-		reqURL := c.config.LoginURL
+		reqURL := loginURL
 		if reqURL == "" {
 			reqURL = DefaultLoginURL
 		}
@@ -1448,14 +1461,21 @@ func (c *Client) authenticate(challstr string) {
 		form := url.Values{}
 		form.Set("act", "login")
 		form.Set("name", ToID(username))
-		form.Set("pass", c.config.Password)
+		form.Set("pass", password)
 		form.Set("challstr", challstr)
-
-		loginURL := c.config.LoginURL
-		if loginURL == "" {
-			loginURL = DefaultLoginURL
+		if keyID != "" && challengeToken != "" {
+			form.Set("challengekeyid", keyID)
+			form.Set("challenge", challengeToken)
 		}
-		req, err = http.NewRequest("POST", loginURL, strings.NewReader(form.Encode()))
+
+		targetURL := loginURL
+		if targetURL == "" {
+			targetURL = DefaultLoginURL
+		}
+		if strings.HasSuffix(targetURL, "/api/login") {
+			targetURL = strings.TrimSuffix(targetURL, "/api/login") + "/action.php"
+		}
+		req, err = http.NewRequest("POST", targetURL, strings.NewReader(form.Encode()))
 		if err == nil {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -1469,7 +1489,11 @@ func (c *Client) authenticate(challstr string) {
 	// set browser user-agent header to avoid waf blocking
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-	resp, err := c.config.HTTPClient.Do(req)
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("Login request error: %v", err)
 		return
@@ -1484,7 +1508,7 @@ func (c *Client) authenticate(challstr string) {
 	bodyStr := string(bodyBytes)
 
 	var assertion string
-	if c.config.Password == "" {
+	if password == "" {
 		if bodyStr == ";" {
 			log.Printf("Login failed — nickname '%s' is registered but no password was provided", username)
 			return

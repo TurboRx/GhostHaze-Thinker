@@ -196,7 +196,13 @@ document.addEventListener("DOMContentLoaded", function () {
             statusText.textContent = "Stopped";
           } else if (isConnected) {
             dot.className = "status-dot online";
-            statusText.textContent = data.logged_in ? "Online (" + (data.username || "Bot") + ")" : "Connecting...";
+            if (data.is_guest) {
+              statusText.textContent = "Online (Guest)";
+            } else if (data.logged_in) {
+              statusText.textContent = "Online (" + (data.username || "Bot") + ")";
+            } else {
+              statusText.textContent = "Connecting...";
+            }
           } else {
             dot.className = "status-dot offline";
             statusText.textContent = "Offline";
@@ -204,6 +210,12 @@ document.addEventListener("DOMContentLoaded", function () {
           if (statusBadge) {
             statusBadge.title = statusText.textContent;
           }
+        }
+
+        // guest banner notice
+        const guestBanner = document.getElementById("guest-notice-banner");
+        if (guestBanner) {
+          guestBanner.style.display = (isConnected && !isStopped && data.is_guest) ? "block" : "none";
         }
 
         // overview cards
@@ -215,7 +227,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (statConn) {
           if (isStopped) statConn.textContent = "Stopped";
-          else if (isConnected) statConn.textContent = data.logged_in ? "Connected" : "Authenticating";
+          else if (isConnected) {
+            if (data.is_guest) statConn.textContent = "Connected (Guest)";
+            else if (data.logged_in) statConn.textContent = "Connected";
+            else statConn.textContent = "Authenticating";
+          }
           else statConn.textContent = "Disconnected";
         }
 
@@ -224,7 +240,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (statUser) {
-          statUser.textContent = data.username || "Guest";
+          if (data.is_guest) {
+            statUser.innerHTML = escapeHTML(data.username || "Guest") + ' <span class="badge" style="background:rgba(245,158,11,0.2);color:#d97706;border:1px solid rgba(245,158,11,0.4);font-size:10px;padding:2px 6px;margin-left:4px;border-radius:4px;" title="Registered account required on Pokémon Showdown to accept challenges and battle">Guest</span>';
+          } else {
+            statUser.textContent = data.username || "Guest";
+          }
         }
 
         if (statRooms) {

@@ -116,6 +116,9 @@
   <!-- main dashboard body -->
   <main class="container">
     <div id="global-alert" class="alert"></div>
+    <div id="guest-notice-banner" class="alert" style="display:none;margin-bottom:20px;border-left:4px solid #f59e0b;background:rgba(245, 158, 11, 0.1);color:#d97706;padding:14px 16px;border-radius:8px;font-size:13px;line-height:1.5;">
+      <strong>Notice:</strong> The bot is currently connected as an anonymous Guest. Pokémon Showdown requires a registered bot account (username &amp; password) to accept battle challenges and talk from cloud hosting. Please configure credentials in the <a href="javascript:void(0)" onclick="document.querySelector('[data-tab=\'config\']').click();" style="color:var(--primary);text-decoration:underline;font-weight:600;">Configuration</a> tab or <a href="javascript:void(0)" onclick="document.querySelector('[data-tab=\'tools\']').click();" style="color:var(--primary);text-decoration:underline;font-weight:600;">Bot Login Tool</a>.
+    </div>
 
     <!-- tab 1: overview -->
     <section id="tab-overview" class="tab-pane active">
@@ -302,14 +305,16 @@
           <div class="form-row" style="margin-bottom:16px;">
             <div class="form-group">
               <label class="form-label" for="cfg-username">Username</label>
-              <input type="text" id="cfg-username" class="form-input" value="{{.Username}}" placeholder="Leave blank to join as guest">
+              <input type="text" id="cfg-username" class="form-input" value="{{.Username}}" placeholder="Registered bot username (e.g. MyBot)">
+              <span class="form-hint">Pokémon Showdown requires a registered bot account to battle from cloud servers.</span>
             </div>
             <div class="form-group">
               <label class="form-label" for="cfg-password">Password</label>
               <div style="display:flex;gap:6px;">
-                <input type="password" id="cfg-password" class="form-input" placeholder="Leave blank for unregistered/guest accounts">
+                <input type="password" id="cfg-password" class="form-input" placeholder="Registered bot password">
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-pw" style="white-space:nowrap;">Show</button>
               </div>
+              <span class="form-hint">Password for your registered bot account.</span>
             </div>
           </div>
 
@@ -597,7 +602,7 @@
             <div class="form-group">
               <label class="form-label" for="input-login-password">Password</label>
               <div style="display:flex;gap:6px;">
-                <input type="password" id="input-login-password" class="form-input" placeholder="Password (leave blank for guest)">
+                <input type="password" id="input-login-password" class="form-input" placeholder="Password (required for battle bot)">
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-login-pw" style="white-space:nowrap;">Show</button>
               </div>
             </div>

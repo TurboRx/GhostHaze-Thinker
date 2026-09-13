@@ -138,9 +138,16 @@ func main() {
 	})
 
 	bot.OnChallenge(func(from, format string) {
-		logInfo("Received challenge from %s in format %s", from, format)
+		if bot.IsGuest() {
+			logWarn("Received challenge from %s in format %s, but bot is currently connected as an unregistered Guest.", from, format)
+			if webServer != nil {
+				webServer.AddLog("battle", "Challenge", fmt.Sprintf("Received challenge from %s in %s, but bot cannot accept: Pokémon Showdown requires a registered bot account (username & password) to battle from cloud servers. Please enter credentials in Configuration or Bot Login Tool.", from, format))
+			}
+			return
+		}
+		logInfo("Received challenge from %s in format %s (accepting...)", from, format)
 		if webServer != nil {
-			webServer.AddLog("battle", "Challenge", fmt.Sprintf("From %s in %s", from, format))
+			webServer.AddLog("battle", "Challenge", fmt.Sprintf("From %s in %s (accepting...)", from, format))
 		}
 	})
 
