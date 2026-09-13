@@ -34,6 +34,7 @@
           <li><button class="nav-tab-btn" data-tab="commands">Commands</button></li>
           <li><button class="nav-tab-btn" data-tab="timers">Timers</button></li>
           <li><button class="nav-tab-btn" data-tab="moderation">Moderation</button></li>
+          <li><button class="nav-tab-btn" data-tab="admin">Admin Hub</button></li>
           <li><button class="nav-tab-btn" data-tab="logs">Activity Log</button></li>
         </ul>
       </nav>
@@ -88,6 +89,7 @@
       </div>
 
       {{if .AuthRequired}}
+      <button class="btn btn-secondary btn-sm" id="btn-change-password-modal" title="Change Admin Password">Change Password</button>
       <button class="btn btn-secondary btn-sm" id="btn-logout" title="Log out from panel">Logout</button>
       {{end}}
 
@@ -114,8 +116,10 @@
       <li><button class="mobile-nav-btn" data-tab="commands">Commands</button></li>
       <li><button class="mobile-nav-btn" data-tab="timers">Timers</button></li>
       <li><button class="mobile-nav-btn" data-tab="moderation">Moderation</button></li>
+      <li><button class="mobile-nav-btn" data-tab="admin">Admin Hub</button></li>
       <li><button class="mobile-nav-btn" data-tab="logs">Activity Log</button></li>
       {{if .AuthRequired}}
+      <li><button class="mobile-nav-btn" id="mobile-btn-change-password">Change Password</button></li>
       <li><button class="mobile-nav-btn" id="mobile-btn-logout" style="color:var(--destructive);">Logout</button></li>
       {{end}}
     </ul>
@@ -261,7 +265,7 @@
             <p class="card-description">Broadcast a chat message or send a private message from the bot.</p>
           </div>
         </div>
-        <form id="form-send-message">
+        <form id="form-send-message" novalidate>
           <div class="form-row">
             <div class="form-group" style="min-width: 170px;">
               <label class="form-label">Destination</label>
@@ -288,12 +292,12 @@
             </div>
             <div class="form-group">
               <label class="form-label" id="label-send-target" for="input-send-target">Chatroom Name or Username</label>
-              <input type="text" id="input-send-target" class="form-input" placeholder="e.g. lobby" required>
+              <input type="text" id="input-send-target" class="form-input" placeholder="e.g. lobby">
             </div>
           </div>
           <div class="form-group" style="margin-top: 14px;">
             <label class="form-label" for="input-send-msg">Message</label>
-            <textarea id="input-send-msg" class="form-textarea" placeholder="Type your message here..." required></textarea>
+            <textarea id="input-send-msg" class="form-textarea" placeholder="Type your message here..."></textarea>
           </div>
           <button type="submit" class="btn btn-primary">Send Message</button>
         </form>
@@ -311,20 +315,35 @@
           <button type="button" class="btn btn-secondary btn-sm" id="btn-set-default-server">Set Showdown Defaults</button>
         </div>
 
-        <form id="form-bot-config">
+        <!-- 1-click auto-detect server tool -->
+        <div class="card" style="margin-bottom:20px;background:var(--secondary);border-color:var(--border);">
+          <h4 style="font-size:14px;font-weight:600;margin-bottom:6px;">Auto-Detect Server Details</h4>
+          <p class="section-desc" style="margin-bottom:12px;">Enter a Pokémon Showdown server URL or ID (e.g. <code>play.pokemonshowdown.com</code> or <code>showdown</code>) to automatically detect host, port, and SSL.</p>
+          <div class="form-row" style="align-items:flex-end;gap:8px;">
+            <div class="form-group" style="flex:1;">
+              <input type="text" id="input-auto-detect-server" class="form-input" placeholder="e.g. play.pokemonshowdown.com">
+            </div>
+            <button type="button" class="btn btn-primary" id="btn-auto-detect-server" style="height:38px;white-space:nowrap;">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
+              Auto-Detect
+            </button>
+          </div>
+        </div>
+
+        <form id="form-bot-config" novalidate>
           <h3 class="section-subtitle">Server Connection</h3>
           <div class="form-row" style="margin-bottom:16px;">
             <div class="form-group">
               <label class="form-label" for="cfg-server-host">Server Host</label>
-              <input type="text" id="cfg-server-host" class="form-input" value="{{.ServerHost}}" placeholder="sim3.psim.us" required>
+              <input type="text" id="cfg-server-host" class="form-input" value="{{.ServerHost}}" placeholder="sim3.psim.us">
             </div>
             <div class="form-group" style="max-width:130px;">
               <label class="form-label" for="cfg-server-port">Port</label>
-              <input type="number" id="cfg-server-port" class="form-input" value="{{.ServerPort}}" placeholder="443" required>
+              <input type="number" id="cfg-server-port" class="form-input" value="{{.ServerPort}}" placeholder="443">
             </div>
             <div class="form-group" style="max-width:180px;">
               <label class="form-label" for="cfg-server-id">Server-ID</label>
-              <input type="text" id="cfg-server-id" class="form-input" value="{{.ServerID}}" placeholder="showdown" required>
+              <input type="text" id="cfg-server-id" class="form-input" value="{{.ServerID}}" placeholder="showdown">
             </div>
           </div>
 
@@ -447,6 +466,50 @@
 
     <!-- tab 3: chatrooms management -->
     <section id="tab-rooms" class="tab-pane">
+      <!-- bot status & anti-afk keepalive card -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Bot Status &amp; Anti-AFK Keepalive</h2>
+            <p class="card-description">Set a custom status message displayed on Pokémon Showdown and keep the bot connection active.</p>
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end;">
+          <form id="form-bot-status" novalidate class="form-row" style="flex:2;min-width:280px;align-items:flex-end;">
+            <div class="form-group" style="flex:1;">
+              <label class="form-label" for="input-bot-status">Custom Status Message (/status)</label>
+              <input type="text" id="input-bot-status" class="form-input" placeholder="e.g. Challenging trainers | Type .help">
+            </div>
+            <button type="submit" class="btn btn-primary" style="height:38px;">Set Status</button>
+          </form>
+
+          <div style="flex:1;min-width:200px;display:flex;align-items:center;padding-bottom:6px;">
+            <label class="switch-container" for="switch-anti-afk">
+              <input type="checkbox" id="switch-anti-afk" class="switch-input">
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+              <span class="switch-content">
+                <span class="switch-title">Anti-AFK Keepalive</span>
+                <span class="switch-description">Send periodic keepalive heartbeats</span>
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- chatrooms discovery & quick join card -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Chatrooms Discovery &amp; Quick Join</h2>
+            <p class="card-description">Join official or public server chatrooms in 1 click.</p>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-join-official-rooms">Join Official Chatrooms</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-join-public-rooms">Join Public Chatrooms</button>
+          </div>
+        </div>
+      </div>
+
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
           <div>
@@ -455,25 +518,25 @@
           </div>
         </div>
         <div style="display:flex;gap:20px;flex-wrap:wrap;">
-          <form id="form-join-room" class="form-row" style="flex:1;min-width:260px;">
+          <form id="form-join-room" novalidate class="form-row" style="flex:1;min-width:260px;">
             <div class="form-group">
               <label class="form-label" for="input-join-room">Join Chatroom</label>
-              <input type="text" id="input-join-room" class="form-input" placeholder="e.g. lobby, myroom" required>
+              <input type="text" id="input-join-room" class="form-input" placeholder="e.g. lobby, myroom">
             </div>
             <button type="submit" class="btn btn-primary">Join Chatroom</button>
           </form>
 
-          <form id="form-leave-room-direct" class="form-row" style="flex:1;min-width:260px;">
+          <form id="form-leave-room-direct" novalidate class="form-row" style="flex:1;min-width:260px;">
             <div class="form-group">
               <label class="form-label" for="input-leave-room-direct">Leave Chatroom</label>
-              <input type="text" id="input-leave-room-direct" class="form-input" placeholder="e.g. lobby, myroom" required>
+              <input type="text" id="input-leave-room-direct" class="form-input" placeholder="e.g. lobby, myroom">
             </div>
             <button type="submit" class="btn btn-danger">Leave Chatroom</button>
           </form>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
           <div>
             <h2 class="card-title">Currently Joined Chatrooms</h2>
@@ -510,6 +573,38 @@
           </table>
         </div>
       </div>
+
+      <!-- seen users directory card -->
+      <div class="card">
+        <div class="card-header" style="flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 class="card-title">Seen Users Directory</h2>
+            <p class="card-description">Tracks trainers seen speaking across chatrooms with timestamp and last activity.</p>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <input type="text" id="input-seen-search" class="form-input" placeholder="Search username..." style="width:160px;height:32px;font-size:12px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-seen">Refresh</button>
+            <button type="button" class="btn btn-danger btn-sm" id="btn-clear-seen">Clear Seen Data</button>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Last Seen Chatroom</th>
+                <th>Last Seen Time</th>
+                <th>Last Message Snippet</th>
+              </tr>
+            </thead>
+            <tbody id="seen-table-body">
+              <tr>
+                <td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">Loading seen users...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- tab 4: tools & backups -->
@@ -532,8 +627,8 @@
           <div style="flex:1;min-width:280px;border-left:1px solid var(--border);padding-left:20px;">
             <h4 style="font-size:14px;font-weight:600;color:var(--foreground);margin-bottom:6px;">Restore Backup</h4>
             <p style="font-size:13px;color:var(--muted-foreground);margin-bottom:12px;">Upload a previously saved backup file to restore configuration.</p>
-            <form id="form-restore-backup" style="display:flex;flex-direction:column;gap:10px;">
-              <input type="file" id="input-backup-file" accept=".json,.backup" class="form-input" required style="padding:6px;">
+            <form id="form-restore-backup" novalidate style="display:flex;flex-direction:column;gap:10px;">
+              <input type="file" id="input-backup-file" accept=".json,.backup" class="form-input" style="padding:6px;">
               <button type="submit" class="btn btn-secondary" id="btn-restore-backup">Restore Backup</button>
             </form>
           </div>
@@ -549,9 +644,9 @@
             <p class="card-description">Query and inspect connection parameters for Pokémon Showdown servers.</p>
           </div>
         </div>
-        <form id="form-get-server" class="form-row">
+        <form id="form-get-server" novalidate class="form-row">
           <div class="form-group">
-            <input type="text" id="input-get-server-url" class="form-input" placeholder="Server URL or ID (e.g. play.pokemonshowdown.com)" required>
+            <input type="text" id="input-get-server-url" class="form-input" placeholder="Server URL or ID (e.g. play.pokemonshowdown.com)">
           </div>
           <button type="submit" class="btn btn-primary">Discover Server</button>
         </form>
@@ -577,11 +672,11 @@
             <p class="card-description">Directly issue a battle challenge to any trainer on the server.</p>
           </div>
         </div>
-        <form id="form-challenge">
+        <form id="form-challenge" novalidate>
           <div class="form-row">
             <div class="form-group" style="flex:1;">
               <label class="form-label" for="input-challenge-user">Trainer Username</label>
-              <input type="text" id="input-challenge-user" class="form-input" placeholder="Opponent username" required>
+              <input type="text" id="input-challenge-user" class="form-input" placeholder="Opponent username">
             </div>
             <div class="form-group" style="flex:1;">
               <label class="form-label">Battle Format</label>
@@ -616,9 +711,9 @@
             <p class="card-description">Instantly change the trainer sprite of the bot on the server.</p>
           </div>
         </div>
-        <form id="form-quick-avatar" class="form-row">
+        <form id="form-quick-avatar" novalidate class="form-row">
           <div class="form-group">
-            <input type="text" id="input-quick-avatar" class="form-input" placeholder="Avatar ID (e.g. 169, red, lance)" required>
+            <input type="text" id="input-quick-avatar" class="form-input" placeholder="Avatar ID (e.g. 169, red, lance)">
           </div>
           <button type="submit" class="btn btn-primary">Update Avatar</button>
         </form>
@@ -632,11 +727,11 @@
             <p class="card-description">Directly authenticate the bot with a Pokémon Showdown username and password without restarting.</p>
           </div>
         </div>
-        <form id="form-bot-login">
+        <form id="form-bot-login" novalidate>
           <div class="form-row" style="margin-bottom:14px;">
             <div class="form-group">
               <label class="form-label" for="input-login-username">Bot Username</label>
-              <input type="text" id="input-login-username" class="form-input" placeholder="Bot username" required>
+              <input type="text" id="input-login-username" class="form-input" placeholder="Bot username">
             </div>
             <div class="form-group">
               <label class="form-label" for="input-login-password">Password</label>
@@ -668,28 +763,9 @@
         <div class="form-row" style="align-items:flex-end;">
           <div class="form-group" style="flex:2;">
             <label class="form-label" for="input-ladder-format">Matchmaking Format (Tier - comma-separated for multi-tier)</label>
-            <div class="custom-combobox" id="combobox-ladder-format">
-              <div class="combobox-input-wrap">
-                <input type="text" id="input-ladder-format" class="form-input" placeholder="e.g. gen9randombattle, gen9ou, gen9ubers" value="gen9randombattle">
-                <button type="button" class="combobox-toggle-btn" id="btn-ladder-format-toggle" title="Format presets" aria-label="Format presets">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                  </svg>
-                </button>
-              </div>
-              <div class="combobox-dropdown" id="dropdown-ladder-format">
-                <div class="combobox-options-list" id="list-ladder-formats">
-                  <div class="combobox-option selected" data-id="gen9randombattle" data-name="[Gen 9] Random Battle">[Gen 9] Random Battle</div>
-                  <div class="combobox-option" data-id="gen9ou" data-name="[Gen 9] OU">[Gen 9] OU</div>
-                  <div class="combobox-option" data-id="gen9ubers" data-name="[Gen 9] Ubers">[Gen 9] Ubers</div>
-                  <div class="combobox-option" data-id="gen9doublesou" data-name="[Gen 9] Doubles OU">[Gen 9] Doubles OU</div>
-                  <div class="combobox-option" data-id="gen9monotype" data-name="[Gen 9] Monotype">[Gen 9] Monotype</div>
-                  <div class="combobox-option" data-id="gen9nationaldex" data-name="[Gen 9] National Dex">[Gen 9] National Dex</div>
-                  <div class="combobox-section-title">Multi-Tier Rotation Presets</div>
-                  <div class="combobox-option" data-id="gen9randombattle, gen9ou" data-name="Multi-Tier: Random Battle + OU">Multi-Tier: Random Battle + OU</div>
-                  <div class="combobox-option" data-id="gen9randombattle, gen9ou, gen9ubers" data-name="Multi-Tier: Random Battle + OU + Ubers">Multi-Tier: Random Battle + OU + Ubers</div>
-                </div>
-              </div>
+            <input type="text" id="input-ladder-format" class="form-input" placeholder="e.g. gen9randombattle, gen9ou, gen9ubers" value="gen9randombattle">
+            <div id="server-format-chips" class="format-chips-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+              <!-- dynamically populated server format chips -->
             </div>
           </div>
           <div class="form-group" style="flex:1;">
@@ -715,10 +791,10 @@
             <p class="card-description">Launch a quick battle challenge to an opponent.</p>
           </div>
         </div>
-        <form id="form-quick-challenge">
+        <form id="form-quick-challenge" novalidate>
           <div class="form-row">
             <div class="form-group" style="flex:1;">
-              <input type="text" id="input-quick-challenge-user" class="form-input" placeholder="Opponent Username" required>
+              <input type="text" id="input-quick-challenge-user" class="form-input" placeholder="Opponent Username">
             </div>
             <div class="form-group" style="flex:1;">
               <!-- custom combobox component (shadcn command combobox) -->
@@ -786,22 +862,22 @@
         <!-- add/edit team form -->
         <div id="team-form-container" style="display:none;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:20px;">
           <h3 class="section-subtitle" id="team-form-title" style="margin-top:0;">Add Battle Team</h3>
-          <form id="form-battle-team">
+          <form id="form-battle-team" novalidate>
             <input type="hidden" id="input-team-id" value="">
             <div class="form-row">
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-team-name">Team Name</label>
-                <input type="text" id="input-team-name" class="form-input" placeholder="e.g. Gen 9 OU Balance" required>
+                <input type="text" id="input-team-name" class="form-input" placeholder="e.g. Gen 9 OU Balance">
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-team-format">Format (Tier)</label>
-                <input type="text" id="input-team-format" class="form-input" placeholder="e.g. gen9ou or gen9monotype" required>
+                <input type="text" id="input-team-format" class="form-input" placeholder="e.g. gen9ou or gen9monotype">
               </div>
             </div>
 
             <div class="form-group" style="margin-top:14px;">
               <label class="form-label" for="input-team-raw">Pokepaste / Showdown Export Format</label>
-              <textarea id="input-team-raw" class="form-textarea" rows="8" placeholder="Paste standard Pokémon Showdown team export or Pokepaste here:&#10;&#10;Great Tusk @ Booster Energy&#10;Ability: Protosynthesis&#10;EVs: 252 Atk / 4 SpD / 252 Spe&#10;Jolly Nature&#10;- Headlong Rush&#10;- Close Combat&#10;- Ice Spinner&#10;- Rapid Spin" required></textarea>
+              <textarea id="input-team-raw" class="form-textarea" rows="8" placeholder="Paste standard Pokémon Showdown team export or Pokepaste here:&#10;&#10;Great Tusk @ Booster Energy&#10;Ability: Protosynthesis&#10;EVs: 252 Atk / 4 SpD / 252 Spe&#10;Jolly Nature&#10;- Headlong Rush&#10;- Close Combat&#10;- Ice Spinner&#10;- Rapid Spin"></textarea>
             </div>
 
             <div class="form-row" style="margin-top:14px;align-items:center;">
@@ -840,11 +916,11 @@
         <!-- add/edit command form -->
         <div id="command-form-container" style="display:none;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:20px;">
           <h3 class="section-subtitle" id="command-form-title" style="margin-top:0;">Create Custom Command</h3>
-          <form id="form-custom-command">
+          <form id="form-custom-command" novalidate>
             <div class="form-row">
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-cmd-name">Command Trigger (without prefix)</label>
-                <input type="text" id="input-cmd-name" class="form-input" placeholder="e.g. discord or rules" required>
+                <input type="text" id="input-cmd-name" class="form-input" placeholder="e.g. discord or rules">
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="select-cmd-rank">Required User Rank</label>
@@ -878,7 +954,7 @@
 
             <div class="form-group" style="margin-top:14px;">
               <label class="form-label" for="input-cmd-response">Response Message</label>
-              <textarea id="input-cmd-response" class="form-textarea" rows="3" placeholder="Message to reply with. Variables: {user} = sender, {bot} = bot name, {args} = extra arguments" required></textarea>
+              <textarea id="input-cmd-response" class="form-textarea" rows="3" placeholder="Message to reply with. Variables: {user} = sender, {bot} = bot name, {args} = extra arguments"></textarea>
               <span class="form-hint">Tip: Use {user} to mention the user who issued the command.</span>
             </div>
 
@@ -902,6 +978,57 @@
           <p style="color:var(--text-dim);text-align:center;padding:24px;">Loading custom commands...</p>
         </div>
       </div>
+
+      <!-- command aliases card -->
+      <div class="card" style="margin-top: 20px;">
+        <div class="card-header" style="flex-wrap:wrap;gap:10px;">
+          <div>
+            <h2 class="card-title">Command Aliases &amp; Shortcuts</h2>
+            <p class="card-description">Create custom shorthand triggers mapping to existing commands (e.g. <code>.r</code> &rarr; <code>.rules</code>).</p>
+          </div>
+        </div>
+        <form id="form-add-alias" novalidate class="form-row" style="margin-bottom:18px;align-items:flex-end;">
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" for="input-alias-name">Alias Trigger</label>
+            <input type="text" id="input-alias-name" class="form-input" placeholder="e.g. r">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" for="input-alias-target">Target Command</label>
+            <input type="text" id="input-alias-target" class="form-input" placeholder="e.g. rules">
+          </div>
+          <button type="submit" class="btn btn-primary" style="height:38px;">Save Alias</button>
+        </form>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Alias Trigger</th>
+                <th>Target Command</th>
+                <th style="text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="aliases-table-body">
+              <tr>
+                <td colspan="3" style="text-align:center;color:var(--text-dim);padding:20px;">Loading aliases...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- abuse monitor card -->
+      <div class="card" style="margin-top: 20px;">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Abuse Monitor &amp; Rate Limiter</h2>
+            <p class="card-description">Active sliding-window rate limiter protecting against spam and denial-of-service command flooding.</p>
+          </div>
+          <span class="chip" style="background:var(--success-light);color:#34d399;border-color:rgba(16,185,129,0.3);">Active (5 cmds / 10s)</span>
+        </div>
+        <p style="font-size:13px;color:var(--text-dim);margin:0;">
+          All incoming commands from standard chatrooms and private messages are monitored per user. If a user exceeds 5 commands in a 10-second sliding window, their subsequent commands are automatically ignored to protect server bandwidth.
+        </p>
+      </div>
     </section>
 
     <!-- tab: chatroom timers -->
@@ -918,18 +1045,18 @@
         <!-- add/edit timer form -->
         <div id="timer-form-container" style="display:none;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:20px;">
           <h3 class="section-subtitle" id="timer-form-title" style="margin-top:0;">Create Chatroom Timer</h3>
-          <form id="form-chatroom-timer">
+          <form id="form-chatroom-timer" novalidate>
             <input type="hidden" id="input-timer-id" value="">
             <div class="form-row">
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-timer-name">Timer Name</label>
-                <input type="text" id="input-timer-name" class="form-input" placeholder="e.g. Server Rules Reminder" required>
+                <input type="text" id="input-timer-name" class="form-input" placeholder="e.g. Server Rules Reminder">
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-timer-room">Target Chatroom</label>
                 <div class="custom-combobox" id="combobox-timer-room">
                   <div class="combobox-input-wrap">
-                    <input type="text" id="input-timer-room" class="form-input" placeholder="e.g. lobby or tournament" required>
+                    <input type="text" id="input-timer-room" class="form-input" placeholder="e.g. lobby or tournament">
                     <button type="button" class="combobox-toggle-btn" id="btn-timer-room-toggle" title="Chatrooms list" aria-label="Chatrooms list">
                       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -945,13 +1072,13 @@
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-timer-interval">Interval (Minutes)</label>
-                <input type="number" id="input-timer-interval" class="form-input" value="15" min="1" max="1440" required>
+                <input type="number" id="input-timer-interval" class="form-input" value="15" min="1" max="1440">
               </div>
             </div>
 
             <div class="form-group" style="margin-top:14px;">
               <label class="form-label" for="input-timer-message">Announcement Message</label>
-              <textarea id="input-timer-message" class="form-textarea" rows="3" placeholder="Message to announce in the chatroom..." required></textarea>
+              <textarea id="input-timer-message" class="form-textarea" rows="3" placeholder="Message to announce in the chatroom..."></textarea>
             </div>
 
             <div class="form-row" style="margin-top:14px;align-items:center;">
@@ -986,7 +1113,7 @@
             <p class="card-description">Automated protection against banned words, vulgarities, and excessive caps in chatrooms.</p>
           </div>
         </div>
-        <form id="form-moderation-config">
+        <form id="form-moderation-config" novalidate>
           <div class="form-row" style="align-items:center;margin-bottom:16px;">
             <div style="display:flex;align-items:center;gap:10px;">
               <label class="switch">
@@ -1057,9 +1184,9 @@
           </div>
         </div>
 
-        <form id="form-add-blacklist" class="form-row" style="margin-bottom:18px;">
+        <form id="form-add-blacklist" novalidate class="form-row" style="margin-bottom:18px;">
           <div class="form-group" style="flex:1;">
-            <input type="text" id="input-bl-username" class="form-input" placeholder="Username to block" required>
+            <input type="text" id="input-bl-username" class="form-input" placeholder="Username to block">
           </div>
           <div class="form-group" style="flex:2;">
             <input type="text" id="input-bl-reason" class="form-input" placeholder="Reason (e.g. spamming, offensive behavior)">
@@ -1085,12 +1212,12 @@
         <!-- add join phrase form -->
         <div id="jp-form-container" style="display:none;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:20px;">
           <h3 class="section-subtitle" style="margin-top:0;">Add User Greeting</h3>
-          <form id="form-join-phrase">
+          <form id="form-join-phrase" novalidate>
             <input type="hidden" id="input-jp-id" value="">
             <div class="form-row">
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-jp-user">Username</label>
-                <input type="text" id="input-jp-user" class="form-input" placeholder="e.g. AshKetchum" required>
+                <input type="text" id="input-jp-user" class="form-input" placeholder="e.g. AshKetchum">
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-jp-room">Chatroom (leave blank for all)</label>
@@ -1114,7 +1241,7 @@
 
             <div class="form-group" style="margin-top:14px;">
               <label class="form-label" for="input-jp-phrase">Greeting Phrase</label>
-              <input type="text" id="input-jp-phrase" class="form-input" placeholder="Welcome champion {user} to {room}!" required>
+              <input type="text" id="input-jp-phrase" class="form-input" placeholder="Welcome champion {user} to {room}!">
               <span class="form-hint">Variables: {user} = joining user, {bot} = bot name, {room} = chatroom name.</span>
             </div>
 
@@ -1136,6 +1263,92 @@
 
         <div id="joinphrases-container">
           <p style="color:var(--text-dim);text-align:center;padding:20px;">Loading join phrases...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- tab: admin & maintenance hub -->
+    <section id="tab-admin" class="tab-pane">
+      <!-- quick maintenance actions -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Maintenance &amp; Server Operations</h2>
+            <p class="card-description">Perform hotpatches, reload database stores, and clear runtime caches.</p>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-secondary" id="btn-admin-hotpatch">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            Hotpatch Bot
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-admin-reload-data">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Reload Data
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-admin-clear-cache">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            Clear Cache
+          </button>
+          <button type="button" class="btn btn-danger" id="btn-admin-clear-user-data">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="18" y1="8" x2="23" y2="13"></line><line x1="23" y1="8" x2="18" y2="13"></line></svg>
+            Clear User-Data
+          </button>
+        </div>
+      </div>
+
+      <!-- security logs & file explorer -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header" style="flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 class="card-title">Security Logs &amp; Data Files Explorer</h2>
+            <p class="card-description">Inspect, download, and manage system security logs and JSON database records.</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-files">Refresh Files</button>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Size</th>
+                <th>Date Modified</th>
+                <th style="text-align:right;">Option</th>
+              </tr>
+            </thead>
+            <tbody id="files-table-body">
+              <tr>
+                <td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">Loading files...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- safe javascript eval console -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">JavaScript Console (Eval)</h2>
+            <p class="card-description">Safely execute JavaScript expressions or administrative scripts with real-time output.</p>
+          </div>
+        </div>
+        <form id="form-admin-eval" novalidate>
+          <div class="form-group" style="margin-bottom:14px;">
+            <label class="form-label" for="input-eval-code">Script / Expression</label>
+            <textarea id="input-eval-code" class="form-textarea" rows="4" placeholder="e.g. console.log('Hello from Showdown!'); 2 + 2;" style="font-family:monospace;font-size:13px;"></textarea>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <button type="submit" class="btn btn-primary" id="btn-eval-run">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Execute JavaScript
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-eval-clear">Clear Output</button>
+          </div>
+        </form>
+        <div class="form-group">
+          <label class="form-label">Evaluation Output</label>
+          <pre id="eval-output-box" style="background:var(--secondary);border:1px solid var(--border);border-radius:var(--radius);padding:14px;min-height:80px;max-height:300px;overflow:auto;font-family:monospace;font-size:12px;color:var(--foreground);white-space:pre-wrap;word-break:break-word;">Ready to execute.</pre>
         </div>
       </div>
     </section>
@@ -1173,16 +1386,60 @@
         <h3 class="modal-title">Send Message to <span id="modal-room-target">-</span></h3>
         <button type="button" class="modal-close-btn" id="btn-close-modal" aria-label="Close dialog">&times;</button>
       </div>
-      <form id="form-modal-room-msg">
+      <form id="form-modal-room-msg" novalidate>
         <div class="form-group" style="margin-bottom:18px;">
           <label class="form-label" for="modal-input-msg">Message Content</label>
-          <textarea id="modal-input-msg" class="form-textarea" placeholder="Type your message..." required rows="4"></textarea>
+          <textarea id="modal-input-msg" class="form-textarea" placeholder="Type your message..." rows="4"></textarea>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:10px;">
           <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
           <button type="submit" class="btn btn-primary">Send Message</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- modal: change admin password -->
+  <div id="modal-change-password" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Change Admin Password</h3>
+        <button type="button" class="modal-close-btn" id="btn-close-change-pw" aria-label="Close">&times;</button>
+      </div>
+      <form id="form-change-password" novalidate>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label" for="pw-current">Current Password</label>
+          <input type="password" id="pw-current" class="form-input" placeholder="Enter current admin password">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label" for="pw-new">New Password</label>
+          <input type="password" id="pw-new" class="form-input" placeholder="Enter new admin password">
+        </div>
+        <div class="form-group" style="margin-bottom:18px;">
+          <label class="form-label" for="pw-confirm">Confirm New Password</label>
+          <input type="password" id="pw-confirm" class="form-input" placeholder="Confirm new admin password">
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-change-pw">Cancel</button>
+          <button type="submit" class="btn btn-primary">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- modal: file view -->
+  <div id="modal-file-view" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width:800px;width:95%;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="file-view-title">View File</h3>
+        <button type="button" class="modal-close-btn" id="btn-close-file-view" aria-label="Close">&times;</button>
+      </div>
+      <div class="form-group" style="margin-bottom:16px;">
+        <pre id="file-view-content" style="background:var(--secondary);border:1px solid var(--border);border-radius:var(--radius);padding:14px;max-height:480px;overflow:auto;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;"></pre>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;">
+        <button type="button" class="btn btn-secondary" id="btn-done-file-view">Close</button>
+      </div>
     </div>
   </div>
 
