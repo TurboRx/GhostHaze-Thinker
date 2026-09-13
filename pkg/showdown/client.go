@@ -66,6 +66,13 @@ type Client struct {
 	joinPhrases        *JoinPhraseStore
 	moderation         *ModerationStore
 	ladder             *LadderController
+	seen               *SeenStore
+	abuseMonitor       *AbuseMonitor
+	statusMessage      string
+	antiAFK            bool
+	antiAFKStopCh      chan struct{}
+	officialRooms      []string
+	publicRooms        []string
 	incomingChallenges map[string]string
 
 	onConnect         []func()
@@ -110,8 +117,11 @@ func NewClient(cfg Config) *Client {
 		joinPhrases:        NewJoinPhraseStore("data/joinphrases.json"),
 		moderation:         NewModerationStore("data/moderation.json"),
 		ladder:             NewLadderController(),
+		seen:               NewSeenStore("data/seen.json"),
+		abuseMonitor:       NewAbuseMonitor(4, 10*time.Second, 30*time.Second),
 		incomingChallenges: make(map[string]string),
 	}
+	c.initBuiltinCommands()
 	c.timers.Start(c)
 	return c
 }
@@ -698,6 +708,130 @@ func (c *Client) Ladder() *LadderController {
 	return c.ladder
 }
 
+// seen returns the user activity tracker
+func (c *Client) Seen() *SeenStore {
+	return c.seen
+}
+
+// abuse returns the abuse monitor rate limiter
+func (c *Client) Abuse() *AbuseMonitor {
+	return c.abuseMonitor
+}
+
+// setstatus updates custom showdown status message
+func (c *Client) SetStatus(status string) error {
+	c.stateMu.Lock()
+	c.statusMessage = status
+	c.stateMu.Unlock()
+	if c.IsConnected() && c.IsLoggedIn() {
+		return c.Send(fmt.Sprintf("|/status %s", status))
+	}
+	return nil
+}
+
+// statusmessage returns currently configured bot status message
+func (c *Client) StatusMessage() string {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return c.statusMessage
+}
+
+// setantiafk toggles periodic keepalive heartbeats to prevent idle status
+func (c *Client) SetAntiAFK(enabled bool) {
+	c.stateMu.Lock()
+	c.antiAFK = enabled
+	if enabled && c.antiAFKStopCh == nil {
+		c.antiAFKStopCh = make(chan struct{})
+		stopCh := c.antiAFKStopCh
+		c.stateMu.Unlock()
+
+		go func(ch <-chan struct{}) {
+			ticker := time.NewTicker(10 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ch:
+					return
+				case <-ticker.C:
+					if c.IsConnected() && c.IsLoggedIn() {
+						_ = c.Send("|/idle")
+					}
+				}
+			}
+		}(stopCh)
+		return
+	} else if !enabled && c.antiAFKStopCh != nil {
+		close(c.antiAFKStopCh)
+		c.antiAFKStopCh = nil
+	}
+	c.stateMu.Unlock()
+}
+
+// antiafk returns whether keepalive heartbeats are active
+func (c *Client) AntiAFK() bool {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return c.antiAFK
+}
+
+// joinofficialrooms queries and joins official chatrooms on the server
+func (c *Client) JoinOfficialRooms() error {
+	c.stateMu.RLock()
+	rooms := append([]string{}, c.officialRooms...)
+	c.stateMu.RUnlock()
+
+	if len(rooms) == 0 {
+		_ = c.Send("|/cmd rooms")
+		rooms = []string{"lobby", "tournaments", "help"}
+	}
+	for _, r := range rooms {
+		_ = c.JoinRoom(r)
+	}
+	return nil
+}
+
+// joinpublicrooms queries and joins public chatrooms on the server
+func (c *Client) JoinPublicRooms() error {
+	c.stateMu.RLock()
+	rooms := append([]string{}, c.publicRooms...)
+	c.stateMu.RUnlock()
+
+	if len(rooms) == 0 {
+		_ = c.Send("|/cmd rooms")
+		rooms = []string{"lobby", "tournaments", "botdevelopment", "scavengers", "anime"}
+	}
+	for _, r := range rooms {
+		_ = c.JoinRoom(r)
+	}
+	return nil
+}
+
+// handleroomsqueryresponse parses rooms returned by |queryresponse|rooms|
+func (c *Client) handleRoomsQueryResponse(rawJSON string) {
+	var data struct {
+		Official []struct {
+			Title string `json:"title"`
+		} `json:"official"`
+		Chat []struct {
+			Title string `json:"title"`
+		} `json:"chat"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &data); err != nil {
+		return
+	}
+
+	c.stateMu.Lock()
+	c.officialRooms = make([]string, 0, len(data.Official))
+	for _, r := range data.Official {
+		c.officialRooms = append(c.officialRooms, ToRoomID(r.Title))
+	}
+	c.publicRooms = make([]string, 0, len(data.Chat))
+	for _, r := range data.Chat {
+		c.publicRooms = append(c.publicRooms, ToRoomID(r.Title))
+	}
+	c.stateMu.Unlock()
+}
+
 // sendroommessage sends a message to a chatroom
 func (c *Client) SendRoomMessage(room, text string) error {
 	return c.SendToRoom(room, text)
@@ -1144,6 +1278,11 @@ func (c *Client) processMessage(msg RawMessage) {
 
 			c.dispatchChat(chat)
 			if !isIntro {
+				// record trainer activity
+				if c.seen != nil && chat.User != "" && chat.Room != "" {
+					c.seen.Record(chat.User, chat.Room, chat.Text)
+				}
+
 				// automated chatroom moderation checks
 				if c.moderation != nil && chat.Room != "" {
 					cleanUser := CleanUsername(chat.User)
@@ -1170,6 +1309,11 @@ func (c *Client) processMessage(msg RawMessage) {
 
 	case "pm":
 		if pm, ok := ParsePrivateMessage(msg); ok {
+			// record pm activity
+			if c.seen != nil && pm.From != "" {
+				c.seen.Record(pm.From, "pm", pm.Text)
+			}
+
 			c.dispatchPM(pm)
 			c.routeCommand("", pm.From, pm.Text)
 
@@ -1177,6 +1321,11 @@ func (c *Client) processMessage(msg RawMessage) {
 			if strings.HasPrefix(pm.Text, "/challenge") {
 				c.handlePMChallenge(pm.From, pm.Text)
 			}
+		}
+
+	case "queryresponse":
+		if len(msg.Parts) >= 2 && msg.Parts[0] == "rooms" {
+			c.handleRoomsQueryResponse(msg.Parts[1])
 		}
 
 	case "updatesearch":
@@ -1753,11 +1902,103 @@ func (c *Client) onPostLogin() {
 		_ = c.SetAvatar(c.config.Avatar)
 	}
 
+	c.stateMu.RLock()
+	statusMsg := c.statusMessage
+	c.stateMu.RUnlock()
+	if statusMsg != "" {
+		_ = c.Send(fmt.Sprintf("|/status %s", statusMsg))
+	}
+
 	for _, room := range c.config.Rooms {
 		room = strings.TrimSpace(room)
 		if room != "" {
 			_ = c.JoinRoom(room)
 		}
+	}
+}
+
+// initbuiltincommands registers standard utility and dex commands
+func (c *Client) initBuiltinCommands() {
+	c.HandleCommand("seen", func(room, user, args string) {
+		target := strings.TrimSpace(args)
+		if target == "" {
+			_ = c.Reply(room, user, "Usage: .seen <username>")
+			return
+		}
+		if c.seen != nil {
+			if entry, ok := c.seen.Get(target); ok {
+				ago := time.Since(entry.LastSeen).Truncate(time.Second)
+				_ = c.Reply(room, user, fmt.Sprintf("%s was last seen %s ago in [%s]: \"%s\"", entry.Username, ago.String(), entry.Room, entry.LastMessage))
+				return
+			}
+		}
+		_ = c.Reply(room, user, fmt.Sprintf("%s has not been seen speaking yet.", target))
+	})
+
+	c.HandleCommand("data", func(room, user, args string) {
+		species := strings.TrimSpace(args)
+		if species == "" {
+			_ = c.Reply(room, user, "Usage: .data <pokemon>")
+			return
+		}
+		if entry, found := battle.GetSpeciesPokedexEntry(species); found {
+			typesStr := strings.Join(entry.Types, "/")
+			statsStr := fmt.Sprintf("HP:%d Atk:%d Def:%d SpA:%d SpD:%d Spe:%d", entry.BaseStats["hp"], entry.BaseStats["atk"], entry.BaseStats["def"], entry.BaseStats["spa"], entry.BaseStats["spd"], entry.BaseStats["spe"])
+			tier := battle.GetSpeciesTier(species)
+			_ = c.Reply(room, user, fmt.Sprintf("%s [%s] Tier: %s | Base Stats: %s", entry.Name, typesStr, tier, statsStr))
+		} else {
+			_ = c.Reply(room, user, fmt.Sprintf("Pokémon \"%s\" not found in Pokédex.", species))
+		}
+	})
+
+	c.HandleCommand("randpoke", func(room, user, args string) {
+		species := battle.GetRandomSpecies()
+		_ = c.Reply(room, user, fmt.Sprintf("Random Pokémon: %s", species))
+	})
+
+	c.HandleCommand("randmove", func(room, user, args string) {
+		move := battle.GetRandomMoveName()
+		_ = c.Reply(room, user, fmt.Sprintf("Random Move: %s", move))
+	})
+
+	c.HandleCommand("quote", func(room, user, args string) {
+		quotes := []string{
+			"\"I see now that the circumstances of one's birth are irrelevant. It is what you do with the gift of life that determines who you are.\" — Mewtwo",
+			"\"There's no sense in going out of your way to get somebody to like you.\" — Ash Ketchum",
+			"\"A wildfire, a blizzard, a lightning bolt... each can strike at any moment.\" — Cynthia",
+			"\"Strong Pokémon. Weak Pokémon. That is only the selfish perception of people.\" — Karen",
+		}
+		idx := int(time.Now().UnixNano() % int64(len(quotes)))
+		_ = c.Reply(room, user, quotes[idx])
+	})
+
+	c.HandleCommand("joke", func(room, user, args string) {
+		jokes := []string{
+			"Why couldn't the bicycle stand up by itself? It was two-tired! Just like a Snorlax.",
+			"What is a Pokémon's favorite day of the week? Sun-day with Solgaleo!",
+			"Why did Pikachu cross the road? To shock the other side!",
+			"What do you call a low-fat ghost Pokémon? Gengar-free!",
+		}
+		idx := int(time.Now().UnixNano() % int64(len(jokes)))
+		_ = c.Reply(room, user, jokes[idx])
+	})
+
+	c.HandleCommand("hotpatch", func(room, user, args string) {
+		if c.commandsStore != nil {
+			_ = c.commandsStore.Load()
+		}
+		_ = c.Reply(room, user, "Data and dynamic commands successfully reloaded via hotpatch.")
+	})
+
+	c.HandleCommand("help", func(room, user, args string) {
+		_ = c.Reply(room, user, "Available commands: .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch")
+	})
+
+	// register default command aliases
+	if c.commandsStore != nil {
+		c.commandsStore.SetAlias("dt", "data")
+		c.commandsStore.SetAlias("dex", "data")
+		c.commandsStore.SetAlias("pokedex", "data")
 	}
 }
 
@@ -1782,6 +2023,13 @@ func (c *Client) routeCommand(room, user, text string) {
 		return
 	}
 
+	cleanUser := CleanUsername(user)
+
+	// verify abuse monitor rate limits
+	if c.abuseMonitor != nil && c.abuseMonitor.IsAbusing(cleanUser) {
+		return
+	}
+
 	trimmed := strings.TrimSpace(text)
 	if !strings.HasPrefix(trimmed, c.config.CommandChar) {
 		return
@@ -1801,11 +2049,17 @@ func (c *Client) routeCommand(room, user, text string) {
 		args = ""
 	}
 
+	// resolve command aliases
+	if c.commandsStore != nil {
+		if target, isAlias := c.commandsStore.GetAlias(cmdName); isAlias {
+			cmdName = target
+		}
+	}
+
 	c.handlerMu.RLock()
 	handler, exists := c.commands[cmdName]
 	c.handlerMu.RUnlock()
 
-	cleanUser := CleanUsername(user)
 	if exists && handler != nil {
 		go handler(room, cleanUser, args)
 		return
