@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - GhostHaze-Thinker</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .login-wrapper {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      padding: 32px 28px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+    }
+    .login-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .login-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+    .login-subtitle {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    .login-alert {
+      display: none;
+      padding: 10px 14px;
+      border-radius: var(--border-radius-sm);
+      font-size: 0.85rem;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+    .login-alert.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-card">
+      <div class="login-header">
+        <h1 class="login-title">GhostHaze-Thinker</h1>
+        <p class="login-subtitle">Control Panel Authentication</p>
+      </div>
+
+      <div id="login-alert" class="login-alert"></div>
+
+      <form id="form-login">
+        <div class="form-group" style="margin-bottom: 18px;">
+          <label class="form-label" for="login-password">Admin Password</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="password" id="login-password" class="form-input" placeholder="Enter control panel password" required autofocus autocomplete="current-password">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-pw" style="white-space: nowrap;">Show</button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="btn-submit" style="width: 100%; justify-content: center; padding: 10px 16px;">
+          Log In
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // initialize theme from localstorage or system
+    const savedTheme = localStorage.getItem("ghosthaze_theme") || "dark";
+    if (savedTheme === "system") {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
+    } else {
+      document.documentElement.setAttribute("data-theme", savedTheme);
+    }
+
+    const form = document.getElementById("form-login");
+    const passInput = document.getElementById("login-password");
+    const toggleBtn = document.getElementById("btn-toggle-pw");
+    const alertBox = document.getElementById("login-alert");
+    const submitBtn = document.getElementById("btn-submit");
+
+    toggleBtn.addEventListener("click", () => {
+      if (passInput.type === "password") {
+        passInput.type = "text";
+        toggleBtn.textContent = "Hide";
+      } else {
+        passInput.type = "password";
+        toggleBtn.textContent = "Show";
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      alertBox.className = "login-alert";
+      alertBox.textContent = "";
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Authenticating...";
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: passInput.value })
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          window.location.href = "/";
+        } else {
+          alertBox.className = "login-alert error";
+          alertBox.textContent = data.error || "Authentication failed. Please check your password.";
+          passInput.value = "";
+          passInput.focus();
+        }
+      } catch (err) {
+        alertBox.className = "login-alert error";
+        alertBox.textContent = "Network error while logging in. Please try again.";
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Log In";
+      }
+    });
+  </script>
+</body>
+</html>

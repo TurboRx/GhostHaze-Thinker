@@ -14,9 +14,10 @@ import (
 // config holds application configuration including showdown client and web control panel
 type Config struct {
 	*showdown.Config
-	WebEnabled bool
-	WebHost    string
-	WebPort    int
+	WebEnabled       bool
+	WebHost          string
+	WebPort          int
+	WebAdminPassword string
 }
 
 func Load() (*Config, error) {
@@ -83,6 +84,7 @@ func Load() (*Config, error) {
 
 	cfg.BattleWinMsg = os.Getenv("PS_BATTLE_WIN_MSG")
 	cfg.BattleLoseMsg = os.Getenv("PS_BATTLE_LOSE_MSG")
+	cfg.BattleStartMsg = os.Getenv("PS_BATTLE_START_MSG")
 
 	// if a web url was supplied or auto-discovery was requested, resolve server parameters
 	autoDiscover := os.Getenv("PS_DISCOVER_SERVER") == "true" || os.Getenv("PS_DISCOVER_SERVER") == "1"
@@ -118,12 +120,14 @@ func Load() (*Config, error) {
 	} else if val := os.Getenv("WEB_HOST"); val == "127.0.0.1" || val == "0.0.0.0" || val == "localhost" {
 		webHost = val
 	}
+	webAdminPassword := strings.TrimSpace(os.Getenv("WEB_ADMIN_PASSWORD"))
 
 	return &Config{
-		Config:     cfg,
-		WebEnabled: webEnabled,
-		WebHost:    webHost,
-		WebPort:    webPort,
+		Config:           cfg,
+		WebEnabled:       webEnabled,
+		WebHost:          webHost,
+		WebPort:          webPort,
+		WebAdminPassword: webAdminPassword,
 	}, nil
 }
 
@@ -220,8 +224,14 @@ func SaveEnvFile(filename string, cfg *showdown.Config) error {
 	sb.WriteString(fmt.Sprintf("PS_AUTO_LEAVE_BATTLE=%s\n", autoLeaveStr))
 	sb.WriteString(fmt.Sprintf("PS_BATTLE_WIN_MSG=%s\n", cfg.BattleWinMsg))
 	sb.WriteString(fmt.Sprintf("PS_BATTLE_LOSE_MSG=%s\n", cfg.BattleLoseMsg))
+	if cfg.BattleStartMsg != "" {
+		sb.WriteString(fmt.Sprintf("PS_BATTLE_START_MSG=%s\n", cfg.BattleStartMsg))
+	}
 	sb.WriteString(fmt.Sprintf("PS_BATTLE_FORMATS=%s\n", strings.Join(cfg.BattleFormats, ",")))
 	sb.WriteString(fmt.Sprintf("PS_BATTLE_TEAM=%s\n", cfg.BattleTeam))
+	if pass := os.Getenv("WEB_ADMIN_PASSWORD"); pass != "" {
+		sb.WriteString(fmt.Sprintf("WEB_ADMIN_PASSWORD=%s\n", pass))
+	}
 
 	return os.WriteFile(filename, []byte(sb.String()), 0600)
 }

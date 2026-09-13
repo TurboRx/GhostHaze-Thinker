@@ -24,8 +24,11 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.LoginURL != DefaultLoginURL {
 		t.Errorf("expected login url %s, got %s", DefaultLoginURL, cfg.LoginURL)
 	}
-	if len(cfg.Rooms) != 1 || cfg.Rooms[0] != DefaultRoom {
-		t.Errorf("expected rooms [%s], got %v", DefaultRoom, cfg.Rooms)
+	if len(cfg.Rooms) != 0 {
+		t.Errorf("expected empty rooms slice, got %v", cfg.Rooms)
+	}
+	if cfg.BattleStartMsg == "" {
+		t.Errorf("expected default battle start msg, got empty")
 	}
 	if cfg.ReconnectDelay != DefaultReconnectDelay {
 		t.Errorf("expected reconnect delay %v, got %v", DefaultReconnectDelay, cfg.ReconnectDelay)
@@ -888,14 +891,21 @@ func TestBattleRoomMessageRouting(t *testing.T) {
 		t.Fatalf("timed out waiting for OnBattleStart")
 	}
 
-	// verify /timer on was sent to prevent stalling
-	select {
-	case msg := <-sentChan:
-		if msg != battleRoom+"|/timer on" {
-			t.Fatalf("expected timer on command, got %s", msg)
+	// verify /timer on and battle start greeting were sent
+	received := make(map[string]bool)
+	for i := 0; i < 2; i++ {
+		select {
+		case msg := <-sentChan:
+			received[msg] = true
+		case <-time.After(1 * time.Second):
+			t.Fatalf("timed out waiting for battle start messages, received: %v", received)
 		}
-	case <-time.After(1 * time.Second):
-		t.Fatalf("timed out waiting for timer on")
+	}
+	if !received[battleRoom+"|/timer on"] {
+		t.Fatalf("expected timer on command in %v", received)
+	}
+	if !received[battleRoom+"|Good luck, have fun!"] {
+		t.Fatalf("expected greeting message in %v", received)
 	}
 
 	// verify active battle exists

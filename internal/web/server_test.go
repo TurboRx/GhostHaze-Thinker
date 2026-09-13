@@ -176,6 +176,206 @@ func TestWebServerEndpoints(t *testing.T) {
 			t.Errorf("expected 200 for bot login, got %d: %s", loginRR.Code, loginRR.Body.String())
 		}
 	})
+
+	t.Run("raw logs endpoint serves plain text", func(t *testing.T) {
+		srv.AddLog("chat", "lobby", "hello world from raw test")
+		req := httptest.NewRequest(http.MethodGet, "/api/logs/raw", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200 for raw logs, got %d", rr.Code)
+		}
+		contentType := rr.Header().Get("Content-Type")
+		if !bytes.Contains([]byte(contentType), []byte("text/plain")) {
+			t.Errorf("expected text/plain content type, got %s", contentType)
+		}
+		if !bytes.Contains(rr.Body.Bytes(), []byte("hello world from raw test")) {
+			t.Errorf("expected raw log content in response")
+		}
+	})
+
+	t.Run("bot stop endpoint", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/bot/stop", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200 for bot stop, got %d", rr.Code)
+		}
+		if !client.IsStopped() {
+			t.Errorf("expected client to be stopped")
+		}
+
+		// resume with reconnect
+		reconnectReq := httptest.NewRequest(http.MethodPost, "/api/bot/reconnect", nil)
+		reconnectRR := httptest.NewRecorder()
+		mux.ServeHTTP(reconnectRR, reconnectReq)
+		if reconnectRR.Code != http.StatusOK {
+			t.Errorf("expected 200 for bot reconnect, got %d", reconnectRR.Code)
+		}
+		if client.IsStopped() {
+			t.Errorf("expected client to be resumed")
+		}
+	})
+
+	t.Run("backup download and restore", func(t *testing.T) {
+		// download backup
+		req := httptest.NewRequest(http.MethodGet, "/api/backup/download", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 for backup download, got %d", rr.Code)
+		}
+
+		var payload BackupPayload
+		if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("failed to parse backup json: %v", err)
+		}
+		if payload.Signature != BackupSignature {
+			t.Errorf("expected signature %s, got %s", BackupSignature, payload.Signature)
+		}
+
+		// modify payload and restore
+		payload.Config.CommandChar = "$"
+		payload.Config.Rooms = []string{"lobby"}
+		modifiedBytes, _ := json.Marshal(payload)
+
+		restoreReq := httptest.NewRequest(http.MethodPost, "/api/backup/restore", bytes.NewBuffer(modifiedBytes))
+		restoreReq.Header.Set("Content-Type", "application/json")
+		restoreRR := httptest.NewRecorder()
+		mux.ServeHTTP(restoreRR, restoreReq)
+
+		if restoreRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for restore, got %d: %s", restoreRR.Code, restoreRR.Body.String())
+		}
+
+		activeCfg := client.ClientConfig()
+		if activeCfg.CommandChar != "$" {
+			t.Errorf("expected restored command char '$', got %s", activeCfg.CommandChar)
+		}
+	})
+}
+
+func TestWebAuthenticationAndLockout(t *testing.T) {
+	cfg := showdown.Config{
+		ServerID:   "testserver",
+		ServerHost: "dummyhost.psim.us",
+		Username:   "testbot",
+	}
+	client := showdown.NewClient(cfg)
+
+	// initialize server with admin password
+	srv, err := NewServer(client, "127.0.0.1", 8080, "secretpassword123")
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	mux, err := srv.buildMux()
+	if err != nil {
+		t.Fatalf("failed to build mux: %v", err)
+	}
+
+	t.Run("unauthenticated browser request redirects to login", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusFound {
+			t.Errorf("expected 302 redirect to /login, got %d", rr.Code)
+		}
+		if loc := rr.Header().Get("Location"); loc != "/login" {
+			t.Errorf("expected Location /login, got %s", loc)
+		}
+	})
+
+	t.Run("unauthenticated api request returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401 unauthorized, got %d", rr.Code)
+		}
+	})
+
+	t.Run("successful login sets session cookie and unlocks access", func(t *testing.T) {
+		loginBody := `{"password":"secretpassword123"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(loginBody))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 for successful login, got %d: %s", rr.Code, rr.Body.String())
+		}
+
+		cookies := rr.Result().Cookies()
+		var sessionCookie *http.Cookie
+		for _, c := range cookies {
+			if c.Name == "ghosthaze_session" {
+				sessionCookie = c
+				break
+			}
+		}
+		if sessionCookie == nil || sessionCookie.Value == "" {
+			t.Fatalf("expected ghosthaze_session cookie to be set")
+		}
+
+		// authenticated request to index
+		authReq := httptest.NewRequest(http.MethodGet, "/", nil)
+		authReq.AddCookie(sessionCookie)
+		authRR := httptest.NewRecorder()
+		mux.ServeHTTP(authRR, authReq)
+
+		if authRR.Code != http.StatusOK {
+			t.Errorf("expected 200 for authenticated index, got %d", authRR.Code)
+		}
+
+		// logout invalidates session
+		logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+		logoutReq.AddCookie(sessionCookie)
+		logoutRR := httptest.NewRecorder()
+		mux.ServeHTTP(logoutRR, logoutReq)
+
+		if logoutRR.Code != http.StatusOK {
+			t.Errorf("expected 200 for logout, got %d", logoutRR.Code)
+		}
+
+		// after logout, index should redirect again
+		afterReq := httptest.NewRequest(http.MethodGet, "/", nil)
+		afterReq.AddCookie(sessionCookie)
+		afterRR := httptest.NewRecorder()
+		mux.ServeHTTP(afterRR, afterReq)
+		if afterRR.Code != http.StatusFound {
+			t.Errorf("expected 302 after logout, got %d", afterRR.Code)
+		}
+	})
+
+	t.Run("brute force attempts trigger lockout", func(t *testing.T) {
+		for i := 0; i < 5; i++ {
+			badReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"wrong"}`))
+			badReq.Header.Set("Content-Type", "application/json")
+			badReq.RemoteAddr = "192.0.2.100:1234"
+			badRR := httptest.NewRecorder()
+			mux.ServeHTTP(badRR, badReq)
+			if i < 4 && badRR.Code != http.StatusUnauthorized {
+				t.Errorf("expected 401 for attempt %d, got %d", i+1, badRR.Code)
+			}
+		}
+
+		// 6th attempt should return 403 forbidden due to lockout
+		lockReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"wrong"}`))
+		lockReq.Header.Set("Content-Type", "application/json")
+		lockReq.RemoteAddr = "192.0.2.100:1234"
+		lockRR := httptest.NewRecorder()
+		mux.ServeHTTP(lockRR, lockReq)
+
+		if lockRR.Code != http.StatusForbidden {
+			t.Errorf("expected 403 forbidden for locked ip, got %d", lockRR.Code)
+		}
+	})
 }
 
 

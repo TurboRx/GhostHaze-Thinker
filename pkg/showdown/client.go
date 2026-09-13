@@ -37,6 +37,7 @@ type Client struct {
 
 	connected        bool
 	connectedAt      time.Time
+	stopped          bool
 	loggedIn         bool
 	intentionalClose bool
 	currentRoom      string
@@ -251,6 +252,11 @@ func (c *Client) SendToRoom(room, message string) error {
 	return nil
 }
 
+// sendroom sends a chat message to a specific room (alias for sendtoroom)
+func (c *Client) SendRoom(room, message string) error {
+	return c.SendToRoom(room, message)
+}
+
 func (c *Client) SendPM(targetUser, message string) error {
 	target := CleanUsername(targetUser)
 	if target == "" {
@@ -421,8 +427,63 @@ func (c *Client) ConnectedAt() time.Time {
 	return c.connectedAt
 }
 
+// start resets the stopped flag and wakes the runner loop to reconnect immediately
+func (c *Client) Start() {
+	c.stateMu.Lock()
+	c.stopped = false
+	c.intentionalClose = false
+	wake := c.reconnectWake
+	c.stateMu.Unlock()
+
+	if wake != nil {
+		select {
+		case <-wake:
+		default:
+			close(wake)
+		}
+	}
+}
+
+// isstopped returns whether the bot client is currently stopped
+func (c *Client) IsStopped() bool {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return c.stopped
+}
+
+// stop disconnects the bot and places it in a stopped state until start is called
+func (c *Client) Stop() {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	c.stateMu.Lock()
+	c.stopped = true
+	c.intentionalClose = true
+	c.connected = false
+	c.connectedAt = time.Time{}
+	c.loggedIn = false
+	conn := c.wsConn
+	c.wsConn = nil
+	if c.reconnectWake != nil {
+		select {
+		case <-c.reconnectWake:
+		default:
+			close(c.reconnectWake)
+		}
+	}
+	c.stateMu.Unlock()
+
+	if conn != nil {
+		_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		_ = conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bot stopped"))
+		_ = conn.Close()
+	}
+}
+
 // reconnect forces closing the websocket connection to trigger automatic reconnect
 func (c *Client) Reconnect() {
+	c.Start()
 	c.writeMu.Lock()
 	conn := c.wsConn
 	c.writeMu.Unlock()
@@ -640,10 +701,24 @@ func (c *Client) Run(ctx context.Context) error {
 		}
 
 		c.stateMu.RLock()
-		closed := c.intentionalClose
+		isStopped := c.stopped
+		isClosed := c.intentionalClose && !isStopped
 		c.stateMu.RUnlock()
-		if closed {
+		if isClosed {
 			return nil
+		}
+		if isStopped {
+			c.stateMu.Lock()
+			wake := make(chan struct{})
+			c.reconnectWake = wake
+			c.stateMu.Unlock()
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-wake:
+				continue
+			}
 		}
 
 		err := c.connectAndListen(ctx)
@@ -652,10 +727,14 @@ func (c *Client) Run(ctx context.Context) error {
 		}
 
 		c.stateMu.RLock()
-		closed = c.intentionalClose
+		isStopped = c.stopped
+		isClosed = c.intentionalClose && !isStopped
 		c.stateMu.RUnlock()
-		if closed {
+		if isClosed {
 			return nil
+		}
+		if isStopped {
+			continue
 		}
 
 		if err != nil {
@@ -674,7 +753,13 @@ func (c *Client) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-wake:
-			return nil
+			c.stateMu.RLock()
+			closed := c.intentionalClose && !c.stopped
+			c.stateMu.RUnlock()
+			if closed {
+				return nil
+			}
+			continue
 		case <-time.After(c.config.ReconnectDelay):
 		}
 	}
@@ -1490,6 +1575,13 @@ func (c *Client) dispatchChallenge(from, format string) {
 }
 
 func (c *Client) dispatchBattleStart(b *battle.Battle) {
+	c.stateMu.RLock()
+	greeting := c.config.BattleStartMsg
+	c.stateMu.RUnlock()
+	if greeting != "" {
+		_ = c.SendRoom(b.Room, greeting)
+	}
+
 	c.handlerMu.RLock()
 	handlers := append([]func(*battle.Battle){}, c.onBattleStart...)
 	c.handlerMu.RUnlock()

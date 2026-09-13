@@ -1,124 +1,243 @@
 // ghosthaze thinker control panel client script
 
 document.addEventListener("DOMContentLoaded", function () {
+  // theme management (dark, light, system)
+  let currentTheme = localStorage.getItem("ghosthaze_theme") || "dark";
+
+  function applyTheme(theme) {
+    let effective = theme;
+    if (theme === "system") {
+      effective = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.setAttribute("data-theme", effective);
+
+    const lightIcon = document.getElementById("theme-icon-light");
+    const darkIcon = document.getElementById("theme-icon-dark");
+    const systemIcon = document.getElementById("theme-icon-system");
+
+    if (lightIcon && darkIcon && systemIcon) {
+      lightIcon.style.display = theme === "light" ? "block" : "none";
+      darkIcon.style.display = theme === "dark" ? "block" : "none";
+      systemIcon.style.display = theme === "system" ? "block" : "none";
+    }
+  }
+
+  applyTheme(currentTheme);
+
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+    if (currentTheme === "system") {
+      applyTheme("system");
+    }
+  });
+
+  const themeToggleBtn = document.getElementById("theme-toggle-btn");
+  const themeDropdown = document.getElementById("theme-dropdown");
+  if (themeToggleBtn && themeDropdown) {
+    themeToggleBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      themeDropdown.classList.toggle("show");
+    });
+
+    document.querySelectorAll(".theme-option").forEach((opt) => {
+      opt.addEventListener("click", function () {
+        const selected = this.getAttribute("data-theme-val");
+        currentTheme = selected;
+        localStorage.setItem("ghosthaze_theme", selected);
+        applyTheme(selected);
+        themeDropdown.classList.remove("show");
+      });
+    });
+
+    document.addEventListener("click", function () {
+      themeDropdown.classList.remove("show");
+    });
+  }
+
+  // hamburger mobile navigation drawer with 90deg animation
+  const hamburger = document.getElementById("hamburger");
+  const mobileMenu = document.getElementById("mobile-menu");
+  if (hamburger && mobileMenu) {
+    hamburger.addEventListener("click", function () {
+      this.classList.toggle("active");
+      mobileMenu.classList.toggle("open");
+    });
+  }
+
   // tab navigation switching
   const tabs = document.querySelectorAll(".nav-tab-btn");
+  const mobileNavBtns = document.querySelectorAll(".mobile-nav-btn");
   const panes = document.querySelectorAll(".tab-pane");
+
+  function switchTab(target) {
+    tabs.forEach((t) => {
+      if (t.getAttribute("data-tab") === target) t.classList.add("active");
+      else t.classList.remove("active");
+    });
+
+    mobileNavBtns.forEach((b) => {
+      if (b.getAttribute("data-tab") === target) b.classList.add("active");
+      else b.classList.remove("active");
+    });
+
+    panes.forEach((p) => p.classList.remove("active"));
+    const activePane = document.getElementById("tab-" + target);
+    if (activePane) {
+      activePane.classList.add("active");
+    }
+
+    if (hamburger && mobileMenu) {
+      hamburger.classList.remove("active");
+      mobileMenu.classList.remove("open");
+    }
+  }
 
   tabs.forEach(function (tab) {
     tab.addEventListener("click", function () {
       const target = this.getAttribute("data-tab");
-
-      tabs.forEach((t) => t.classList.remove("active"));
-      panes.forEach((p) => p.classList.remove("active"));
-
-      this.classList.add("active");
-      const activePane = document.getElementById("tab-" + target);
-      if (activePane) {
-        activePane.classList.add("active");
-      }
+      if (target) switchTab(target);
     });
   });
 
-  // state variables for smooth uptime timer
+  mobileNavBtns.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const target = this.getAttribute("data-tab");
+      if (target) switchTab(target);
+    });
+  });
+
+  // state variables for dual timers
   let isConnected = false;
-  let connectionTimeInitialMs = 0;
+  let isStopped = false;
+  let connectionStartMs = 0;
+  let serverStartMs = 0;
   let activeLogFilter = "all";
   let cachedLogs = [];
 
-  // format seconds into smooth human readable duration
-  function formatDuration(seconds) {
-    if (seconds <= 0) return "0 seconds";
-    const parts = [];
+  // format seconds into clean human readable duration
+  function formatSeconds(seconds) {
+    if (seconds <= 0) return "0s";
     const s = seconds % 60;
     const m = Math.floor(seconds / 60) % 60;
     const h = Math.floor(seconds / 3600) % 24;
     const d = Math.floor(seconds / 86400);
 
-    if (d > 0) parts.push(d + (d === 1 ? " day" : " days"));
-    if (h > 0) parts.push(h + (h === 1 ? " hour" : " hours"));
-    if (m > 0) parts.push(m + (m === 1 ? " minute" : " minutes"));
-    if (s > 0 || parts.length === 0) parts.push(s + (s === 1 ? " second" : " seconds"));
-    return parts.join(", ");
+    const parts = [];
+    if (d > 0) parts.push(d + "d");
+    if (h > 0) parts.push(h + "h");
+    if (m > 0) parts.push(m + "m");
+    if (s > 0 || parts.length === 0) parts.push(s + "s");
+    return parts.join(" ");
   }
 
-  // smooth 1-second ticker for uptime
-  function tickUptime() {
-    const el = document.getElementById("stat-uptime");
-    const elDetail = document.getElementById("uptime-detail");
-
-    if (!isConnected || !connectionTimeInitialMs) {
-      if (el) el.textContent = isConnected ? "Connecting..." : "Offline";
-      if (elDetail) elDetail.textContent = isConnected ? "Connecting..." : "Not connected";
-      return;
+  // ticker updating both uptime and contime every second
+  function tickTimers() {
+    // 1. connection uptime (contime)
+    const contimeEl = document.getElementById("stat-contime");
+    if (contimeEl) {
+      if (isStopped) {
+        contimeEl.textContent = "Stopped";
+      } else if (!isConnected || connectionStartMs <= 0) {
+        contimeEl.textContent = "Disconnected";
+      } else {
+        const sec = Math.max(0, Math.floor((Date.now() - connectionStartMs) / 1000));
+        contimeEl.textContent = formatSeconds(sec);
+      }
     }
 
-    const elapsedSec = Math.max(0, Math.floor((Date.now() - connectionTimeInitialMs) / 1000));
-    const formatted = formatDuration(elapsedSec);
-
-    if (el) el.textContent = formatted;
-    if (elDetail) elDetail.textContent = formatted;
+    // 2. process uptime (uptime)
+    const uptimeEl = document.getElementById("stat-uptime");
+    if (uptimeEl) {
+      if (serverStartMs > 0) {
+        const sec = Math.max(0, Math.floor((Date.now() - serverStartMs) / 1000));
+        uptimeEl.textContent = formatSeconds(sec);
+      }
+    }
   }
 
-  setInterval(tickUptime, 1000);
+  setInterval(tickTimers, 1000);
 
   // periodic status polling
   function updateStatus(isInitial) {
     fetch("/api/status")
       .then((res) => res.json())
       .then((data) => {
-        isConnected = data.connected;
+        isConnected = !!data.connected;
+        isStopped = !!data.stopped;
 
-        if (data.connected && data.connected_at_ms > 0) {
-          connectionTimeInitialMs = data.connected_at_ms;
-        } else if (data.connected && data.uptime_seconds > 0) {
-          connectionTimeInitialMs = Date.now() - data.uptime_seconds * 1000;
+        if (data.connection_uptime_seconds > 0 && isConnected) {
+          connectionStartMs = Date.now() - data.connection_uptime_seconds * 1000;
+        } else if (data.connected_at_ms > 0 && isConnected) {
+          connectionStartMs = data.connected_at_ms;
         } else {
-          connectionTimeInitialMs = 0;
+          connectionStartMs = 0;
         }
 
-        tickUptime();
+        if (data.server_uptime_seconds > 0) {
+          serverStartMs = Date.now() - data.server_uptime_seconds * 1000;
+        }
 
+        tickTimers();
+
+        // status badge
         const dot = document.getElementById("status-dot");
         const statusText = document.getElementById("status-text");
-        const statConn = document.getElementById("stat-conn");
-        const statServer = document.getElementById("stat-server");
-        const statUser = document.getElementById("stat-user");
-        const statRooms = document.getElementById("stat-rooms");
-        const statBattles = document.getElementById("stat-battles");
-        const headerServerID = document.getElementById("header-server-id");
-
-        if (headerServerID) {
-          headerServerID.textContent = data.server_id || "showdown";
-        }
-
         if (dot && statusText) {
-          if (data.connected) {
+          if (isStopped) {
+            dot.className = "status-dot offline";
+            statusText.textContent = "Stopped";
+          } else if (isConnected) {
             dot.className = "status-dot online";
-            statusText.textContent = data.logged_in ? "Online (" + data.username + ")" : "Authenticating...";
+            statusText.textContent = data.logged_in ? "Online (" + (data.username || "Bot") + ")" : "Connecting...";
           } else {
             dot.className = "status-dot offline";
             statusText.textContent = "Offline";
           }
         }
 
+        // overview cards
+        const statConn = document.getElementById("stat-conn");
+        const statServer = document.getElementById("stat-server");
+        const statUser = document.getElementById("stat-user");
+        const statRooms = document.getElementById("stat-rooms");
+        const statBattles = document.getElementById("stat-battles");
+
         if (statConn) {
-          statConn.textContent = data.connected ? (data.logged_in ? "Connected" : "Authenticating") : "Disconnected";
+          if (isStopped) statConn.textContent = "Stopped";
+          else if (isConnected) statConn.textContent = data.logged_in ? "Connected" : "Authenticating";
+          else statConn.textContent = "Disconnected";
         }
+
         if (statServer) {
           statServer.textContent = (data.server_id || "showdown") + " (" + (data.server_host || "sim3.psim.us") + ":" + (data.server_port || 443) + ")";
         }
+
         if (statUser) {
           statUser.textContent = data.username || "Guest";
         }
+
         if (statRooms) {
-          statRooms.textContent = data.rooms ? data.rooms.length : 0;
-        }
-        if (statBattles) {
-          statBattles.textContent = data.active_battles ? data.active_battles.length : 0;
+          statRooms.textContent = data.chat_rooms_count !== undefined ? data.chat_rooms_count : (data.rooms ? data.rooms.length : 0);
         }
 
-        renderRooms(data.rooms || []);
+        if (statBattles) {
+          statBattles.textContent = data.active_battles_count !== undefined ? data.active_battles_count : (data.active_battles ? data.active_battles.length : 0);
+        }
+
+        // toggle stop/start button state
+        const toggleBtn = document.getElementById("btn-bot-toggle-state");
+        if (toggleBtn) {
+          if (isStopped) {
+            toggleBtn.className = "btn btn-success";
+            toggleBtn.textContent = "Start Bot";
+          } else {
+            toggleBtn.className = "btn btn-danger";
+            toggleBtn.textContent = "Stop Bot";
+          }
+        }
+
+        // filter chatrooms vs battle rooms
+        const chatRooms = (data.rooms || []).filter((r) => !r.startsWith("battle-"));
+        renderRooms(chatRooms);
         renderBattles(data.active_battles || []);
 
         if (isInitial) {
@@ -139,8 +258,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const userEl = document.getElementById("cfg-username");
     const avatarEl = document.getElementById("cfg-avatar");
     const cmdEl = document.getElementById("cfg-command-char");
+    const roomsEl = document.getElementById("cfg-rooms");
     const autoBattleEl = document.getElementById("cfg-auto-battle");
     const autoLeaveEl = document.getElementById("cfg-auto-leave-battle");
+    const maxBattlesEl = document.getElementById("cfg-max-battles");
+    const startMsgEl = document.getElementById("cfg-battle-start-msg");
     const winMsgEl = document.getElementById("cfg-battle-win-msg");
     const loseMsgEl = document.getElementById("cfg-battle-lose-msg");
     const formatsEl = document.getElementById("cfg-battle-formats");
@@ -153,25 +275,72 @@ document.addEventListener("DOMContentLoaded", function () {
     if (userEl) userEl.value = data.username || "";
     if (avatarEl) avatarEl.value = data.avatar || "";
     if (cmdEl) cmdEl.value = data.command_char || ".";
-    const roomsEl = document.getElementById("cfg-rooms");
-    if (roomsEl) roomsEl.value = data.config_rooms ? data.config_rooms.join(", ") : (data.rooms ? data.rooms.join(", ") : "");
+    if (roomsEl) roomsEl.value = data.config_rooms ? data.config_rooms.join(", ") : "";
     if (autoBattleEl) autoBattleEl.checked = !!data.auto_battle;
     if (autoLeaveEl) autoLeaveEl.checked = data.auto_leave_battle !== false;
-    const maxBattlesEl = document.getElementById("cfg-max-battles");
     if (maxBattlesEl) maxBattlesEl.value = data.max_battles !== undefined ? data.max_battles : 1;
+    if (startMsgEl) startMsgEl.value = data.battle_start_msg || "";
     if (winMsgEl) winMsgEl.value = data.battle_win_msg || "";
     if (loseMsgEl) loseMsgEl.value = data.battle_lose_msg || "";
-    if (formatsEl) formatsEl.value = data.battle_formats ? data.battle_formats.join(", ") : "gen9randombattle";
+    if (formatsEl) formatsEl.value = data.battle_formats ? data.battle_formats.join(", ") : "";
     if (teamEl) teamEl.value = data.battle_team || "";
   }
 
-  // render active room table
+  // in-page modal dialog for chatroom messages (replaces prompt())
+  const modalMsg = document.getElementById("modal-room-msg");
+  const modalTarget = document.getElementById("modal-room-target");
+  const modalInputMsg = document.getElementById("modal-input-msg");
+  const modalForm = document.getElementById("form-modal-room-msg");
+  const btnCloseModal = document.getElementById("btn-close-modal");
+  const btnCancelModal = document.getElementById("btn-cancel-modal");
+  let activeModalTarget = "";
+
+  function openRoomModal(roomName) {
+    activeModalTarget = roomName;
+    if (modalTarget) modalTarget.textContent = roomName;
+    if (modalInputMsg) modalInputMsg.value = "";
+    if (modalMsg) modalMsg.style.display = "flex";
+    if (modalInputMsg) modalInputMsg.focus();
+  }
+
+  function closeRoomModal() {
+    if (modalMsg) modalMsg.style.display = "none";
+    activeModalTarget = "";
+  }
+
+  if (btnCloseModal) btnCloseModal.addEventListener("click", closeRoomModal);
+  if (btnCancelModal) btnCancelModal.addEventListener("click", closeRoomModal);
+  if (modalMsg) {
+    modalMsg.addEventListener("click", function (e) {
+      if (e.target === modalMsg) closeRoomModal();
+    });
+  }
+
+  if (modalForm) {
+    modalForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const msg = modalInputMsg ? modalInputMsg.value.trim() : "";
+      if (!msg || !activeModalTarget) return;
+
+      postJSON("/api/send", { target: activeModalTarget, message: msg, is_pm: false }, function (err) {
+        if (err) {
+          showAlert("error", "Failed to send: " + err);
+        } else {
+          showAlert("success", "Message sent to " + activeModalTarget);
+          closeRoomModal();
+          updateLogs();
+        }
+      });
+    });
+  }
+
+  // render active chatroom table
   function renderRooms(rooms) {
     const tbody = document.getElementById("rooms-table-body");
     if (!tbody) return;
 
     if (rooms.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);padding:16px;">No active rooms joined</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);padding:16px;">No chatrooms joined yet. Add a chatroom above or in Configuration.</td></tr>';
       return;
     }
 
@@ -181,14 +350,13 @@ document.addEventListener("DOMContentLoaded", function () {
         <td><strong>${escapeHTML(r)}</strong></td>
         <td><span class="chip" style="background:var(--success-light);color:#34d399;">Active</span></td>
         <td style="text-align:right;">
-          <button class="btn btn-secondary btn-sm btn-quick-msg" data-room="${escapeHTML(r)}" style="margin-right:6px;">Message</button>
-          <button class="btn btn-danger btn-sm btn-leave-room" data-room="${escapeHTML(r)}">Leave</button>
+          <button type="button" class="btn btn-secondary btn-sm btn-quick-msg" data-room="${escapeHTML(r)}" style="margin-right:6px;">Message</button>
+          <button type="button" class="btn btn-danger btn-sm btn-leave-room" data-room="${escapeHTML(r)}">Leave</button>
         </td>
       </tr>`;
     });
     tbody.innerHTML = html;
 
-    // attach room action handlers
     tbody.querySelectorAll(".btn-leave-room").forEach((btn) => {
       btn.addEventListener("click", function () {
         const roomName = this.getAttribute("data-room");
@@ -199,13 +367,7 @@ document.addEventListener("DOMContentLoaded", function () {
     tbody.querySelectorAll(".btn-quick-msg").forEach((btn) => {
       btn.addEventListener("click", function () {
         const roomName = this.getAttribute("data-room");
-        const msg = prompt("Send message to " + roomName + ":");
-        if (msg && msg.trim()) {
-          postJSON("/api/send", { target: roomName, message: msg.trim(), is_pm: false }, function (err) {
-            if (err) showAlert("error", "Failed to send: " + err);
-            else showAlert("success", "Message sent to " + roomName);
-          });
-        }
+        openRoomModal(roomName);
       });
     });
   }
@@ -229,27 +391,24 @@ document.addEventListener("DOMContentLoaded", function () {
         <td>${escapeHTML(b.opponent || "Unknown")}</td>
         <td style="text-align:right;">
           <a href="https://play.pokemonshowdown.com/${escapeHTML(b.room)}" target="_blank" class="btn btn-secondary btn-sm" style="margin-right:6px;">Watch</a>
-          <button class="btn btn-secondary btn-sm btn-forfeit-battle" data-room="${escapeHTML(b.room)}" style="margin-right:6px;">Forfeit</button>
-          <button class="btn btn-danger btn-sm btn-leave-battle" data-room="${escapeHTML(b.room)}">Leave</button>
+          <button type="button" class="btn btn-secondary btn-sm btn-forfeit-battle" data-room="${escapeHTML(b.room)}" style="margin-right:6px;">Forfeit</button>
+          <button type="button" class="btn btn-danger btn-sm btn-leave-battle" data-room="${escapeHTML(b.room)}">Leave</button>
         </td>
       </tr>`;
     });
     html += "</tbody></table></div>";
     container.innerHTML = html;
 
-    // attach battle forfeit and leave handlers
     container.querySelectorAll(".btn-forfeit-battle").forEach((btn) => {
       btn.addEventListener("click", function () {
         const roomName = this.getAttribute("data-room");
-        if (confirm("Are you sure you want the bot to forfeit battle " + roomName + "?")) {
-          postJSON("/api/battles/forfeit", { room: roomName }, function (err) {
-            if (err) showAlert("error", "Failed to forfeit battle: " + err);
-            else {
-              showAlert("success", "Forfeited and left battle " + roomName);
-              updateStatus();
-            }
-          });
-        }
+        postJSON("/api/battles/forfeit", { room: roomName }, function (err) {
+          if (err) showAlert("error", "Failed to forfeit battle: " + err);
+          else {
+            showAlert("success", "Forfeited battle " + roomName);
+            updateStatus();
+          }
+        });
       });
     });
 
@@ -267,7 +426,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // render activity logs with filtering
+  // render activity logs with category filtering
   function renderLogs() {
     const logBox = document.getElementById("activity-log-box");
     if (!logBox) return;
@@ -305,7 +464,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // fetch activity logs
   function updateLogs() {
     fetch("/api/logs")
       .then((res) => res.json())
@@ -318,9 +476,10 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   }
 
-  // log filter buttons
+  // log filter buttons (distinct class, no nav-tab-btn conflicts)
   document.querySelectorAll(".log-filter-btn").forEach((btn) => {
-    btn.addEventListener("click", function () {
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
       document.querySelectorAll(".log-filter-btn").forEach((b) => b.classList.remove("active"));
       this.classList.add("active");
       activeLogFilter = this.getAttribute("data-filter") || "all";
@@ -328,7 +487,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // clear logs button
   const clearLogsBtn = document.getElementById("btn-clear-logs");
   if (clearLogsBtn) {
     clearLogsBtn.addEventListener("click", function () {
@@ -339,7 +497,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // leave room helper
   function leaveRoom(room) {
-    if (!confirm("Leave room " + room + "?")) return;
     postJSON("/api/rooms/leave", { room: room }, function (err) {
       if (err) {
         showAlert("error", "Failed to leave room: " + err);
@@ -371,7 +528,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // bot-send form
+  // quick announcement form
   const sendForm = document.getElementById("form-send-message");
   if (sendForm) {
     sendForm.addEventListener("submit", function (e) {
@@ -468,18 +625,17 @@ document.addEventListener("DOMContentLoaded", function () {
             document.getElementById("res-host").textContent = data.host;
             document.getElementById("res-port").textContent = data.port;
             document.getElementById("res-id").textContent = data.id;
-            document.getElementById("res-tls").textContent = data.https ? "YES (TLS)" : "NO";
-            document.getElementById("res-ws").textContent = data.websocket_url;
+            document.getElementById("res-tls").textContent = data.ssl ? "YES (TLS)" : "NO";
+            document.getElementById("res-ws").textContent = data.ws_url;
             document.getElementById("res-login").textContent = data.login_url;
 
-            // attach quick apply button
             const applyBtn = document.getElementById("btn-apply-discovered");
             if (applyBtn) {
               applyBtn.onclick = function () {
                 document.getElementById("cfg-server-host").value = data.host;
                 document.getElementById("cfg-server-port").value = data.port;
                 document.getElementById("cfg-server-id").value = data.id;
-                document.getElementById("cfg-server-ssl").checked = !!data.https;
+                document.getElementById("cfg-server-ssl").checked = !!data.ssl;
                 showAlert("success", "Applied discovered server values to Configuration tab!");
               };
             }
@@ -489,7 +645,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // quick set default showdown values
+  // set showdown defaults
   const btnSetDefault = document.getElementById("btn-set-default-server");
   if (btnSetDefault) {
     btnSetDefault.addEventListener("click", function () {
@@ -510,12 +666,33 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // save and reconnect button
   const btnSaveReconnect = document.getElementById("btn-save-reconnect");
   if (btnSaveReconnect) {
     btnSaveReconnect.addEventListener("click", function () {
-      if (confirm("Save configuration and reconnect the bot immediately?")) {
-        saveBotConfig(true);
+      saveBotConfig(true);
+    });
+  }
+
+  // toggle stop / start bot button
+  const btnBotToggle = document.getElementById("btn-bot-toggle-state");
+  if (btnBotToggle) {
+    btnBotToggle.addEventListener("click", function () {
+      if (isStopped) {
+        postJSON("/api/bot/reconnect", {}, function (err) {
+          if (err) showAlert("error", "Failed to start bot: " + err);
+          else {
+            showAlert("success", "Starting bot...");
+            updateStatus();
+          }
+        });
+      } else {
+        postJSON("/api/bot/stop", {}, function (err) {
+          if (err) showAlert("error", "Failed to stop bot: " + err);
+          else {
+            showAlert("success", "Bot stopped successfully.");
+            updateStatus();
+          }
+        });
       }
     });
   }
@@ -524,12 +701,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const btnReconnect = document.getElementById("btn-manual-reconnect");
   if (btnReconnect) {
     btnReconnect.addEventListener("click", function () {
-      if (confirm("Reconnect bot now?")) {
-        postJSON("/api/bot/reconnect", {}, function (err) {
-          if (err) showAlert("error", "Reconnect failed: " + err);
-          else showAlert("success", "Reconnection signal sent");
-        });
-      }
+      postJSON("/api/bot/reconnect", {}, function (err) {
+        if (err) showAlert("error", "Reconnect failed: " + err);
+        else showAlert("success", "Reconnection signal sent");
+      });
     });
   }
 
@@ -550,7 +725,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // toggle password visibility
+  // toggle password visibility buttons
   const btnTogglePw = document.getElementById("btn-toggle-pw");
   if (btnTogglePw) {
     btnTogglePw.addEventListener("click", function () {
@@ -583,6 +758,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // bot login tool form
   const loginForm = document.getElementById("form-bot-login");
+  const loginFeedback = document.getElementById("bot-login-feedback");
   if (loginForm) {
     loginForm.addEventListener("submit", function (e) {
       e.preventDefault();
@@ -594,17 +770,91 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
+      if (loginFeedback) {
+        loginFeedback.style.display = "block";
+        loginFeedback.innerHTML = '<span style="color:var(--text-muted);">Sending login request...</span>';
+      }
+
       postJSON("/api/bot/login", { username: user, password: pass }, function (err) {
         if (err) {
           showAlert("error", "Login error: " + err);
+          if (loginFeedback) {
+            loginFeedback.innerHTML = `<span style="color:#f87171;font-weight:600;">Login failed: ${escapeHTML(err)}</span>`;
+          }
         } else {
           showAlert("success", "Login submitted for " + user);
+          if (loginFeedback) {
+            loginFeedback.innerHTML = `<span style="color:#34d399;font-weight:600;">Login initiated for ${escapeHTML(user)}. Check Activity Log for status.</span>`;
+          }
           updateStatus();
           updateLogs();
         }
       });
     });
   }
+
+  // restore backup form handler
+  const restoreForm = document.getElementById("form-restore-backup");
+  const restoreStatus = document.getElementById("backup-status-msg");
+  if (restoreForm) {
+    restoreForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const fileInput = document.getElementById("input-backup-file");
+      if (!fileInput.files || fileInput.files.length === 0) {
+        showAlert("error", "Please select a backup file to restore");
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append("backupfile", file);
+
+      if (restoreStatus) {
+        restoreStatus.style.display = "block";
+        restoreStatus.innerHTML = '<span style="color:var(--text-muted);">Restoring configuration from backup...</span>';
+      }
+
+      fetch("/api/backup/restore", {
+        method: "POST",
+        body: formData,
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.ok) {
+            showAlert("success", "Backup restored successfully!");
+            if (restoreStatus) {
+              restoreStatus.innerHTML = '<span style="color:#34d399;font-weight:600;">Backup restored successfully! Updating configuration...</span>';
+            }
+            fileInput.value = "";
+            updateStatus(true);
+            updateLogs();
+          } else {
+            showAlert("error", "Restore failed: " + (data.error || "unknown error"));
+            if (restoreStatus) {
+              restoreStatus.innerHTML = `<span style="color:#f87171;font-weight:600;">Restore error: ${escapeHTML(data.error || "unknown error")}</span>`;
+            }
+          }
+        })
+        .catch((err) => {
+          showAlert("error", "Network error restoring backup: " + err);
+          if (restoreStatus) {
+            restoreStatus.innerHTML = `<span style="color:#f87171;font-weight:600;">Network error: ${escapeHTML(err.message || err)}</span>`;
+          }
+        });
+    });
+  }
+
+  // logout handlers
+  function handleLogout() {
+    postJSON("/api/auth/logout", {}, function () {
+      window.location.href = "/login";
+    });
+  }
+
+  const btnLogout = document.getElementById("btn-logout");
+  if (btnLogout) btnLogout.addEventListener("click", handleLogout);
+  const mobileBtnLogout = document.getElementById("mobile-btn-logout");
+  if (mobileBtnLogout) mobileBtnLogout.addEventListener("click", handleLogout);
 
   // save configuration helper
   function saveBotConfig(reconnect) {
@@ -620,13 +870,15 @@ document.addEventListener("DOMContentLoaded", function () {
     const autoBattle = document.getElementById("cfg-auto-battle") ? document.getElementById("cfg-auto-battle").checked : false;
     const autoLeave = document.getElementById("cfg-auto-leave-battle") ? document.getElementById("cfg-auto-leave-battle").checked : true;
     const maxBattles = parseInt(document.getElementById("cfg-max-battles") ? document.getElementById("cfg-max-battles").value.trim() : "1", 10) || 0;
+    const startMsg = document.getElementById("cfg-battle-start-msg") ? document.getElementById("cfg-battle-start-msg").value.trim() : "";
     const winMsg = document.getElementById("cfg-battle-win-msg") ? document.getElementById("cfg-battle-win-msg").value.trim() : "";
     const loseMsg = document.getElementById("cfg-battle-lose-msg") ? document.getElementById("cfg-battle-lose-msg").value.trim() : "";
     const formatsRaw = document.getElementById("cfg-battle-formats").value.trim();
     const team = document.getElementById("cfg-battle-team").value.trim();
+    const adminPw = document.getElementById("cfg-web-admin-password") ? document.getElementById("cfg-web-admin-password").value : "";
 
-    const formats = formatsRaw.split(",").map((f) => f.trim()).filter((f) => f !== "");
-    const rooms = roomsRaw.split(",").map((r) => r.trim()).filter((r) => r !== "");
+    const formats = formatsRaw ? formatsRaw.split(",").map((f) => f.trim()).filter((f) => f !== "") : [];
+    const rooms = roomsRaw ? roomsRaw.split(",").map((r) => r.trim()).filter((r) => r !== "") : [];
 
     const payload = {
       server_id: id,
@@ -641,10 +893,12 @@ document.addEventListener("DOMContentLoaded", function () {
       auto_battle: autoBattle,
       auto_leave_battle: autoLeave,
       max_battles: maxBattles,
+      battle_start_msg: startMsg,
       battle_win_msg: winMsg,
       battle_lose_msg: loseMsg,
       battle_formats: formats,
       battle_team: team,
+      web_admin_password: adminPw,
       reconnect: reconnect,
     };
 
@@ -677,7 +931,7 @@ document.addEventListener("DOMContentLoaded", function () {
       .catch((err) => callback(err.message || err));
   }
 
-  // alert message banner
+  // alert banner helper
   function showAlert(type, msg) {
     const alertBox = document.getElementById("global-alert");
     if (!alertBox) return;

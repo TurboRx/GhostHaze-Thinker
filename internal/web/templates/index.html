@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,30 +10,97 @@
 
   <!-- top navigation bar -->
   <header class="navbar">
-    <a href="/" class="brand">
-      <div class="brand-icon">G</div>
-      <span>GhostHaze-Thinker</span>
-    </a>
+    <div class="navbar-left">
+      <a href="/" class="brand">
+        <span class="brand-text">GhostHaze-Thinker</span>
+      </a>
 
-    <nav>
-      <ul class="nav-tabs">
-        <li><button class="nav-tab-btn active" data-tab="overview">Overview</button></li>
-        <li><button class="nav-tab-btn" data-tab="config">Configuration</button></li>
-        <li><button class="nav-tab-btn" data-tab="rooms">Rooms</button></li>
-        <li><button class="nav-tab-btn" data-tab="tools">Tools</button></li>
-        <li><button class="nav-tab-btn" data-tab="battles">Battles</button></li>
-        <li><button class="nav-tab-btn" data-tab="logs">Activity Log</button></li>
-      </ul>
-    </nav>
+      <nav class="desktop-nav">
+        <ul class="nav-tabs">
+          <li><button class="nav-tab-btn active" data-tab="overview">Overview</button></li>
+          <li><button class="nav-tab-btn" data-tab="config">Configuration</button></li>
+          <li><button class="nav-tab-btn" data-tab="rooms">Chatrooms</button></li>
+          <li><button class="nav-tab-btn" data-tab="tools">Tools</button></li>
+          <li><button class="nav-tab-btn" data-tab="battles">Battles</button></li>
+          <li><button class="nav-tab-btn" data-tab="logs">Activity Log</button></li>
+        </ul>
+      </nav>
+    </div>
 
-    <div class="nav-status">
+    <div class="navbar-right">
       <div class="status-badge">
-        <span class="status-dot {{if .Connected}}online{{else}}offline{{end}}" id="status-dot"></span>
-        <span id="status-text">{{if .Connected}}Online ({{.Username}}){{else}}Offline{{end}}</span>
+        <span class="status-dot {{if and .Connected (not .Stopped)}}online{{else}}offline{{end}}" id="status-dot"></span>
+        <span id="status-text">{{if .Stopped}}Stopped{{else if .Connected}}Online ({{.Username}}){{else}}Offline{{end}}</span>
       </div>
-      <span class="chip" id="header-server-id">{{.ServerID}}</span>
+
+      <!-- theme switcher dropdown -->
+      <div class="theme-switcher">
+        <button id="theme-toggle-btn" class="theme-toggle" aria-label="Toggle theme" title="Switch Theme">
+          <svg id="theme-icon-light" class="theme-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg id="theme-icon-dark" class="theme-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <svg id="theme-icon-system" class="theme-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+        </button>
+        <div id="theme-dropdown" class="theme-dropdown">
+          <button class="theme-option" data-theme-val="dark">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            Dark
+          </button>
+          <button class="theme-option" data-theme-val="light">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line></svg>
+            Light
+          </button>
+          <button class="theme-option" data-theme-val="system">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            System
+          </button>
+        </div>
+      </div>
+
+      {{if .AuthRequired}}
+      <button class="btn btn-secondary btn-sm" id="btn-logout" title="Log out from panel">Logout</button>
+      {{end}}
+
+      <!-- animated hamburger button -->
+      <button id="hamburger" class="hamburger" aria-label="Toggle navigation menu">
+        <svg class="hamburger-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="6" x2="21" y2="6" class="line top"></line>
+          <line x1="3" y1="12" x2="21" y2="12" class="line mid"></line>
+          <line x1="3" y1="18" x2="21" y2="18" class="line bot"></line>
+        </svg>
+      </button>
     </div>
   </header>
+
+  <!-- mobile drawer menu -->
+  <div id="mobile-menu" class="mobile-menu">
+    <ul class="mobile-nav-list">
+      <li><button class="mobile-nav-btn active" data-tab="overview">Overview</button></li>
+      <li><button class="mobile-nav-btn" data-tab="config">Configuration</button></li>
+      <li><button class="mobile-nav-btn" data-tab="rooms">Chatrooms</button></li>
+      <li><button class="mobile-nav-btn" data-tab="tools">Tools</button></li>
+      <li><button class="mobile-nav-btn" data-tab="battles">Battles</button></li>
+      <li><button class="mobile-nav-btn" data-tab="logs">Activity Log</button></li>
+      {{if .AuthRequired}}
+      <li><button class="mobile-nav-btn" id="mobile-btn-logout" style="color:var(--danger-color);">Logout</button></li>
+      {{end}}
+    </ul>
+  </div>
 
   <!-- main dashboard body -->
   <main class="container">
@@ -44,7 +111,7 @@
       <div class="grid-stats">
         <div class="card">
           <div class="stat-label">Connection Status</div>
-          <div class="stat-value" id="stat-conn">{{if .Connected}}Connected{{else}}Disconnected{{end}}</div>
+          <div class="stat-value" id="stat-conn">{{if .Stopped}}Stopped{{else if .Connected}}Connected{{else}}Disconnected{{end}}</div>
           <div class="stat-sub" id="stat-server">{{.ServerID}} ({{.ServerHost}}:{{.ServerPort}})</div>
         </div>
 
@@ -55,23 +122,38 @@
         </div>
 
         <div class="card">
-          <div class="stat-label">Active Rooms</div>
-          <div class="stat-value" id="stat-rooms">{{len .Rooms}}</div>
-          <div class="stat-sub">Joined chat channels</div>
+          <div class="stat-label">Joined Chatrooms</div>
+          <div class="stat-value" id="stat-rooms">{{.ChatRoomsCount}}</div>
+          <div class="stat-sub">Active joined chatrooms</div>
         </div>
 
         <div class="card">
-          <div class="stat-label">Connection Uptime</div>
+          <div class="stat-label">Active Battles</div>
+          <div class="stat-value" id="stat-battles">{{.ActiveBattlesCount}}</div>
+          <div class="stat-sub">In-progress Pokémon battles</div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label">Connection Duration (contime)</div>
+          <div class="stat-value" id="stat-contime">{{.ConTime}}</div>
+          <div class="stat-sub">Current active connection time</div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label">Process Runtime (uptime)</div>
           <div class="stat-value" id="stat-uptime">{{.Uptime}}</div>
-          <div class="stat-sub" id="uptime-detail">Calculating...</div>
+          <div class="stat-sub">Server process elapsed time</div>
         </div>
       </div>
 
       <!-- quick actions bar -->
-      <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+      <div class="action-bar" style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+        <button class="btn {{if .Stopped}}btn-success{{else}}btn-danger{{end}}" id="btn-bot-toggle-state">
+          {{if .Stopped}}Start Bot{{else}}Stop Bot{{end}}
+        </button>
         <button class="btn btn-secondary" id="btn-manual-reconnect">Reconnect Bot</button>
         <button class="btn btn-secondary" onclick="document.querySelector('[data-tab=\'config\']').click();">Edit Configuration</button>
-        <button class="btn btn-secondary" onclick="document.querySelector('[data-tab=\'tools\']').click();">Server Discovery Tool</button>
+        <button class="btn btn-secondary" onclick="document.querySelector('[data-tab=\'tools\']').click();">Tools &amp; Backups</button>
       </div>
 
       <!-- quick announcement card -->
@@ -81,16 +163,16 @@
         </div>
         <form id="form-send-message">
           <div class="form-row">
-            <div class="form-group" style="max-width: 140px;">
+            <div class="form-group" style="max-width: 150px;">
               <label class="form-label" for="select-send-type">Destination</label>
               <select id="select-send-type" class="form-select">
-                <option value="room">Room</option>
+                <option value="room">Chatroom</option>
                 <option value="pm">PM (User)</option>
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label" for="input-send-target">Room Name or Username</label>
-              <input type="text" id="input-send-target" class="form-input" placeholder="e.g. botdevelopment" required>
+              <label class="form-label" for="input-send-target">Chatroom Name or Username</label>
+              <input type="text" id="input-send-target" class="form-input" placeholder="e.g. lobby or username" required>
             </div>
           </div>
           <div class="form-group" style="margin-top: 12px;">
@@ -110,13 +192,11 @@
           <button type="button" class="btn btn-secondary btn-sm" id="btn-set-default-server">Set Showdown Defaults</button>
         </div>
         <p style="color:var(--text-muted);margin-bottom:20px;">
-          Configure bot connection, identity, and battle parameters in real-time.
+          Configure bot connection, identity, battle parameters, and control panel security.
         </p>
 
         <form id="form-bot-config">
-          <h3 style="font-size:14px;color:var(--text-main);margin-bottom:12px;border-bottom:1px solid var(--border-color);padding-bottom:6px;">
-            Server Connection
-          </h3>
+          <h3 class="section-subtitle">Server Connection</h3>
           <div class="form-row" style="margin-bottom:16px;">
             <div class="form-group">
               <label class="form-label" for="cfg-server-host">Server Host</label>
@@ -139,9 +219,7 @@
             </label>
           </div>
 
-          <h3 style="font-size:14px;color:var(--text-main);margin-bottom:12px;border-bottom:1px solid var(--border-color);padding-bottom:6px;">
-            Identity &amp; Credentials
-          </h3>
+          <h3 class="section-subtitle">Identity &amp; Credentials</h3>
           <div class="form-row" style="margin-bottom:16px;">
             <div class="form-group">
               <label class="form-label" for="cfg-username">Username</label>
@@ -168,13 +246,12 @@
           </div>
 
           <div class="form-group" style="margin-bottom:20px;">
-            <label class="form-label" for="cfg-rooms">Auto-Join Rooms (comma-separated)</label>
-            <input type="text" id="cfg-rooms" class="form-input" value="{{.ConfigRooms}}" placeholder="botdevelopment, lobby">
+            <label class="form-label" for="cfg-rooms">Auto-Join Chatrooms (comma-separated, leave blank for none)</label>
+            <input type="text" id="cfg-rooms" class="form-input" value="{{.ConfigRooms}}" placeholder="e.g. lobby, myroom">
+            <small style="display:block;color:var(--text-muted);margin-top:4px;">Zero hardcoded defaults. Add your preferred chatrooms here.</small>
           </div>
 
-          <h3 style="font-size:14px;color:var(--text-main);margin-bottom:12px;border-bottom:1px solid var(--border-color);padding-bottom:6px;">
-            Battle Options
-          </h3>
+          <h3 class="section-subtitle">Battle Options</h3>
           <div class="form-group" style="margin-bottom:12px;display:flex;gap:20px;flex-wrap:wrap;">
             <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-muted);">
               <input type="checkbox" id="cfg-auto-battle" {{if .AutoBattle}}checked{{end}}>
@@ -194,7 +271,13 @@
             <div class="form-group">
               <label class="form-label" for="cfg-battle-formats">Allowed Formats (comma-separated)</label>
               <input type="text" id="cfg-battle-formats" class="form-input" value="{{.BattleFormats}}" placeholder="gen9randombattle, gen9ou">
+              <small style="display:block;color:var(--text-muted);margin-top:4px;">Leave blank to allow all formats and tiers</small>
             </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:14px;">
+            <label class="form-label" for="cfg-battle-start-msg">Battle Start Greeting Message (Optional)</label>
+            <input type="text" id="cfg-battle-start-msg" class="form-input" value="{{.BattleStartMsg}}" placeholder="Good luck, have fun!">
           </div>
 
           <div class="form-row" style="margin-bottom:14px;">
@@ -208,9 +291,16 @@
             </div>
           </div>
 
-          <div class="form-group" style="margin-bottom:24px;">
+          <div class="form-group" style="margin-bottom:20px;">
             <label class="form-label" for="cfg-battle-team">Packed Team String (Optional)</label>
             <textarea id="cfg-battle-team" class="form-textarea" placeholder="Packed team format string for custom tiers...">{{.BattleTeam}}</textarea>
+          </div>
+
+          <h3 class="section-subtitle">Panel Administration Security</h3>
+          <div class="form-group" style="margin-bottom:24px;">
+            <label class="form-label" for="cfg-web-admin-password">Web Admin Password (Optional)</label>
+            <input type="password" id="cfg-web-admin-password" class="form-input" placeholder="Leave blank for open access, or enter password to lock panel">
+            <small style="display:block;color:var(--text-muted);margin-top:4px;">When set, accessing the control panel requires logging in with this password.</small>
           </div>
 
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -221,29 +311,29 @@
       </div>
     </section>
 
-    <!-- tab 3: rooms management -->
+    <!-- tab 3: chatrooms management -->
     <section id="tab-rooms" class="tab-pane">
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
-          <h2 class="card-title">Join a Room</h2>
+          <h2 class="card-title">Join a Chatroom</h2>
         </div>
         <form id="form-join-room" class="form-row">
           <div class="form-group">
-            <input type="text" id="input-join-room" class="form-input" placeholder="Room identifier (e.g. lobby, botdevelopment)" required>
+            <input type="text" id="input-join-room" class="form-input" placeholder="Chatroom identifier (e.g. lobby, myroom)" required>
           </div>
-          <button type="submit" class="btn btn-primary">Join Room</button>
+          <button type="submit" class="btn btn-primary">Join Chatroom</button>
         </form>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">Currently Joined Rooms</h2>
+          <h2 class="card-title">Currently Joined Chatrooms</h2>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Room</th>
+                <th>Chatroom</th>
                 <th>Status</th>
                 <th style="text-align:right;">Actions</th>
               </tr>
@@ -260,7 +350,7 @@
               </tr>
               {{else}}
               <tr>
-                <td colspan="3" style="text-align:center;color:var(--text-dim);padding:16px;">No active rooms joined</td>
+                <td colspan="3" style="text-align:center;color:var(--text-dim);padding:16px;">No chatrooms joined yet. Add a chatroom above or in Configuration.</td>
               </tr>
               {{end}}
             </tbody>
@@ -269,8 +359,36 @@
       </div>
     </section>
 
-    <!-- tab 4: tools -->
+    <!-- tab 4: tools & backups -->
     <section id="tab-tools" class="tab-pane">
+      <!-- backup and restore card -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <h2 class="card-title">Configuration Backup &amp; Restore</h2>
+        </div>
+        <p style="color:var(--text-muted);margin-bottom:16px;">
+          Export a complete backup of bot settings and chatrooms to clone bots or restore data in case of accidents.
+        </p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+          <div style="flex:1;min-width:260px;">
+            <h4 style="font-size:14px;color:var(--text-main);margin-bottom:8px;">Download Backup</h4>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Download current configuration as a signed JSON backup file.</p>
+            <a href="/api/backup/download" class="btn btn-primary" download>Download Backup</a>
+          </div>
+
+          <div style="flex:1;min-width:280px;border-left:1px solid var(--border-color);padding-left:16px;">
+            <h4 style="font-size:14px;color:var(--text-main);margin-bottom:8px;">Restore Backup</h4>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Upload a previously saved backup file to restore configuration.</p>
+            <form id="form-restore-backup" style="display:flex;flex-direction:column;gap:10px;">
+              <input type="file" id="input-backup-file" accept=".json,.backup" class="form-input" required style="padding:6px;">
+              <button type="submit" class="btn btn-secondary" id="btn-restore-backup">Restore Backup</button>
+            </form>
+          </div>
+        </div>
+        <div id="backup-status-msg" style="margin-top:14px;display:none;"></div>
+      </div>
+
+      <!-- server discovery tool -->
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
           <h2 class="card-title">Get-Server Discovery Tool</h2>
@@ -298,6 +416,7 @@
         </div>
       </div>
 
+      <!-- challenge tool -->
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
           <h2 class="card-title">Battle Challenge Tool</h2>
@@ -317,6 +436,7 @@
         </form>
       </div>
 
+      <!-- quick avatar tool -->
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
           <h2 class="card-title">Quick Avatar Tool</h2>
@@ -329,17 +449,18 @@
         </form>
       </div>
 
+      <!-- bot login tool -->
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">Bot Login &amp; Authentication</h2>
+          <h2 class="card-title">Bot Login &amp; Authentication Tool</h2>
         </div>
         <p style="color:var(--text-muted);margin-bottom:16px;">
-          Directly authenticate the bot with a username and password without restarting the process.
+          Directly authenticate the bot with a Pokémon Showdown username and password without restarting the process.
         </p>
         <form id="form-bot-login">
           <div class="form-row" style="margin-bottom:14px;">
             <div class="form-group">
-              <label class="form-label" for="input-login-username">Username</label>
+              <label class="form-label" for="input-login-username">Bot Username</label>
               <input type="text" id="input-login-username" class="form-input" placeholder="Bot username" required>
             </div>
             <div class="form-group">
@@ -350,8 +471,9 @@
               </div>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary">Login to Showdown</button>
+          <button type="submit" class="btn btn-primary">Send Login Request</button>
         </form>
+        <div id="bot-login-feedback" style="margin-top:12px;display:none;"></div>
       </div>
     </section>
 
@@ -386,16 +508,17 @@
     <!-- tab 6: activity logs -->
     <section id="tab-logs" class="tab-pane">
       <div class="card">
-        <div class="card-header">
+        <div class="card-header" style="flex-wrap:wrap;gap:12px;">
           <h2 class="card-title">Live Activity Log</h2>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button class="nav-tab-btn log-filter-btn active" data-filter="all">All</button>
-            <button class="nav-tab-btn log-filter-btn" data-filter="chat">Chat</button>
-            <button class="nav-tab-btn log-filter-btn" data-filter="pm">PM</button>
-            <button class="nav-tab-btn log-filter-btn" data-filter="battle">Battle</button>
-            <button class="nav-tab-btn log-filter-btn" data-filter="room">Rooms</button>
-            <button class="nav-tab-btn log-filter-btn" data-filter="system">System</button>
-            <button class="btn btn-secondary btn-sm" id="btn-clear-logs" style="margin-left:8px;">Clear</button>
+          <div class="log-controls" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <button type="button" class="btn-filter log-filter-btn active" data-filter="all">All</button>
+            <button type="button" class="btn-filter log-filter-btn" data-filter="chat">Chat</button>
+            <button type="button" class="btn-filter log-filter-btn" data-filter="pm">PM</button>
+            <button type="button" class="btn-filter log-filter-btn" data-filter="battle">Battle</button>
+            <button type="button" class="btn-filter log-filter-btn" data-filter="room">Chatrooms</button>
+            <button type="button" class="btn-filter log-filter-btn" data-filter="system">System</button>
+            <a href="/api/logs/raw" target="_blank" class="btn btn-secondary btn-sm" id="btn-raw-logs">Raw</a>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-clear-logs">Clear</button>
           </div>
         </div>
         <div id="activity-log-box" class="log-box">
@@ -404,6 +527,26 @@
       </div>
     </section>
   </main>
+
+  <!-- in-page modal dialog for chatroom messages (no prompt()) -->
+  <div id="modal-room-msg" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Send Message to <span id="modal-room-target">-</span></h3>
+        <button type="button" class="modal-close-btn" id="btn-close-modal">&times;</button>
+      </div>
+      <form id="form-modal-room-msg">
+        <div class="form-group" style="margin-bottom:16px;">
+          <label class="form-label" for="modal-input-msg">Message Content</label>
+          <textarea id="modal-input-msg" class="form-textarea" placeholder="Type your message..." required rows="4"></textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <footer class="footer">
     <span>GhostHaze-Thinker &bull; Pokémon Showdown Bot &amp; Client in Go</span>

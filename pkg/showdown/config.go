@@ -13,7 +13,6 @@ const (
 	DefaultServerURL      = "wss://sim3.psim.us/showdown/websocket"
 	DefaultLoginServer    = "play.pokemonshowdown.com"
 	DefaultLoginURL       = "https://play.pokemonshowdown.com/api/login"
-	DefaultRoom           = "botdevelopment"
 	DefaultReconnectDelay = 10 * time.Second
 	DefaultCommandChar    = "."
 	DefaultThrottleDelay  = 100 * time.Millisecond
@@ -38,6 +37,7 @@ type Config struct {
 	AutoBattle      bool
 	AutoLeaveBattle *bool
 	MaxBattles      int
+	BattleStartMsg  string
 	BattleWinMsg    string
 	BattleLoseMsg   string
 	BattleFormats   []string
@@ -91,8 +91,11 @@ func (c *Config) ApplyDefaults() {
 		}
 	}
 
-	if len(c.Rooms) == 0 {
-		c.Rooms = []string{DefaultRoom}
+	if c.Rooms == nil {
+		c.Rooms = []string{}
+	}
+	if c.BattleStartMsg == "" {
+		c.BattleStartMsg = "Good luck, have fun!"
 	}
 	if c.ReconnectDelay <= 0 {
 		c.ReconnectDelay = DefaultReconnectDelay

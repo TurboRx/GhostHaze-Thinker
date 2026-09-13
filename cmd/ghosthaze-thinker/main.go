@@ -66,7 +66,7 @@ func main() {
 	var webServer *web.Server
 	if cfg.WebEnabled {
 		var err error
-		webServer, err = web.NewServer(bot, cfg.WebHost, cfg.WebPort)
+		webServer, err = web.NewServer(bot, cfg.WebHost, cfg.WebPort, cfg.WebAdminPassword)
 		if err != nil {
 			logWarn("Failed to initialize web control panel: %v", err)
 		} else {
