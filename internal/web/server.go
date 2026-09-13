@@ -419,6 +419,7 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/bot/anti-afk", s.handleAPIAntiAFK)
 	mux.HandleFunc("/api/rooms/join-official", s.handleAPIJoinOfficialRooms)
 	mux.HandleFunc("/api/rooms/join-public", s.handleAPIJoinPublicRooms)
+	mux.HandleFunc("/api/bot/hotpatch", s.handleAPIBotHotpatch)
 
 	// admin and maintenance
 	mux.HandleFunc("/api/admin/files", s.handleAPIAdminFiles)
@@ -2416,6 +2417,33 @@ func (s *Server) handleAPIAdminReloadData(w http.ResponseWriter, r *http.Request
 
 	s.AddLog("system", "Admin", "All data files reloaded successfully from disk")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Data reloaded successfully"})
+}
+
+// handleapibothotpatch executes live hotpatch of commands and data stores
+func (s *Server) handleAPIBotHotpatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.client.DynamicCommands() != nil {
+		_ = s.client.DynamicCommands().Load()
+	}
+	if s.client.Teams() != nil {
+		_ = s.client.Teams().Load()
+	}
+	if s.client.Blacklist() != nil {
+		_ = s.client.Blacklist().Load()
+	}
+	if s.client.JoinPhrases() != nil {
+		_ = s.client.JoinPhrases().Load()
+	}
+	if s.client.Timers() != nil {
+		_ = s.client.Timers().Load()
+	}
+
+	s.AddLog("system", "Hotpatch", "Bot hotpatch complete: dynamic commands and database stores reloaded")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Bot data and dynamic commands successfully hotpatched"})
 }
 
 // handleapiadminclearcache empties runtime memory caches
