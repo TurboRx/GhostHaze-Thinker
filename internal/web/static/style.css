@@ -906,55 +906,22 @@ body {
   border-color: var(--primary-color);
 }
 
-/* server formats browser */
-.formats-search-row {
-  margin-bottom: 16px;
-}
-
-.formats-section-title {
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
-  margin: 16px 0 8px;
-}
-
-.formats-badges-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.format-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--bg-main);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 6px 12px;
-  font-size: 13px;
-  color: var(--text-main);
+/* battle format combobox dropdown styles */
+.format-combobox {
   cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
 }
 
-.format-chip:hover {
-  background: var(--primary-light);
-  color: var(--primary-color);
-  border-color: var(--primary-color);
+.format-combobox optgroup {
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 12px;
+  padding: 4px 0;
 }
 
-.format-chip-id {
-  font-size: 11px;
-  color: var(--text-dim);
-  background: var(--bg-card);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-
-.format-chip:hover .format-chip-id {
-  color: var(--primary-color);
+.format-combobox option {
+  background-color: var(--bg-input);
+  color: var(--text-main);
+  font-size: 13px;
+  padding: 6px 8px;
 }

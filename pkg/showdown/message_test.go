@@ -253,4 +253,31 @@ func TestParseFormats(t *testing.T) {
 	if formats[2].ID != "gen9doublesou" || formats[2].Section != "[Gen 9] Doubles" {
 		t.Errorf("unexpected format 2: %+v", formats[2])
 	}
+
+	// test modern format stream with numeric column headers
+	modernMsg := RawMessage{
+		Type: "formats",
+		Parts: []string{
+			",1",
+			"S/V Singles",
+			"[Gen 9] Random Battle,4f",
+			"[Gen 9] OU,e",
+			",2",
+			"Randomized Metas",
+			"Battle Factory,4f",
+		},
+	}
+	modernFormats := ParseFormats(modernMsg)
+	if len(modernFormats) != 3 {
+		t.Fatalf("expected 3 modern formats, got %d", len(modernFormats))
+	}
+	if modernFormats[0].ID != "gen9randombattle" || modernFormats[0].Name != "[Gen 9] Random Battle" || modernFormats[0].Section != "S/V Singles" {
+		t.Errorf("unexpected modern format 0: %+v", modernFormats[0])
+	}
+	if modernFormats[1].ID != "gen9ou" || modernFormats[1].Name != "[Gen 9] OU" || modernFormats[1].Section != "S/V Singles" {
+		t.Errorf("unexpected modern format 1: %+v", modernFormats[1])
+	}
+	if modernFormats[2].ID != "battlefactory" || modernFormats[2].Section != "Randomized Metas" {
+		t.Errorf("unexpected modern format 2: %+v", modernFormats[2])
+	}
 }

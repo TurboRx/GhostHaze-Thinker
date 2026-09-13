@@ -160,15 +160,37 @@ func ParseFormats(msg RawMessage) []Format {
 	}
 	var formats []Format
 	currentSection := ""
+	isNextSectionTitle := false
+
 	for _, part := range msg.Parts {
 		trimmed := strings.TrimSpace(part)
 		if trimmed == "" || trimmed == ",LL" {
 			continue
 		}
 		if strings.HasPrefix(trimmed, ",") {
-			currentSection = strings.TrimPrefix(trimmed, ",")
+			afterComma := strings.TrimSpace(strings.TrimPrefix(trimmed, ","))
+			// check if after comma is numeric column index (modern showdown format like ",1")
+			isNum := len(afterComma) > 0
+			for _, ch := range afterComma {
+				if ch < '0' || ch > '9' {
+					isNum = false
+					break
+				}
+			}
+			if isNum {
+				isNextSectionTitle = true
+			} else {
+				currentSection = afterComma
+				isNextSectionTitle = false
+			}
 			continue
 		}
+		if isNextSectionTitle {
+			currentSection = trimmed
+			isNextSectionTitle = false
+			continue
+		}
+
 		name := trimmed
 		commaIdx := strings.LastIndex(name, ",")
 		if commaIdx >= 0 {

@@ -48,9 +48,9 @@ type UserUpdate struct {
 }
 
 type Format struct {
-	ID      string
-	Name    string
-	Section string
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Section string `json:"section"`
 }
 
 type RawMessage struct {

@@ -252,6 +252,10 @@ document.addEventListener("DOMContentLoaded", function () {
         renderRooms(chatRooms);
         renderBattles(data.active_battles || []);
 
+        if (cachedFormats.length === 0) {
+          fetchFormats();
+        }
+
         if (isInitial) {
           populateConfigForm(data);
         }
@@ -592,12 +596,29 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // challenge user form
+  // helper to get selected format from combobox or custom input
+  function getSelectedFormat(selectId, customId) {
+    const sel = document.getElementById(selectId);
+    const custom = document.getElementById(customId);
+    if (sel && sel.value === "__custom__" && custom && custom.value.trim()) {
+      return custom.value.trim();
+    }
+    if (sel && sel.value && sel.value !== "__custom__") {
+      return sel.value;
+    }
+    const fallbackInput = document.getElementById(selectId.replace("select-", "input-"));
+    if (fallbackInput && fallbackInput.value.trim()) {
+      return fallbackInput.value.trim();
+    }
+    return "gen9randombattle";
+  }
+
   const challengeForm = document.getElementById("form-challenge");
   if (challengeForm) {
     challengeForm.addEventListener("submit", function (e) {
       e.preventDefault();
       const user = document.getElementById("input-challenge-user").value.trim();
-      const format = document.getElementById("input-challenge-format").value.trim() || "gen9randombattle";
+      const format = getSelectedFormat("select-challenge-format", "input-challenge-format-custom");
 
       if (!user) {
         showAlert("error", "Username cannot be empty");
@@ -622,7 +643,7 @@ document.addEventListener("DOMContentLoaded", function () {
     quickChallengeForm.addEventListener("submit", function (e) {
       e.preventDefault();
       const user = document.getElementById("input-quick-challenge-user").value.trim();
-      const format = document.getElementById("input-quick-challenge-format").value.trim() || "gen9randombattle";
+      const format = getSelectedFormat("select-quick-challenge-format", "input-quick-challenge-format-custom");
 
       if (!user) {
         showAlert("error", "Username cannot be empty");
@@ -647,107 +668,127 @@ document.addEventListener("DOMContentLoaded", function () {
     btn.addEventListener("click", function () {
       const fmt = this.getAttribute("data-format");
       const targetId = this.getAttribute("data-target");
-      if (fmt && targetId) {
-        const targetInput = document.getElementById(targetId);
-        if (targetInput) {
-          targetInput.value = fmt;
-          showAlert("success", "Selected format: " + fmt);
+      if (!fmt || !targetId) return;
+
+      const target = document.getElementById(targetId);
+      if (target) {
+        if (target.tagName.toLowerCase() === "select") {
+          let found = false;
+          for (let i = 0; i < target.options.length; i++) {
+            if (target.options[i].value === fmt) {
+              target.selectedIndex = i;
+              found = true;
+              break;
+            }
+          }
+          const customInput = document.getElementById(targetId + "-custom");
+          if (!found) {
+            target.value = "__custom__";
+            if (customInput) {
+              customInput.style.display = "block";
+              customInput.value = fmt;
+            }
+          } else {
+            if (customInput) customInput.style.display = "none";
+          }
+          target.dispatchEvent(new Event("change"));
+        } else {
+          target.value = fmt;
         }
+        showAlert("success", "Selected format: " + fmt);
       }
     });
   });
 
-  // server formats state and rendering
+  // server formats combobox population
   let cachedFormats = [];
 
   function fetchFormats() {
     fetch("/api/formats")
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length > 0) {
           cachedFormats = data;
-          renderFormats(cachedFormats);
+          populateFormatComboboxes(cachedFormats);
         }
       })
       .catch(() => {});
   }
 
-  function renderFormats(formats, query) {
-    const container = document.getElementById("formats-list-container");
-    const countBadge = document.getElementById("formats-count-badge");
-    if (!container) return;
+  function populateFormatComboboxes(formats) {
+    if (!Array.isArray(formats) || formats.length === 0) return;
 
-    const q = (query || "").trim().toLowerCase();
-    const filtered = q
-      ? formats.filter(
-          (f) =>
-            (f.name && f.name.toLowerCase().includes(q)) ||
-            (f.id && f.id.toLowerCase().includes(q)) ||
-            (f.section && f.section.toLowerCase().includes(q))
-        )
-      : formats;
-
-    if (countBadge) {
-      countBadge.textContent = `${filtered.length} Formats`;
-    }
-
-    if (filtered.length === 0) {
-      container.innerHTML = `<p style="color:var(--text-dim);text-align:center;padding:16px;">${
-        formats.length === 0
-          ? "No formats received from server yet."
-          : "No formats match your search."
-      }</p>`;
-      return;
-    }
+    const comboboxes = [
+      {
+        select: document.getElementById("select-challenge-format"),
+        custom: document.getElementById("input-challenge-format-custom"),
+      },
+      {
+        select: document.getElementById("select-quick-challenge-format"),
+        custom: document.getElementById("input-quick-challenge-format-custom"),
+      },
+    ];
 
     const groups = {};
-    filtered.forEach((f) => {
-      const sec = f.section || "Other Formats";
+    formats.forEach((f) => {
+      const id = f.id || f.ID;
+      const name = f.name || f.Name || id;
+      const sec = f.section || f.Section || "Other Formats";
+      if (!id) return;
       if (!groups[sec]) groups[sec] = [];
-      groups[sec].push(f);
+      groups[sec].push({ id: id, name: name });
     });
 
-    let html = "";
-    Object.keys(groups).forEach((sec) => {
-      html += `<div class="formats-section">
-        <div class="formats-section-title">${escapeHTML(sec)}</div>
-        <div class="formats-badges-wrap">`;
-      groups[sec].forEach((f) => {
-        html += `<div class="format-chip" data-format-id="${escapeHTML(
-          f.id
-        )}" title="Click to select ${escapeHTML(f.name || f.id)}">
-          <span>${escapeHTML(f.name || f.id)}</span>
-          <span class="format-chip-id">${escapeHTML(f.id)}</span>
-        </div>`;
+    comboboxes.forEach(({ select, custom }) => {
+      if (!select) return;
+      const currentVal = select.value;
+      select.innerHTML = "";
+
+      Object.keys(groups).forEach((sec) => {
+        const optgroup = document.createElement("optgroup");
+        optgroup.label = sec;
+        groups[sec].forEach((f) => {
+          const opt = document.createElement("option");
+          opt.value = f.id;
+          opt.textContent = f.name !== f.id ? `${f.name} (${f.id})` : f.name;
+          optgroup.appendChild(opt);
+        });
+        select.appendChild(optgroup);
       });
-      html += `</div></div>`;
-    });
 
-    container.innerHTML = html;
+      const customOpt = document.createElement("option");
+      customOpt.value = "__custom__";
+      customOpt.textContent = "+ Custom Format...";
+      select.appendChild(customOpt);
 
-    container.querySelectorAll(".format-chip").forEach((chip) => {
-      chip.addEventListener("click", function () {
-        const fmtId = this.getAttribute("data-format-id");
-        if (!fmtId) return;
+      if (currentVal && Array.from(select.options).some((o) => o.value === currentVal)) {
+        select.value = currentVal;
+      } else if (Array.from(select.options).some((o) => o.value === "gen9randombattle")) {
+        select.value = "gen9randombattle";
+      }
 
-        const quickFmt = document.getElementById("input-quick-challenge-format");
-        if (quickFmt) quickFmt.value = fmtId;
-
-        const toolFmt = document.getElementById("input-challenge-format");
-        if (toolFmt) toolFmt.value = fmtId;
-
-        showAlert("success", "Selected format: " + fmtId);
-
-        const quickOpponent = document.getElementById("input-quick-challenge-user");
-        if (quickOpponent) quickOpponent.focus();
-      });
-    });
-  }
-
-  const searchFormatsInput = document.getElementById("input-search-formats");
-  if (searchFormatsInput) {
-    searchFormatsInput.addEventListener("input", function () {
-      renderFormats(cachedFormats, this.value);
+      if (!select._comboboxInit) {
+        select._comboboxInit = true;
+        select.addEventListener("change", function () {
+          if (custom) {
+            if (this.value === "__custom__") {
+              custom.style.display = "block";
+              custom.focus();
+            } else {
+              custom.style.display = "none";
+            }
+          }
+          // sync other combobox
+          comboboxes.forEach((other) => {
+            if (other.select && other.select !== select) {
+              if (Array.from(other.select.options).some((o) => o.value === select.value)) {
+                other.select.value = select.value;
+                if (other.custom) other.custom.style.display = select.value === "__custom__" ? "block" : "none";
+              }
+            }
+          });
+        });
+      }
     });
   }
 

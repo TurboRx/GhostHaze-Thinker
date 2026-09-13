@@ -436,22 +436,25 @@
         </div>
         <form id="form-challenge">
           <div class="form-row">
-            <div class="form-group">
+            <div class="form-group" style="flex:1;">
               <label class="form-label" for="input-challenge-user">Trainer Username</label>
               <input type="text" id="input-challenge-user" class="form-input" placeholder="Opponent username" required>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="input-challenge-format">Format</label>
-              <input type="text" id="input-challenge-format" class="form-input" value="gen9randombattle" placeholder="e.g. gen9randombattle">
+            <div class="form-group" style="flex:1;">
+              <label class="form-label" for="select-challenge-format">Battle Format</label>
+              <select id="select-challenge-format" class="form-select format-combobox">
+                <option value="gen9randombattle">[Gen 9] Random Battle</option>
+              </select>
+              <input type="text" id="input-challenge-format-custom" class="form-input" placeholder="Type custom format (e.g. gen9customgame)" style="display:none;margin-top:6px;">
             </div>
             <button type="submit" class="btn btn-primary">Send Challenge</button>
           </div>
           <div class="preset-chips-wrap">
             <span style="font-size:12px;color:var(--text-dim);margin-right:4px;">Quick Presets:</span>
-            <button type="button" class="preset-chip-btn" data-format="gen9randombattle" data-target="input-challenge-format">Random Battle</button>
-            <button type="button" class="preset-chip-btn" data-format="gen9ou" data-target="input-challenge-format">Gen 9 OU</button>
-            <button type="button" class="preset-chip-btn" data-format="gen9monotype" data-target="input-challenge-format">Gen 9 Monotype</button>
-            <button type="button" class="preset-chip-btn" data-format="gen9doublesou" data-target="input-challenge-format">Gen 9 Doubles OU</button>
+            <button type="button" class="preset-chip-btn" data-format="gen9randombattle" data-target="select-challenge-format">Random Battle</button>
+            <button type="button" class="preset-chip-btn" data-format="gen9ou" data-target="select-challenge-format">Gen 9 OU</button>
+            <button type="button" class="preset-chip-btn" data-format="gen9monotype" data-target="select-challenge-format">Gen 9 Monotype</button>
+            <button type="button" class="preset-chip-btn" data-format="gen9doublesou" data-target="select-challenge-format">Gen 9 Doubles OU</button>
           </div>
         </form>
       </div>
@@ -505,48 +508,34 @@
         </div>
         <form id="form-quick-challenge">
           <div class="form-row">
-            <div class="form-group">
+            <div class="form-group" style="flex:1;">
               <input type="text" id="input-quick-challenge-user" class="form-input" placeholder="Opponent Username" required>
             </div>
-            <div class="form-group">
-              <input type="text" id="input-quick-challenge-format" class="form-input" value="gen9randombattle" placeholder="Format (e.g. gen9randombattle)">
+            <div class="form-group" style="flex:1;">
+              <select id="select-quick-challenge-format" class="form-select format-combobox">
+                <option value="gen9randombattle">[Gen 9] Random Battle</option>
+              </select>
+              <input type="text" id="input-quick-challenge-format-custom" class="form-input" placeholder="Type custom format (e.g. gen9customgame)" style="display:none;margin-top:6px;">
             </div>
             <button type="submit" class="btn btn-primary">Challenge</button>
           </div>
           <div class="preset-chips-wrap">
             <span style="font-size:12px;color:var(--text-dim);margin-right:4px;">Quick Presets:</span>
-            <button type="button" class="preset-chip-btn" data-format="gen9randombattle" data-target="input-quick-challenge-format">Random Battle</button>
-            <button type="button" class="preset-chip-btn" data-format="gen9ou" data-target="input-quick-challenge-format">Gen 9 OU</button>
-            <button type="button" class="preset-chip-btn" data-format="gen9monotype" data-target="input-quick-challenge-format">Gen 9 Monotype</button>
-            <button type="button" class="preset-chip-btn" data-format="gen9doublesou" data-target="input-quick-challenge-format">Gen 9 Doubles OU</button>
+            <button type="button" class="preset-chip-btn" data-format="gen9randombattle" data-target="select-quick-challenge-format">Random Battle</button>
+            <button type="button" class="preset-chip-btn" data-format="gen9ou" data-target="select-quick-challenge-format">Gen 9 OU</button>
+            <button type="button" class="preset-chip-btn" data-format="gen9monotype" data-target="select-quick-challenge-format">Gen 9 Monotype</button>
+            <button type="button" class="preset-chip-btn" data-format="gen9doublesou" data-target="select-quick-challenge-format">Gen 9 Doubles OU</button>
           </div>
         </form>
       </div>
 
-      <div class="card" style="margin-bottom: 20px;">
+      <div class="card">
         <div class="card-header">
           <h2 class="card-title">Active Battles</h2>
           <span class="chip">{{if .AutoBattle}}Auto-Battle: ON{{else}}Auto-Battle: OFF{{end}}</span>
         </div>
         <div id="battles-container">
           <p style="color:var(--text-dim);text-align:center;padding:24px;">No active battles currently in progress</p>
-        </div>
-      </div>
-
-      <!-- server formats browser -->
-      <div class="card">
-        <div class="card-header" style="flex-wrap:wrap;gap:12px;">
-          <h2 class="card-title">Server Formats &amp; Tiers</h2>
-          <span id="formats-count-badge" class="chip">Loading formats...</span>
-        </div>
-        <p style="color:var(--text-muted);margin-bottom:12px;">
-          All battle formats supported by the connected server. Click any format to immediately select it for challenges.
-        </p>
-        <div class="formats-search-row">
-          <input type="text" id="input-search-formats" class="form-input" placeholder="Filter formats by name or tier (e.g. random, gen 9, ou, doubles)...">
-        </div>
-        <div id="formats-list-container">
-          <p style="color:var(--text-dim);text-align:center;padding:16px;">Fetching formats from server...</p>
         </div>
       </div>
     </section>
