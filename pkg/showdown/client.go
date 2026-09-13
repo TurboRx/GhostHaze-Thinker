@@ -416,7 +416,7 @@ func (c *Client) Rooms() []string {
 	defer c.stateMu.RUnlock()
 	rooms := make([]string, 0, len(c.roomUsers))
 	for r := range c.roomUsers {
-		if !strings.HasPrefix(r, "battle-") {
+		if r != "" && !strings.HasPrefix(r, "battle-") {
 			rooms = append(rooms, r)
 		}
 	}
@@ -1189,10 +1189,14 @@ func (c *Client) autoLeaveBattleAfterDelay(room, winner, myNick, winMsg, loseMsg
 }
 
 func (c *Client) handleUsersList(room, userListStr string) {
+	roomID := ToRoomID(room)
+	if roomID == "" {
+		return
+	}
+
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 
-	roomID := ToRoomID(room)
 	if c.roomUsers[roomID] == nil {
 		c.roomUsers[roomID] = make(map[string]string)
 	}
@@ -1216,10 +1220,14 @@ func (c *Client) handleUsersList(room, userListStr string) {
 }
 
 func (c *Client) handleUserJoin(room, user string) {
+	roomID := ToRoomID(room)
+	if roomID == "" {
+		return
+	}
+
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 
-	roomID := ToRoomID(room)
 	if c.roomUsers[roomID] == nil {
 		c.roomUsers[roomID] = make(map[string]string)
 	}
@@ -1235,10 +1243,14 @@ func (c *Client) handleUserJoin(room, user string) {
 }
 
 func (c *Client) handleUserLeave(room, user string) {
+	roomID := ToRoomID(room)
+	if roomID == "" {
+		return
+	}
+
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 
-	roomID := ToRoomID(room)
 	if c.roomUsers[roomID] != nil {
 		id := ToID(user)
 		delete(c.roomUsers[roomID], id)
@@ -1247,10 +1259,14 @@ func (c *Client) handleUserLeave(room, user string) {
 }
 
 func (c *Client) handleUserRename(room, newUser, oldID string) {
+	roomID := ToRoomID(room)
+	if roomID == "" {
+		return
+	}
+
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 
-	roomID := ToRoomID(room)
 	if c.roomUsers[roomID] == nil {
 		c.roomUsers[roomID] = make(map[string]string)
 	}
