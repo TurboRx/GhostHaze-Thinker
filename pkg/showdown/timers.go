@@ -234,21 +234,22 @@ func (s *TimerStore) Start(sender TimerSender) {
 	}
 	s.running = true
 	s.stopChan = make(chan struct{})
+	stopCh := s.stopChan
 	s.mu.Unlock()
 
-	go func() {
+	go func(ch <-chan struct{}) {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-s.stopChan:
+			case <-ch:
 				return
 			case now := <-ticker.C:
 				s.CheckAndRun(sender, now)
 			}
 		}
-	}()
+	}(stopCh)
 }
 
 // stop halts the background ticker loop
@@ -262,5 +263,6 @@ func (s *TimerStore) Stop() {
 	s.running = false
 	if s.stopChan != nil {
 		close(s.stopChan)
+		s.stopChan = nil
 	}
 }

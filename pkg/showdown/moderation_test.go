@@ -23,7 +23,7 @@ func TestModerationStore(t *testing.T) {
 		CapsMinLength:  8,
 		Action:         "warn",
 		CustomWarning:  "Please keep the chatroom friendly.",
-		ExemptRanks:    "+%@*#~",
+		ExemptRanks:    "+, %, @, *, #, ~",
 	}
 
 	if err := store.SaveConfig(cfg); err != nil {
@@ -64,5 +64,10 @@ func TestModerationStore(t *testing.T) {
 	violationExempt, _, _ := store.CheckMessage("@ModUser", "THIS IS AN ALL CAPS SHOUTING MESSAGE")
 	if violationExempt {
 		t.Errorf("expected exempt rank to bypass moderation")
+	}
+
+	violationVoice, _, _ := store.CheckMessage("+VoiceUser", "THIS IS AN ALL CAPS SHOUTING MESSAGE")
+	if violationVoice {
+		t.Errorf("expected +voice exempt rank to bypass moderation")
 	}
 }

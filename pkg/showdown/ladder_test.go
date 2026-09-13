@@ -91,4 +91,34 @@ func TestLadderController(t *testing.T) {
 	if status.Active {
 		t.Errorf("expected inactive after stop")
 	}
+
+	// test comma-separated multi-tier formats
+	ladderMulti := NewLadderController()
+	if err := ladderMulti.Start(client, "gen9randombattle, gen9ou, gen9ubers", 3); err != nil {
+		t.Fatalf("multi-tier start failed: %v", err)
+	}
+
+	statusMulti := ladderMulti.Status()
+	if len(statusMulti.Formats) != 3 || statusMulti.Formats[0] != "gen9randombattle" || statusMulti.Formats[1] != "gen9ou" || statusMulti.Formats[2] != "gen9ubers" {
+		t.Errorf("expected 3 parsed formats, got %+v", statusMulti.Formats)
+	}
+	if statusMulti.CurrentFormat != "gen9randombattle" {
+		t.Errorf("expected initial format gen9randombattle, got %s", statusMulti.CurrentFormat)
+	}
+
+	// finish battle 1 -> should rotate to gen9ou
+	ladderMulti.OnBattleEnd(client, "battle-1", "win")
+	statusMulti = ladderMulti.Status()
+	if statusMulti.CurrentFormat != "gen9ou" {
+		t.Errorf("expected rotated format gen9ou, got %s", statusMulti.CurrentFormat)
+	}
+
+	// finish battle 2 -> should rotate to gen9ubers
+	ladderMulti.OnBattleEnd(client, "battle-2", "win")
+	statusMulti = ladderMulti.Status()
+	if statusMulti.CurrentFormat != "gen9ubers" {
+		t.Errorf("expected rotated format gen9ubers, got %s", statusMulti.CurrentFormat)
+	}
+	_ = ladderMulti.Stop(client)
 }
+

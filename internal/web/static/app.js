@@ -427,6 +427,10 @@ document.addEventListener("DOMContentLoaded", function () {
       </tr>`;
     });
     tbody.innerHTML = html;
+    if (typeof updateRoomComboboxOptions === "function") {
+      updateRoomComboboxOptions("dropdown-timer-room", "input-timer-room", rooms, false);
+      updateRoomComboboxOptions("dropdown-jp-room", "input-jp-room", rooms, true);
+    }
   }
 
   // render active battle list
@@ -787,6 +791,9 @@ document.addEventListener("DOMContentLoaded", function () {
         else {
           showAlert("success", "Custom command saved successfully!");
           formCustomCommand.reset();
+          if (typeof setSimpleComboboxValue === "function") {
+            setSimpleComboboxValue("combobox-cmd-rank", "select-cmd-rank", "text-cmd-rank", "dropdown-cmd-rank", "all");
+          }
           if (commandFormContainer) commandFormContainer.style.display = "none";
           fetchCommands();
         }
@@ -945,9 +952,14 @@ document.addEventListener("DOMContentLoaded", function () {
         if (txtBanned) txtBanned.value = (cfg.banned_words || []).join(", ");
         if (numCaps) numCaps.value = cfg.max_caps_percent || 70;
         if (numCapsMin) numCapsMin.value = cfg.caps_min_length || 10;
-        if (selAction) selAction.value = cfg.action || "warn";
+        if (selAction) {
+          selAction.value = cfg.action || "warn";
+          if (typeof setSimpleComboboxValue === "function") {
+            setSimpleComboboxValue("combobox-mod-action", "select-mod-action", "text-mod-action", "dropdown-mod-action", cfg.action || "warn");
+          }
+        }
         if (txtWarning) txtWarning.value = cfg.custom_warning || "";
-        if (txtExempt) txtExempt.value = cfg.exempt_ranks || "+%@*#~";
+        if (txtExempt) txtExempt.value = cfg.exempt_ranks || "+, %, @, *, #, ~";
       })
       .catch((err) => console.error("failed to fetch moderation config", err));
   }
@@ -966,7 +978,7 @@ document.addEventListener("DOMContentLoaded", function () {
         caps_min_length: parseInt(document.getElementById("input-mod-caps-min")?.value || "10", 10),
         action: document.getElementById("select-mod-action")?.value || "warn",
         custom_warning: document.getElementById("input-mod-warning")?.value.trim() || "",
-        exempt_ranks: document.getElementById("input-mod-exempt")?.value.trim() || "+%@*#~",
+        exempt_ranks: document.getElementById("input-mod-exempt")?.value.trim() || "+, %, @, *, #, ~",
       };
 
       postJSON("/api/moderation/save", payload, function (err) {
@@ -1180,18 +1192,23 @@ document.addEventListener("DOMContentLoaded", function () {
       if (btnStart) btnStart.style.display = "none";
       if (btnStop) btnStop.style.display = "inline-block";
 
+      const activeFmt = ladder.current_format || ladder.format;
       if (ladder.current_battle) {
         if (badge) {
           badge.className = "badge badge-success";
           badge.textContent = "In Battle";
         }
-        if (statCurrent) statCurrent.innerHTML = `<span style="color:#34d399;font-weight:600;">Active Battle: ${escapeHTML(ladder.current_battle)}</span>`;
+        if (statCurrent) statCurrent.innerHTML = `<span style="color:#34d399;font-weight:600;">Active Battle (${escapeHTML(activeFmt)}): ${escapeHTML(ladder.current_battle)}</span>`;
       } else if (ladder.searching) {
         if (badge) {
           badge.className = "badge badge-primary";
           badge.textContent = "Searching Match...";
         }
-        if (statCurrent) statCurrent.innerHTML = `<span style="color:#60a5fa;font-weight:600;">Searching ladder for [${escapeHTML(ladder.format)}]...</span>`;
+        let searchMsg = `Searching ladder for [${escapeHTML(activeFmt)}]...`;
+        if (ladder.formats && ladder.formats.length > 1) {
+          searchMsg = `Searching ladder [${escapeHTML(activeFmt)}] (multi-tier: ${escapeHTML(ladder.format)})...`;
+        }
+        if (statCurrent) statCurrent.innerHTML = `<span style="color:#60a5fa;font-weight:600;">${searchMsg}</span>`;
       } else {
         if (badge) {
           badge.className = "badge badge-secondary";
@@ -1589,15 +1606,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
   initComboboxes();
 
-  // destination combobox component handler
-  function initDestinationCombobox() {
-    const wrapper = document.getElementById("combobox-send-type");
-    const btn = document.getElementById("btn-send-type");
-    const dropdown = document.getElementById("dropdown-send-type");
-    const input = document.getElementById("select-send-type");
-    const text = document.getElementById("text-send-type");
-    const targetInput = document.getElementById("input-send-target");
-    const targetLabel = document.getElementById("label-send-target");
+  // simple button-triggered combobox helper
+  function initSimpleCombobox(wrapperId, btnId, dropdownId, hiddenInputId, textId, onChange) {
+    const wrapper = document.getElementById(wrapperId);
+    const btn = document.getElementById(btnId);
+    const dropdown = document.getElementById(dropdownId);
+    const input = document.getElementById(hiddenInputId);
+    const text = document.getElementById(textId);
     if (!wrapper || !btn || !dropdown) return;
 
     btn.addEventListener("click", function (e) {
@@ -1613,27 +1628,143 @@ document.addEventListener("DOMContentLoaded", function () {
       opt.addEventListener("click", function (e) {
         e.stopPropagation();
         const val = this.getAttribute("data-id");
-        const name = this.getAttribute("data-name");
+        const name = this.getAttribute("data-name") || this.textContent.trim();
         if (input) input.value = val;
         if (text) text.textContent = name;
         dropdown.querySelectorAll(".combobox-option").forEach((o) => o.classList.remove("selected"));
         this.classList.add("selected");
         wrapper.classList.remove("open");
-
-        if (targetInput) {
-          if (val === "pm") {
-            targetInput.placeholder = "e.g. username";
-            if (targetLabel) targetLabel.textContent = "Trainer Username";
-          } else {
-            targetInput.placeholder = "e.g. lobby";
-            if (targetLabel) targetLabel.textContent = "Chatroom Name";
-          }
+        if (typeof onChange === "function") {
+          onChange(val, name);
         }
       });
     });
   }
 
-  initDestinationCombobox();
+  function setSimpleComboboxValue(wrapperId, hiddenInputId, textId, dropdownId, val) {
+    const input = document.getElementById(hiddenInputId);
+    const text = document.getElementById(textId);
+    const dropdown = document.getElementById(dropdownId);
+    if (input) input.value = val;
+    if (dropdown) {
+      let matchedName = "";
+      dropdown.querySelectorAll(".combobox-option").forEach((opt) => {
+        if (opt.getAttribute("data-id") === val) {
+          opt.classList.add("selected");
+          matchedName = opt.getAttribute("data-name") || opt.textContent.trim();
+        } else {
+          opt.classList.remove("selected");
+        }
+      });
+      if (text && matchedName) text.textContent = matchedName;
+    }
+  }
+
+  // input-based combobox helper with toggle button and option selection
+  function initInputCombobox(wrapperId, inputId, toggleBtnId, dropdownId, onSelect) {
+    const wrapper = document.getElementById(wrapperId);
+    const input = document.getElementById(inputId);
+    const toggleBtn = document.getElementById(toggleBtnId);
+    const dropdown = document.getElementById(dropdownId);
+    if (!wrapper || !input || !dropdown) return;
+
+    function toggle(forceOpen) {
+      const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : !wrapper.classList.contains("open");
+      document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
+      if (shouldOpen) {
+        wrapper.classList.add("open");
+      }
+    }
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        toggle();
+      });
+    }
+
+    input.addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggle(true);
+    });
+
+    dropdown.querySelectorAll(".combobox-option").forEach((opt) => {
+      opt.addEventListener("click", function (e) {
+        e.stopPropagation();
+        const val = this.getAttribute("data-id");
+        input.value = val;
+        dropdown.querySelectorAll(".combobox-option").forEach((o) => o.classList.remove("selected"));
+        this.classList.add("selected");
+        wrapper.classList.remove("open");
+        if (typeof onSelect === "function") {
+          onSelect(val);
+        }
+      });
+    });
+  }
+
+  function updateRoomComboboxOptions(dropdownId, inputId, rooms, allowEmptyAll) {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+    const list = dropdown.querySelector(".combobox-options-list");
+    if (!list) return;
+
+    let html = "";
+    if (allowEmptyAll) {
+      html += '<div class="combobox-option selected" data-id="" data-name="All Chatrooms (Global)">All Chatrooms (Global)</div>';
+    }
+    const defaultRooms = ["lobby", "tournaments", "botdevelopment"];
+    const allRooms = Array.from(new Set([...(rooms || []), ...defaultRooms])).filter(Boolean);
+    allRooms.forEach((r) => {
+      html += `<div class="combobox-option" data-id="${escapeHTML(r)}" data-name="${escapeHTML(r)}">${escapeHTML(r)}</div>`;
+    });
+    list.innerHTML = html;
+
+    list.querySelectorAll(".combobox-option").forEach((opt) => {
+      opt.addEventListener("click", function (e) {
+        e.stopPropagation();
+        const val = this.getAttribute("data-id");
+        const input = document.getElementById(inputId);
+        if (input) input.value = val;
+        const wrapper = dropdown.closest(".custom-combobox");
+        if (wrapper) wrapper.classList.remove("open");
+      });
+    });
+  }
+
+  // initialize destination combobox
+  initSimpleCombobox("combobox-send-type", "btn-send-type", "dropdown-send-type", "select-send-type", "text-send-type", function (val) {
+    const targetInput = document.getElementById("input-send-target");
+    const targetLabel = document.getElementById("label-send-target");
+    if (targetInput) {
+      if (val === "pm") {
+        targetInput.placeholder = "e.g. username";
+        if (targetLabel) targetLabel.textContent = "Trainer Username";
+      } else {
+        targetInput.placeholder = "e.g. lobby";
+        if (targetLabel) targetLabel.textContent = "Chatroom Name";
+      }
+    }
+  });
+
+  // initialize custom command rank combobox
+  initSimpleCombobox("combobox-cmd-rank", "btn-cmd-rank", "dropdown-cmd-rank", "select-cmd-rank", "text-cmd-rank");
+
+  // initialize moderation action combobox
+  initSimpleCombobox("combobox-mod-action", "btn-mod-action", "dropdown-mod-action", "select-mod-action", "text-mod-action");
+
+  // initialize ladder matchmaking format combobox
+  initInputCombobox("combobox-ladder-format", "input-ladder-format", "btn-ladder-format-toggle", "dropdown-ladder-format");
+
+  // initialize timer room combobox
+  initInputCombobox("combobox-timer-room", "input-timer-room", "btn-timer-room-toggle", "dropdown-timer-room");
+
+  // initialize join phrases room combobox
+  initInputCombobox("combobox-jp-room", "input-jp-room", "btn-jp-room-toggle", "dropdown-jp-room");
+
+  // initial population of room options
+  updateRoomComboboxOptions("dropdown-timer-room", "input-timer-room", ["lobby"], false);
+  updateRoomComboboxOptions("dropdown-jp-room", "input-jp-room", ["lobby"], true);
 
   function fetchFormats() {
     fetch("/api/formats")

@@ -1424,3 +1424,39 @@ body {
   margin-top: 4px;
   padding-top: 8px;
 }
+
+/* combobox input wrap with toggle button */
+.combobox-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.combobox-input-wrap .form-input {
+  width: 100%;
+  padding-right: 36px;
+}
+
+.combobox-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.combobox-toggle-btn:hover {
+  color: var(--foreground);
+  background-color: var(--accent);
+}
+

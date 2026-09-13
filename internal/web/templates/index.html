@@ -667,8 +667,30 @@
         </div>
         <div class="form-row" style="align-items:flex-end;">
           <div class="form-group" style="flex:2;">
-            <label class="form-label" for="input-ladder-format">Matchmaking Format (Tier)</label>
-            <input type="text" id="input-ladder-format" class="form-input" placeholder="e.g. gen9randombattle or gen9ou" value="gen9randombattle">
+            <label class="form-label" for="input-ladder-format">Matchmaking Format (Tier - comma-separated for multi-tier)</label>
+            <div class="custom-combobox" id="combobox-ladder-format">
+              <div class="combobox-input-wrap">
+                <input type="text" id="input-ladder-format" class="form-input" placeholder="e.g. gen9randombattle, gen9ou, gen9ubers" value="gen9randombattle">
+                <button type="button" class="combobox-toggle-btn" id="btn-ladder-format-toggle" title="Format presets" aria-label="Format presets">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+              </div>
+              <div class="combobox-dropdown" id="dropdown-ladder-format">
+                <div class="combobox-options-list" id="list-ladder-formats">
+                  <div class="combobox-option selected" data-id="gen9randombattle" data-name="[Gen 9] Random Battle">[Gen 9] Random Battle</div>
+                  <div class="combobox-option" data-id="gen9ou" data-name="[Gen 9] OU">[Gen 9] OU</div>
+                  <div class="combobox-option" data-id="gen9ubers" data-name="[Gen 9] Ubers">[Gen 9] Ubers</div>
+                  <div class="combobox-option" data-id="gen9doublesou" data-name="[Gen 9] Doubles OU">[Gen 9] Doubles OU</div>
+                  <div class="combobox-option" data-id="gen9monotype" data-name="[Gen 9] Monotype">[Gen 9] Monotype</div>
+                  <div class="combobox-option" data-id="gen9nationaldex" data-name="[Gen 9] National Dex">[Gen 9] National Dex</div>
+                  <div class="combobox-section-title">Multi-Tier Rotation Presets</div>
+                  <div class="combobox-option" data-id="gen9randombattle, gen9ou" data-name="Multi-Tier: Random Battle + OU">Multi-Tier: Random Battle + OU</div>
+                  <div class="combobox-option" data-id="gen9randombattle, gen9ou, gen9ubers" data-name="Multi-Tier: Random Battle + OU + Ubers">Multi-Tier: Random Battle + OU + Ubers</div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="form-group" style="flex:1;">
             <label class="form-label" for="input-ladder-max">Max Games (0 = continuous)</label>
@@ -826,15 +848,26 @@
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="select-cmd-rank">Required User Rank</label>
-                <select id="select-cmd-rank" class="form-select">
-                  <option value="all">All Users (Anyone)</option>
-                  <option value="+">Voice (+) and above</option>
-                  <option value="%">Driver (%) and above</option>
-                  <option value="@">Moderator (@) and above</option>
-                  <option value="*">Bot (*) and above</option>
-                  <option value="#">Room Owner (#) and above</option>
-                  <option value="~">Admin (~) only</option>
-                </select>
+                <div class="custom-combobox" id="combobox-cmd-rank">
+                  <input type="hidden" id="select-cmd-rank" value="all">
+                  <button type="button" class="combobox-trigger" id="btn-cmd-rank">
+                    <span class="combobox-selected-text" id="text-cmd-rank">All Users (Anyone)</span>
+                    <svg class="combobox-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </button>
+                  <div class="combobox-dropdown" id="dropdown-cmd-rank">
+                    <div class="combobox-options-list">
+                      <div class="combobox-option selected" data-id="all" data-name="All Users (Anyone)">All Users (Anyone)</div>
+                      <div class="combobox-option" data-id="+" data-name="Voice (+) and above">Voice (+) and above</div>
+                      <div class="combobox-option" data-id="%" data-name="Driver (%) and above">Driver (%) and above</div>
+                      <div class="combobox-option" data-id="@" data-name="Moderator (@) and above">Moderator (@) and above</div>
+                      <div class="combobox-option" data-id="*" data-name="Bot (*) and above">Bot (*) and above</div>
+                      <div class="combobox-option" data-id="#" data-name="Room Owner (#) and above">Room Owner (#) and above</div>
+                      <div class="combobox-option" data-id="~" data-name="Admin (~) only">Admin (~) only</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -894,7 +927,21 @@
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-timer-room">Target Chatroom</label>
-                <input type="text" id="input-timer-room" class="form-input" placeholder="e.g. lobby or tournament" required>
+                <div class="custom-combobox" id="combobox-timer-room">
+                  <div class="combobox-input-wrap">
+                    <input type="text" id="input-timer-room" class="form-input" placeholder="e.g. lobby or tournament" required>
+                    <button type="button" class="combobox-toggle-btn" id="btn-timer-room-toggle" title="Chatrooms list" aria-label="Chatrooms list">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="combobox-dropdown" id="dropdown-timer-room">
+                    <div class="combobox-options-list" id="list-timer-rooms">
+                      <div class="combobox-option selected" data-id="lobby" data-name="lobby">lobby</div>
+                    </div>
+                  </div>
+                </div>
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-timer-interval">Interval (Minutes)</label>
@@ -967,11 +1014,22 @@
             </div>
             <div class="form-group" style="flex:1;">
               <label class="form-label" for="select-mod-action">Enforcement Action</label>
-              <select id="select-mod-action" class="form-input">
-                <option value="warn">Showdown /warn</option>
-                <option value="mute">Showdown /mute (7 minutes)</option>
-                <option value="message">Custom Warning Message</option>
-              </select>
+              <div class="custom-combobox" id="combobox-mod-action">
+                <input type="hidden" id="select-mod-action" value="warn">
+                <button type="button" class="combobox-trigger" id="btn-mod-action">
+                  <span class="combobox-selected-text" id="text-mod-action">Showdown /warn</span>
+                  <svg class="combobox-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="combobox-dropdown" id="dropdown-mod-action">
+                  <div class="combobox-options-list">
+                    <div class="combobox-option selected" data-id="warn" data-name="Showdown /warn">Showdown /warn</div>
+                    <div class="combobox-option" data-id="mute" data-name="Showdown /mute (7 minutes)">Showdown /mute (7 minutes)</div>
+                    <div class="combobox-option" data-id="message" data-name="Custom Warning Message">Custom Warning Message</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -981,8 +1039,8 @@
               <input type="text" id="input-mod-warning" class="form-input" value="Please refrain from profanity, spam, or excessive caps.">
             </div>
             <div class="form-group" style="flex:1;">
-              <label class="form-label" for="input-mod-exempt">Exempt Ranks</label>
-              <input type="text" id="input-mod-exempt" class="form-input" value="+%@*#~">
+              <label class="form-label" for="input-mod-exempt">Exempt Ranks (comma-separated)</label>
+              <input type="text" id="input-mod-exempt" class="form-input" value="+, %, @, *, #, ~" placeholder="+, %, @, *, #, ~">
             </div>
           </div>
 
@@ -1036,7 +1094,21 @@
               </div>
               <div class="form-group" style="flex:1;">
                 <label class="form-label" for="input-jp-room">Chatroom (leave blank for all)</label>
-                <input type="text" id="input-jp-room" class="form-input" placeholder="e.g. lobby (optional)">
+                <div class="custom-combobox" id="combobox-jp-room">
+                  <div class="combobox-input-wrap">
+                    <input type="text" id="input-jp-room" class="form-input" placeholder="e.g. lobby (optional)">
+                    <button type="button" class="combobox-toggle-btn" id="btn-jp-room-toggle" title="Chatrooms list" aria-label="Chatrooms list">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="combobox-dropdown" id="dropdown-jp-room">
+                    <div class="combobox-options-list" id="list-jp-rooms">
+                      <div class="combobox-option selected" data-id="" data-name="All Chatrooms (Global)">All Chatrooms (Global)</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

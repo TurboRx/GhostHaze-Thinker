@@ -17,7 +17,7 @@ type ModerationConfig struct {
 	CapsMinLength  int      `json:"caps_min_length"`
 	Action         string   `json:"action"` // "warn", "mute", "message"
 	CustomWarning  string   `json:"custom_warning"`
-	ExemptRanks    string   `json:"exempt_ranks"` // "+%@*#~"
+	ExemptRanks    string   `json:"exempt_ranks"` // "+, %, @, *, #, ~"
 }
 
 // defaultmoderationconfig provides sensible defaults
@@ -29,11 +29,11 @@ func DefaultModerationConfig() ModerationConfig {
 		CapsMinLength:  10,
 		Action:         "warn",
 		CustomWarning:  "Please refrain from profanity, spam, or excessive caps.",
-		ExemptRanks:    "+%@*#~",
+		ExemptRanks:    "+, %, @, *, #, ~",
 	}
 }
 
-// moderationstore manages moderation settings and rule enforcement
+// moderationstore manages moderation rules and enforcement
 type ModerationStore struct {
 	filePath string
 	mu       sync.RWMutex
@@ -78,7 +78,7 @@ func (s *ModerationStore) load() error {
 		cfg.Action = "warn"
 	}
 	if cfg.ExemptRanks == "" {
-		cfg.ExemptRanks = "+%@*#~"
+		cfg.ExemptRanks = "+, %, @, *, #, ~"
 	}
 
 	s.config = cfg
@@ -126,11 +126,29 @@ func (s *ModerationStore) SaveConfig(cfg ModerationConfig) error {
 		cfg.Action = "warn"
 	}
 	if cfg.ExemptRanks == "" {
-		cfg.ExemptRanks = "+%@*#~"
+		cfg.ExemptRanks = "+, %, @, *, #, ~"
 	}
 
 	s.config = cfg
 	return s.saveToFile()
+}
+
+// isrankexempt verifies whether a user rank is present in the comma-separated or raw exempt list
+func isRankExempt(userRank, exemptRanks string) bool {
+	if userRank == "" || exemptRanks == "" {
+		return false
+	}
+	tokens := strings.Split(exemptRanks, ",")
+	for _, tok := range tokens {
+		t := strings.TrimSpace(tok)
+		if t == "" {
+			continue
+		}
+		if t == userRank || strings.Contains(t, userRank) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkmessage inspects a chatroom message for moderation infractions
@@ -145,7 +163,7 @@ func (s *ModerationStore) CheckMessage(user, text string) (bool, string, string)
 
 	// exempt ranked users
 	userRank := UserRank(user)
-	if userRank != "" && strings.ContainsAny(userRank, cfg.ExemptRanks) {
+	if userRank != "" && isRankExempt(userRank, cfg.ExemptRanks) {
 		return false, "", ""
 	}
 

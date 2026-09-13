@@ -3,6 +3,7 @@ package showdown
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -11,6 +12,8 @@ import (
 type LadderStatus struct {
 	Active        bool      `json:"active"`
 	Format        string    `json:"format"`
+	CurrentFormat string    `json:"current_format,omitempty"`
+	Formats       []string  `json:"formats,omitempty"`
 	MaxBattles    int       `json:"max_battles"`
 	BattlesPlayed int       `json:"battles_played"`
 	Wins          int       `json:"wins"`
@@ -30,9 +33,10 @@ type LadderClient interface {
 
 // laddercontroller manages automated ladder matchmaking and rotation
 type LadderController struct {
-	mu     sync.RWMutex
-	status LadderStatus
-	stopCh chan struct{}
+	mu      sync.RWMutex
+	status  LadderStatus
+	formats []string
+	stopCh  chan struct{}
 }
 
 // newladdercontroller initializes a new ladder controller
@@ -62,16 +66,32 @@ func (l *LadderController) Start(client LadderClient, format string, maxBattles 
 		maxBattles = 0
 	}
 
+	rawParts := strings.Split(format, ",")
+	var formats []string
+	for _, p := range rawParts {
+		t := strings.TrimSpace(p)
+		if t != "" {
+			formats = append(formats, t)
+		}
+	}
+	if len(formats) == 0 {
+		formats = []string{"gen9randombattle"}
+	}
+
 	l.mu.Lock()
 	if l.status.Active {
 		l.mu.Unlock()
 		return errors.New("ladder bot is already active")
 	}
 
+	initialFormat := formats[0]
+	l.formats = formats
 	l.stopCh = make(chan struct{})
 	l.status = LadderStatus{
 		Active:        true,
-		Format:        format,
+		Format:        strings.Join(formats, ", "),
+		CurrentFormat: initialFormat,
+		Formats:       formats,
 		MaxBattles:    maxBattles,
 		BattlesPlayed: 0,
 		Wins:          0,
@@ -83,7 +103,7 @@ func (l *LadderController) Start(client LadderClient, format string, maxBattles 
 	}
 	l.mu.Unlock()
 
-	return l.dispatchSearch(client, format)
+	return l.dispatchSearch(client, initialFormat)
 }
 
 // stop halts automated ranked ladder queuing
@@ -168,7 +188,11 @@ func (l *LadderController) OnBattleEnd(client LadderClient, battleID string, out
 	}
 
 	l.status.Searching = true
-	format := l.status.Format
+	nextFormat := l.status.Format
+	if len(l.formats) > 0 {
+		nextFormat = l.formats[l.status.BattlesPlayed%len(l.formats)]
+	}
+	l.status.CurrentFormat = nextFormat
 	stopCh := l.stopCh
 	l.mu.Unlock()
 
@@ -182,7 +206,7 @@ func (l *LadderController) OnBattleEnd(client LadderClient, battleID string, out
 			active := l.status.Active
 			l.mu.RUnlock()
 			if active && client != nil {
-				_ = l.dispatchSearch(client, format)
+				_ = l.dispatchSearch(client, nextFormat)
 			}
 		}
 	}()
