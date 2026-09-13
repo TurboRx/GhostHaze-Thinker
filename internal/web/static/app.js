@@ -570,6 +570,16 @@ document.addEventListener("DOMContentLoaded", function () {
     return (text || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   }
 
+  // pokemon showdown spritesheet icon helper
+  function getPokemonIconHTML(name) {
+    const id = toId(name);
+    const icons = window.POKEMON_ICON_INDEXES || {};
+    const num = icons[id] !== undefined ? icons[id] : 0;
+    const top = Math.floor(num / 12) * 30;
+    const left = (num % 12) * 40;
+    return `<span class="picon" style="background:transparent url('/static/pokemonicons-sheet.png') no-repeat scroll -${left}px -${top}px;"></span>`;
+  }
+
   // teams vault handlers
   function fetchTeams() {
     fetch("/api/teams")
@@ -591,10 +601,8 @@ document.addEventListener("DOMContentLoaded", function () {
     teams.forEach((t) => {
       const pokes = t.pokemon || [];
       const pokeBadges = pokes.map((p) => {
-        const pokeId = toId(p);
-        const spriteUrl = "https://play.pokemonshowdown.com/sprites/gen5/" + pokeId + ".png";
         return `<span class="poke-icon-badge">
-          <img src="${spriteUrl}" alt="" width="26" height="26" onerror="this.style.display='none'">
+          ${getPokemonIconHTML(p)}
           <span>${escapeHTML(p)}</span>
         </span>`;
       }).join(" ");
