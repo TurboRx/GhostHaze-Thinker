@@ -189,6 +189,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // status badge
         const dot = document.getElementById("status-dot");
         const statusText = document.getElementById("status-text");
+        const statusBadge = document.getElementById("status-badge");
         if (dot && statusText) {
           if (isStopped) {
             dot.className = "status-dot offline";
@@ -199,6 +200,9 @@ document.addEventListener("DOMContentLoaded", function () {
           } else {
             dot.className = "status-dot offline";
             statusText.textContent = "Offline";
+          }
+          if (statusBadge) {
+            statusBadge.title = statusText.textContent;
           }
         }
 
