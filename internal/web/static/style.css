@@ -880,32 +880,6 @@ body {
   flex-wrap: nowrap;
 }
 
-/* preset format quick buttons */
-.preset-chips-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
-
-.preset-chip-btn {
-  background: var(--bg-main);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 9999px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.preset-chip-btn:hover {
-  background: var(--primary-light);
-  color: var(--primary-color);
-  border-color: var(--primary-color);
-}
-
 /* battle format combobox dropdown styles */
 .format-combobox {
   cursor: pointer;

@@ -663,43 +663,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // preset format buttons
-  document.querySelectorAll(".preset-chip-btn").forEach((btn) => {
-    btn.addEventListener("click", function () {
-      const fmt = this.getAttribute("data-format");
-      const targetId = this.getAttribute("data-target");
-      if (!fmt || !targetId) return;
-
-      const target = document.getElementById(targetId);
-      if (target) {
-        if (target.tagName.toLowerCase() === "select") {
-          let found = false;
-          for (let i = 0; i < target.options.length; i++) {
-            if (target.options[i].value === fmt) {
-              target.selectedIndex = i;
-              found = true;
-              break;
-            }
-          }
-          const customInput = document.getElementById(targetId + "-custom");
-          if (!found) {
-            target.value = "__custom__";
-            if (customInput) {
-              customInput.style.display = "block";
-              customInput.value = fmt;
-            }
-          } else {
-            if (customInput) customInput.style.display = "none";
-          }
-          target.dispatchEvent(new Event("change"));
-        } else {
-          target.value = fmt;
-        }
-        showAlert("success", "Selected format: " + fmt);
-      }
-    });
-  });
-
   // server formats combobox population
   let cachedFormats = [];
 
