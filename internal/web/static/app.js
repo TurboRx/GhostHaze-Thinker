@@ -2381,11 +2381,22 @@ document.addEventListener("DOMContentLoaded", function () {
   const btnCancelChangePw = document.getElementById("btn-cancel-change-pw");
   const formChangePw = document.getElementById("form-change-password");
 
+  function resetPwFields() {
+    ["pw-current", "pw-new", "pw-confirm"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.type = "password";
+    });
+    document.querySelectorAll(".btn-toggle-pw").forEach((btn) => {
+      btn.textContent = "Show";
+    });
+  }
+
   function openChangePwModal() {
     if (!modalChangePw) return;
     document.getElementById("pw-current").value = "";
     document.getElementById("pw-new").value = "";
     document.getElementById("pw-confirm").value = "";
+    resetPwFields();
     modalChangePw.style.display = "flex";
     if (hamburger && mobileMenu) {
       hamburger.classList.remove("active");
@@ -2395,12 +2406,29 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function closeChangePwModal() {
     if (modalChangePw) modalChangePw.style.display = "none";
+    resetPwFields();
   }
 
   if (btnChangePwModal) btnChangePwModal.addEventListener("click", openChangePwModal);
   if (mobileBtnChangePw) mobileBtnChangePw.addEventListener("click", openChangePwModal);
   if (btnCloseChangePw) btnCloseChangePw.addEventListener("click", closeChangePwModal);
   if (btnCancelChangePw) btnCancelChangePw.addEventListener("click", closeChangePwModal);
+
+  // password visibility toggles
+  document.querySelectorAll(".btn-toggle-pw").forEach((btn) => {
+    btn.addEventListener("click", function () {
+      const targetId = this.getAttribute("data-target");
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      if (input.type === "password") {
+        input.type = "text";
+        this.textContent = "Hide";
+      } else {
+        input.type = "password";
+        this.textContent = "Show";
+      }
+    });
+  });
 
   if (modalChangePw) {
     modalChangePw.addEventListener("click", function (e) {

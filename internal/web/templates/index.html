@@ -1492,15 +1492,24 @@
       <form id="form-change-password" novalidate>
         <div class="form-group" style="margin-bottom:14px;">
           <label class="form-label" for="pw-current">Current Password</label>
-          <input type="password" id="pw-current" class="form-input" placeholder="Enter current admin password">
+          <div style="position:relative;display:flex;align-items:center;">
+            <input type="password" id="pw-current" class="form-input" style="padding-right:72px;" placeholder="Enter current admin password">
+            <button type="button" class="btn btn-secondary btn-sm btn-toggle-pw" data-target="pw-current" style="position:absolute;right:6px;padding:4px 10px;font-size:12px;">Show</button>
+          </div>
         </div>
         <div class="form-group" style="margin-bottom:14px;">
           <label class="form-label" for="pw-new">New Password</label>
-          <input type="password" id="pw-new" class="form-input" placeholder="Enter new admin password">
+          <div style="position:relative;display:flex;align-items:center;">
+            <input type="password" id="pw-new" class="form-input" style="padding-right:72px;" placeholder="Enter new admin password">
+            <button type="button" class="btn btn-secondary btn-sm btn-toggle-pw" data-target="pw-new" style="position:absolute;right:6px;padding:4px 10px;font-size:12px;">Show</button>
+          </div>
         </div>
         <div class="form-group" style="margin-bottom:18px;">
           <label class="form-label" for="pw-confirm">Confirm New Password</label>
-          <input type="password" id="pw-confirm" class="form-input" placeholder="Confirm new admin password">
+          <div style="position:relative;display:flex;align-items:center;">
+            <input type="password" id="pw-confirm" class="form-input" style="padding-right:72px;" placeholder="Confirm new admin password">
+            <button type="button" class="btn btn-secondary btn-sm btn-toggle-pw" data-target="pw-confirm" style="position:absolute;right:6px;padding:4px 10px;font-size:12px;">Show</button>
+          </div>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:10px;">
           <button type="button" class="btn btn-secondary" id="btn-cancel-change-pw">Cancel</button>
