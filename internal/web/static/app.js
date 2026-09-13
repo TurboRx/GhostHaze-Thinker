@@ -212,10 +212,18 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         }
 
-        // guest banner notice
+        // banner notice for bot connection state
         const guestBanner = document.getElementById("guest-notice-banner");
         if (guestBanner) {
-          guestBanner.style.display = (isConnected && !isStopped && data.is_guest) ? "block" : "none";
+          if (isStopped || !data.config_username) {
+            guestBanner.style.display = "block";
+            guestBanner.innerHTML = '<strong>Notice:</strong> Bot is not connected. Please add your bot login details in the <a href="javascript:void(0)" onclick="document.querySelector(\'[data-tab=\\\'config\\\']\').click();" style="color:var(--primary);text-decoration:underline;font-weight:600;">Configuration</a> tab or <a href="javascript:void(0)" onclick="document.querySelector(\'[data-tab=\\\'tools\\\']\').click();" style="color:var(--primary);text-decoration:underline;font-weight:600;">Bot Login Tool</a> to connect your bot to the server.';
+          } else if (isConnected && data.is_guest) {
+            guestBanner.style.display = "block";
+            guestBanner.innerHTML = '<strong>Notice:</strong> The bot is currently connected as an anonymous Guest. Pokémon Showdown requires a registered bot account (username &amp; password) to accept battle challenges and talk from cloud hosting. Please configure credentials in the <a href="javascript:void(0)" onclick="document.querySelector(\'[data-tab=\\\'config\\\']\').click();" style="color:var(--primary);text-decoration:underline;font-weight:600;">Configuration</a> tab or <a href="javascript:void(0)" onclick="document.querySelector(\'[data-tab=\\\'tools\\\']\').click();" style="color:var(--primary);text-decoration:underline;font-weight:600;">Bot Login Tool</a>.';
+          } else {
+            guestBanner.style.display = "none";
+          }
         }
 
         // overview cards
@@ -226,13 +234,13 @@ document.addEventListener("DOMContentLoaded", function () {
         const statBattles = document.getElementById("stat-battles");
 
         if (statConn) {
-          if (isStopped) statConn.textContent = "Stopped";
+          if (isStopped) statConn.textContent = "Not Connected";
           else if (isConnected) {
             if (data.is_guest) statConn.textContent = "Connected (Guest)";
             else if (data.logged_in) statConn.textContent = "Connected";
             else statConn.textContent = "Authenticating";
           }
-          else statConn.textContent = "Disconnected";
+          else statConn.textContent = "Not Connected";
         }
 
         if (statServer) {
@@ -240,7 +248,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (statUser) {
-          if (data.is_guest) {
+          if (isStopped || !data.config_username) {
+            statUser.textContent = data.config_username || "Not Configured";
+          } else if (data.is_guest) {
             statUser.innerHTML = escapeHTML(data.username || "Guest") + ' <span class="badge" style="background:rgba(245,158,11,0.2);color:#d97706;border:1px solid rgba(245,158,11,0.4);font-size:10px;padding:2px 6px;margin-left:4px;border-radius:4px;" title="Registered account required on Pokémon Showdown to accept challenges and battle">Guest</span>';
           } else {
             statUser.textContent = data.username || "Guest";
@@ -803,6 +813,52 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   initComboboxes();
+
+  // destination combobox component handler
+  function initDestinationCombobox() {
+    const wrapper = document.getElementById("combobox-send-type");
+    const btn = document.getElementById("btn-send-type");
+    const dropdown = document.getElementById("dropdown-send-type");
+    const input = document.getElementById("select-send-type");
+    const text = document.getElementById("text-send-type");
+    const targetInput = document.getElementById("input-send-target");
+    const targetLabel = document.getElementById("label-send-target");
+    if (!wrapper || !btn || !dropdown) return;
+
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      const isOpen = wrapper.classList.contains("open");
+      document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
+      if (!isOpen) {
+        wrapper.classList.add("open");
+      }
+    });
+
+    dropdown.querySelectorAll(".combobox-option").forEach((opt) => {
+      opt.addEventListener("click", function (e) {
+        e.stopPropagation();
+        const val = this.getAttribute("data-id");
+        const name = this.getAttribute("data-name");
+        if (input) input.value = val;
+        if (text) text.textContent = name;
+        dropdown.querySelectorAll(".combobox-option").forEach((o) => o.classList.remove("selected"));
+        this.classList.add("selected");
+        wrapper.classList.remove("open");
+
+        if (targetInput) {
+          if (val === "pm") {
+            targetInput.placeholder = "e.g. username";
+            if (targetLabel) targetLabel.textContent = "Trainer Username";
+          } else {
+            targetInput.placeholder = "e.g. lobby";
+            if (targetLabel) targetLabel.textContent = "Chatroom Name";
+          }
+        }
+      });
+    });
+  }
+
+  initDestinationCombobox();
 
   function fetchFormats() {
     fetch("/api/formats")

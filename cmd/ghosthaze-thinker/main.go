@@ -63,6 +63,13 @@ func main() {
 	processStartTime := time.Now()
 	bot := showdown.NewClient(*cfg.Config)
 
+	// do not start connection by default as guest; user must add bot login details first
+	hasCredentials := cfg.Username != "" && !strings.HasPrefix(strings.ToLower(cfg.Username), "guest")
+	if !hasCredentials {
+		bot.Stop()
+		logInfo("No bot login details configured. Bot is stopped and waiting for credentials in the control panel.")
+	}
+
 	// initialize native web control panel if enabled
 	var webServer *web.Server
 	if cfg.WebEnabled {
@@ -71,6 +78,9 @@ func main() {
 		if err != nil {
 			logWarn("Failed to initialize web control panel: %v", err)
 		} else {
+			if !hasCredentials {
+				webServer.AddLog("system", "Control Panel", "Bot is not connected: configure bot username and password in Configuration or Bot Login Tool to connect.")
+			}
 			go func() {
 				logInfo("Control panel active at http://%s:%d", cfg.WebHost, cfg.WebPort)
 				if err := webServer.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -244,7 +254,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	logInfo("Connecting to %s...", cfg.ServerURL)
+	if hasCredentials {
+		logInfo("Connecting to %s as %s...", cfg.ServerURL, cfg.Username)
+	} else {
+		logInfo("Bot is not connected: waiting for bot login details in control panel.")
+	}
 
 	go func() {
 		<-ctx.Done()

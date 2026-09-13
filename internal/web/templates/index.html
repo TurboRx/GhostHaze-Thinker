@@ -140,10 +140,10 @@
           <div class="stat-sub" id="stat-server">{{.ServerID}} ({{.ServerHost}}:{{.ServerPort}})</div>
         </div>
 
-        <!-- kpi card 2: identity -->
+        <!-- kpi card 2: username -->
         <div class="card stat-card">
           <div class="stat-header">
-            <span class="stat-label">Bot Identity</span>
+            <span class="stat-label">Bot Username</span>
             <div class="stat-icon">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -151,7 +151,7 @@
               </svg>
             </div>
           </div>
-          <div class="stat-value" id="stat-user">{{if .Username}}{{.Username}}{{else}}Guest{{end}}</div>
+          <div class="stat-value" id="stat-user">{{if .Username}}{{.Username}}{{else}}Not Configured{{end}}</div>
           <div class="stat-sub">Prefix: <code>{{.CommandChar}}</code> &bull; Avatar: {{if .Avatar}}{{.Avatar}}{{else}}default{{end}}</div>
         </div>
 
@@ -240,16 +240,32 @@
         </div>
         <form id="form-send-message">
           <div class="form-row">
-            <div class="form-group" style="max-width: 160px;">
-              <label class="form-label" for="select-send-type">Destination</label>
-              <select id="select-send-type" class="form-select">
-                <option value="room">Chatroom</option>
-                <option value="pm">PM (User)</option>
-              </select>
+            <div class="form-group" style="min-width: 170px;">
+              <label class="form-label">Destination</label>
+              <!-- custom combobox component for destination -->
+              <div class="custom-combobox" id="combobox-send-type">
+                <input type="hidden" id="select-send-type" value="room">
+                <button type="button" class="combobox-trigger" id="btn-send-type">
+                  <span class="combobox-selected-text" id="text-send-type">Chatroom</span>
+                  <svg class="combobox-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="combobox-dropdown" id="dropdown-send-type">
+                  <div class="combobox-options-list">
+                    <div class="combobox-option selected" data-id="room" data-name="Chatroom">
+                      <span>Chatroom</span>
+                    </div>
+                    <div class="combobox-option" data-id="pm" data-name="PM (User)">
+                      <span>PM (User)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="form-group">
-              <label class="form-label" for="input-send-target">Chatroom Name or Username</label>
-              <input type="text" id="input-send-target" class="form-input" placeholder="e.g. lobby or username" required>
+              <label class="form-label" id="label-send-target" for="input-send-target">Chatroom Name or Username</label>
+              <input type="text" id="input-send-target" class="form-input" placeholder="e.g. lobby" required>
             </div>
           </div>
           <div class="form-group" style="margin-top: 14px;">
@@ -332,7 +348,7 @@
           <div class="form-group" style="margin-bottom:20px;">
             <label class="form-label" for="cfg-rooms">Auto-Join Chatrooms (comma-separated, leave blank for none)</label>
             <input type="text" id="cfg-rooms" class="form-input" value="{{.ConfigRooms}}" placeholder="e.g. lobby, myroom">
-            <span class="form-hint">Zero hardcoded defaults. Add your preferred chatrooms here.</span>
+            <span class="form-hint">Add your preferred chatrooms here.</span>
           </div>
 
           <h3 class="section-subtitle">Battle Options</h3>

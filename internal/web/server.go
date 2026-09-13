@@ -607,8 +607,8 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"connected":                 s.client.IsConnected(),
 		"stopped":                   s.client.IsStopped(),
 		"logged_in":                 s.client.IsLoggedIn(),
-		"is_guest":                  s.client.IsGuest(),
-		"username":                  s.client.Username(),
+		"is_guest":                  s.client.IsConnected() && s.client.IsGuest(),
+		"username":                  func() string { if s.client.IsConnected() { return s.client.Username() } else { return cfg.Username } }(),
 		"config_username":           cfg.Username,
 		"server_id":                 cfg.ServerID,
 		"server_host":               cfg.ServerHost,
@@ -1152,9 +1152,11 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if req.Reconnect {
 		s.AddLog("system", "Control Panel", "Reconnecting bot with updated configuration...")
+		s.client.Start()
 		s.client.Reconnect()
 	} else if req.Username != "" && req.Password != "" && !strings.HasPrefix(strings.ToLower(req.Username), "guest") {
 		s.AddLog("system", "Control Panel", fmt.Sprintf("Initiating login for '%s' with updated credentials...", req.Username))
+		s.client.Start()
 		_ = s.client.Login(req.Username, req.Password)
 	}
 
@@ -1193,6 +1195,7 @@ func (s *Server) handleAPIBotLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.client.Start()
 	if err := s.client.Login(req.Username, req.Password); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1255,19 +1258,28 @@ func (s *Server) handleAPIBattlesLeave(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "left battle room"})
 }
 
-// handleapibotreconnect triggers a reconnection
+// handleapibotreconnect triggers a reconnection or starts a stopped bot
 func (s *Server) handleAPIBotReconnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	s.AddLog("system", "Control Panel", "Manual reconnect triggered")
+	cfg := s.client.ClientConfig()
+	if strings.TrimSpace(cfg.Username) == "" || strings.HasPrefix(strings.ToLower(strings.TrimSpace(cfg.Username)), "guest") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Please configure your bot username and password in Configuration or Bot Login Tool first before connecting.",
+		})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", "Bot connection initiated")
+	s.client.Start()
 	s.client.Reconnect()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
 		"stopped": false,
-		"message": "bot reconnecting",
+		"message": "bot connecting",
 	})
 }
 
