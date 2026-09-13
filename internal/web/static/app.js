@@ -288,7 +288,10 @@ document.addEventListener("DOMContentLoaded", function () {
     if (portEl) portEl.value = data.server_port || 443;
     if (idEl) idEl.value = data.server_id || "showdown";
     if (sslEl) sslEl.checked = data.server_ssl !== false;
-    if (userEl) userEl.value = data.username || "";
+    if (userEl) {
+      const u = data.config_username || data.username || "";
+      userEl.value = u.toLowerCase().startsWith("guest") ? "" : u;
+    }
     if (avatarEl) avatarEl.value = data.avatar || "";
     if (cmdEl) cmdEl.value = data.command_char || ".";
     if (roomsEl) roomsEl.value = data.config_rooms ? data.config_rooms.join(", ") : "";
@@ -1100,7 +1103,10 @@ document.addEventListener("DOMContentLoaded", function () {
     const port = parseInt(document.getElementById("cfg-server-port").value.trim(), 10) || 443;
     const id = document.getElementById("cfg-server-id").value.trim();
     const ssl = document.getElementById("cfg-server-ssl").checked;
-    const user = document.getElementById("cfg-username").value.trim();
+    let user = document.getElementById("cfg-username").value.trim();
+    if (user.toLowerCase().startsWith("guest")) {
+      user = "";
+    }
     const pass = document.getElementById("cfg-password").value;
     const avatar = document.getElementById("cfg-avatar").value.trim();
     const cmdChar = document.getElementById("cfg-command-char") ? document.getElementById("cfg-command-char").value.trim() : ".";

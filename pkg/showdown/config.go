@@ -12,7 +12,7 @@ const (
 	DefaultServerPort     = 443
 	DefaultServerURL      = "wss://sim3.psim.us/showdown/websocket"
 	DefaultLoginServer    = "play.pokemonshowdown.com"
-	DefaultLoginURL       = "https://play.pokemonshowdown.com/api/login"
+	DefaultLoginURL       = "https://play.pokemonshowdown.com/action.php"
 	DefaultReconnectDelay = 10 * time.Second
 	DefaultCommandChar    = "."
 	DefaultThrottleDelay  = 100 * time.Millisecond
@@ -87,7 +87,7 @@ func (c *Config) ApplyDefaults() {
 		if c.ServerID != "" && c.ServerID != DefaultServerID {
 			c.LoginURL = "https://" + loginHost + "/~~" + c.ServerID + "/action.php"
 		} else {
-			c.LoginURL = "https://" + loginHost + "/api/login"
+			c.LoginURL = "https://" + loginHost + "/action.php"
 		}
 	}
 

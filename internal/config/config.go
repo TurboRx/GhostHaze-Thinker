@@ -29,7 +29,7 @@ func Load() (*Config, error) {
 		ServerURL:      strings.TrimSpace(os.Getenv("PS_SERVER_URL")),
 		LoginServer:    strings.TrimSpace(os.Getenv("PS_LOGIN_SERVER")),
 		LoginURL:       strings.TrimSpace(os.Getenv("PS_LOGIN_URL")),
-		Username:       strings.TrimSpace(os.Getenv("PS_USERNAME")),
+		Username:       cleanUsernameConfig(os.Getenv("PS_USERNAME")),
 		Password:       os.Getenv("PS_PASSWORD"),
 		Avatar:         strings.TrimSpace(os.Getenv("PS_AVATAR")),
 		CommandChar:    getEnv("PS_COMMAND_CHAR", showdown.DefaultCommandChar),
@@ -218,7 +218,7 @@ func SaveEnvFile(filename string, cfg *showdown.Config) error {
 	if cfg.ServerURL != "" {
 		sb.WriteString(fmt.Sprintf("PS_SERVER_URL=%s\n", cfg.ServerURL))
 	}
-	sb.WriteString(fmt.Sprintf("PS_USERNAME=%s\n", cfg.Username))
+	sb.WriteString(fmt.Sprintf("PS_USERNAME=%s\n", cleanUsernameConfig(cfg.Username)))
 	sb.WriteString(fmt.Sprintf("PS_PASSWORD=%s\n", cfg.Password))
 	sb.WriteString(fmt.Sprintf("PS_AVATAR=%s\n", cfg.Avatar))
 	sb.WriteString(fmt.Sprintf("PS_COMMAND_CHAR=%s\n", cfg.CommandChar))
@@ -239,4 +239,13 @@ func SaveEnvFile(filename string, cfg *showdown.Config) error {
 	sb.WriteString(fmt.Sprintf("WEB_ADMIN_PASSWORD=%s\n", pass))
 
 	return os.WriteFile(filename, []byte(sb.String()), 0600)
+}
+
+// cleanusernameconfig strips leading guest usernames to prevent invalid assertion attempts on showdown
+func cleanUsernameConfig(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(strings.ToLower(trimmed), "guest") {
+		return ""
+	}
+	return trimmed
 }

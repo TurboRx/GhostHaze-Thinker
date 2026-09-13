@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -205,6 +206,12 @@ func (c *Client) IsLoggedIn() bool {
 	c.stateMu.RLock()
 	defer c.stateMu.RUnlock()
 	return c.loggedIn
+}
+
+func (c *Client) IsGuest() bool {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return !c.loggedIn
 }
 
 func (c *Client) Send(message string) error {
@@ -652,6 +659,18 @@ func (c *Client) AcceptChallenge(user string) error {
 	if cleanUser == "" {
 		return errors.New("cannot accept challenge: username is empty")
 	}
+
+	c.stateMu.RLock()
+	isGuest := !c.loggedIn
+	challstr := c.lastChallstr
+	c.stateMu.RUnlock()
+
+	// if bot is still an un-named guest on showdown, authenticate immediately before accepting
+	if isGuest && challstr != "" {
+		c.authenticate(challstr)
+		time.Sleep(300 * time.Millisecond)
+	}
+
 	c.battleMu.RLock()
 	team := c.battleTeam
 	c.battleMu.RUnlock()
@@ -679,6 +698,18 @@ func (c *Client) ChallengeUser(user, format string) error {
 	if cleanFmt == "" {
 		cleanFmt = "gen9randombattle"
 	}
+
+	c.stateMu.RLock()
+	isGuest := !c.loggedIn
+	challstr := c.lastChallstr
+	c.stateMu.RUnlock()
+
+	// if bot is still an un-named guest on showdown, authenticate immediately before challenging
+	if isGuest && challstr != "" {
+		c.authenticate(challstr)
+		time.Sleep(300 * time.Millisecond)
+	}
+
 	c.battleMu.RLock()
 	team := c.battleTeam
 	c.battleMu.RUnlock()
@@ -1376,7 +1407,15 @@ func (c *Client) handleRoomRename(oldRoom, newRoom, title string) {
 }
 
 func (c *Client) authenticate(challstr string) {
-	if c.config.Username == "" {
+	username := strings.TrimSpace(c.config.Username)
+	isGuestDefault := username == "" || (strings.HasPrefix(strings.ToLower(username), "guest") && c.config.Password == "")
+	if isGuestDefault && (c.config.LoginURL == "" || strings.Contains(c.config.LoginURL, "pokemonshowdown.com")) {
+		// on pokemon showdown, unnamed guests (guest1234) cannot battle or chat.
+		// automatically assign an unregistered bot name so the bot can accept challenges and battle.
+		username = fmt.Sprintf("TurBOOT%04d", rand.Intn(9000)+1000)
+	}
+
+	if username == "" {
 		return
 	}
 
@@ -1384,13 +1423,19 @@ func (c *Client) authenticate(challstr string) {
 	var err error
 
 	if c.config.Password == "" {
-		// unregistered account assertion (GET request)
+		// unregistered account assertion (get request)
 		params := url.Values{}
 		params.Set("act", "getassertion")
-		params.Set("userid", ToID(c.config.Username))
+		params.Set("userid", ToID(username))
 		params.Set("challstr", challstr)
 
 		reqURL := c.config.LoginURL
+		if reqURL == "" {
+			reqURL = DefaultLoginURL
+		}
+		if strings.HasSuffix(reqURL, "/api/login") {
+			reqURL = strings.TrimSuffix(reqURL, "/api/login") + "/action.php"
+		}
 		if strings.Contains(reqURL, "?") {
 			reqURL += "&" + params.Encode()
 		} else {
@@ -1399,14 +1444,18 @@ func (c *Client) authenticate(challstr string) {
 
 		req, err = http.NewRequest("GET", reqURL, nil)
 	} else {
-		// registered account login (POST request)
+		// registered account login (post request)
 		form := url.Values{}
 		form.Set("act", "login")
-		form.Set("name", ToID(c.config.Username))
+		form.Set("name", ToID(username))
 		form.Set("pass", c.config.Password)
 		form.Set("challstr", challstr)
 
-		req, err = http.NewRequest("POST", c.config.LoginURL, strings.NewReader(form.Encode()))
+		loginURL := c.config.LoginURL
+		if loginURL == "" {
+			loginURL = DefaultLoginURL
+		}
+		req, err = http.NewRequest("POST", loginURL, strings.NewReader(form.Encode()))
 		if err == nil {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -1416,6 +1465,9 @@ func (c *Client) authenticate(challstr string) {
 		log.Printf("Failed to create login request: %v", err)
 		return
 	}
+
+	// set browser user-agent header to avoid waf blocking
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	resp, err := c.config.HTTPClient.Do(req)
 	if err != nil {
@@ -1434,7 +1486,7 @@ func (c *Client) authenticate(challstr string) {
 	var assertion string
 	if c.config.Password == "" {
 		if bodyStr == ";" {
-			log.Printf("Login failed — nickname '%s' is registered but no password was provided", c.config.Username)
+			log.Printf("Login failed — nickname '%s' is registered but no password was provided", username)
 			return
 		}
 		if strings.Contains(strings.ToLower(bodyStr), "heavy load") {
@@ -1445,12 +1497,16 @@ func (c *Client) authenticate(challstr string) {
 			log.Printf("Login assertion rejected: %s", bodyStr[2:])
 			return
 		}
+		if strings.HasPrefix(bodyStr, "]{") || strings.HasPrefix(bodyStr, "{") {
+			log.Printf("Login assertion error from server: %s", bodyStr)
+			return
+		}
 		assertion = strings.TrimSpace(bodyStr)
 	} else {
 		cleanBody := bytes.TrimPrefix(bodyBytes, []byte("]"))
 		lowerBody := strings.ToLower(string(cleanBody))
 		if strings.Contains(lowerBody, "wrong password") {
-			log.Printf("Login failed — wrong password for user '%s'", c.config.Username)
+			log.Printf("Login failed — wrong password for user '%s'", username)
 			return
 		}
 		if strings.Contains(lowerBody, "heavy load") {
@@ -1474,7 +1530,7 @@ func (c *Client) authenticate(challstr string) {
 		return
 	}
 
-	_ = c.Send(fmt.Sprintf("|/trn %s,0,%s", c.config.Username, assertion))
+	_ = c.Send(fmt.Sprintf("|/trn %s,0,%s", username, assertion))
 }
 
 func (c *Client) onPostLogin() {
