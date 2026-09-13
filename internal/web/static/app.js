@@ -565,6 +565,11 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // toid normalizes string identifiers
+  function toId(text) {
+    return (text || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  }
+
   // teams vault handlers
   function fetchTeams() {
     fetch("/api/teams")
@@ -585,7 +590,14 @@ document.addEventListener("DOMContentLoaded", function () {
     let html = '<div class="teams-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:16px;">';
     teams.forEach((t) => {
       const pokes = t.pokemon || [];
-      const pokeBadges = pokes.map((p) => `<span class="badge" style="background:var(--muted);color:var(--text-main);border:1px solid var(--border);font-size:11px;padding:3px 6px;border-radius:4px;">${escapeHTML(p)}</span>`).join(" ");
+      const pokeBadges = pokes.map((p) => {
+        const pokeId = toId(p);
+        const spriteUrl = "https://play.pokemonshowdown.com/sprites/gen5/" + pokeId + ".png";
+        return `<span class="poke-icon-badge">
+          <img src="${spriteUrl}" alt="" width="26" height="26" onerror="this.style.display='none'">
+          <span>${escapeHTML(p)}</span>
+        </span>`;
+      }).join(" ");
 
       html += `<div class="card team-card" style="padding:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
@@ -598,7 +610,13 @@ document.addEventListener("DOMContentLoaded", function () {
               <input type="checkbox" class="team-toggle-active" data-id="${escapeHTML(t.id)}" ${t.active ? "checked" : ""}>
               <span class="slider"></span>
             </label>
-            <button type="button" class="btn btn-secondary btn-sm btn-delete-team" data-id="${escapeHTML(t.id)}" title="Delete Team" style="padding:4px 8px;color:var(--destructive);">&times;</button>
+            <button type="button" class="btn btn-danger btn-sm btn-delete-team" data-id="${escapeHTML(t.id)}" title="Delete Team" style="display:inline-flex;align-items:center;gap:4px;">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              Delete
+            </button>
           </div>
         </div>
 
@@ -653,6 +671,10 @@ document.addEventListener("DOMContentLoaded", function () {
       teamFormContainer.style.display = isVisible ? "none" : "block";
       if (!isVisible) {
         document.getElementById("input-team-name")?.focus();
+        const teamInst = comboboxInstances.find((ci) => ci.wrapperId === "combobox-team-format");
+        if (teamInst) {
+          setComboboxSelection("gen9ou", "[Gen 9] OU", teamInst);
+        }
       }
     });
   }
@@ -666,9 +688,10 @@ document.addEventListener("DOMContentLoaded", function () {
   if (formBattleTeam) {
     formBattleTeam.addEventListener("submit", function (e) {
       e.preventDefault();
+      const formatVal = getSelectedFormat("input-team-format", "input-team-format-custom");
       const payload = {
         name: document.getElementById("input-team-name")?.value.trim() || "",
-        format: document.getElementById("input-team-format")?.value.trim() || "",
+        format: formatVal || "",
         team_raw: document.getElementById("input-team-raw")?.value.trim() || "",
         active: document.getElementById("switch-team-active")?.checked ?? true,
       };
@@ -724,7 +747,7 @@ document.addEventListener("DOMContentLoaded", function () {
           </label>
         </td>
         <td style="text-align:right;">
-          <button type="button" class="btn btn-secondary btn-sm btn-delete-command" data-name="${escapeHTML(c.name)}" title="Delete Command" style="color:var(--destructive);">&times;</button>
+          <button type="button" class="btn btn-danger btn-sm btn-delete-command" data-name="${escapeHTML(c.name)}" title="Delete Command">Delete</button>
         </td>
       </tr>`;
     });
@@ -848,7 +871,7 @@ document.addEventListener("DOMContentLoaded", function () {
         </td>
         <td style="text-align:right;white-space:nowrap;">
           <button type="button" class="btn btn-secondary btn-sm btn-trigger-timer" data-id="${escapeHTML(t.id)}" style="margin-right:6px;" title="Send Now">Send Now</button>
-          <button type="button" class="btn btn-secondary btn-sm btn-delete-timer" data-id="${escapeHTML(t.id)}" title="Delete Timer" style="color:var(--destructive);">&times;</button>
+          <button type="button" class="btn btn-danger btn-sm btn-delete-timer" data-id="${escapeHTML(t.id)}" title="Delete Timer">Delete</button>
         </td>
       </tr>`;
     });
@@ -1101,7 +1124,7 @@ document.addEventListener("DOMContentLoaded", function () {
           </label>
         </td>
         <td style="text-align:right;">
-          <button type="button" class="btn btn-secondary btn-sm btn-delete-jp" data-id="${escapeHTML(p.id)}" title="Delete Greeting" style="color:var(--destructive);">&times;</button>
+          <button type="button" class="btn btn-danger btn-sm btn-delete-jp" data-id="${escapeHTML(p.id)}" title="Delete Greeting">Delete</button>
         </td>
       </tr>`;
     });
@@ -1472,10 +1495,19 @@ document.addEventListener("DOMContentLoaded", function () {
       dropdownId: "dropdown-quick-challenge-format",
       customId: "input-quick-challenge-format-custom",
     },
+    {
+      wrapperId: "combobox-team-format",
+      btnId: "btn-team-format",
+      textId: "text-team-format",
+      inputId: "input-team-format",
+      dropdownId: "dropdown-team-format",
+      customId: "input-team-format-custom",
+    },
   ];
 
-  function setComboboxSelection(id, name) {
-    comboboxInstances.forEach((inst) => {
+  function setComboboxSelection(id, name, targetInst) {
+    const list = targetInst ? [targetInst] : comboboxInstances;
+    list.forEach((inst) => {
       const input = document.getElementById(inst.inputId);
       const text = document.getElementById(inst.textId);
       const custom = document.getElementById(inst.customId);
@@ -1553,7 +1585,7 @@ document.addEventListener("DOMContentLoaded", function () {
         e.stopPropagation();
         const id = this.getAttribute("data-id");
         const name = this.getAttribute("data-name");
-        setComboboxSelection(id, name);
+        setComboboxSelection(id, name, inst);
         const wrapper = document.getElementById(inst.wrapperId);
         if (wrapper) wrapper.classList.remove("open");
       });

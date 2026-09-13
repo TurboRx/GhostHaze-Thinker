@@ -870,8 +870,24 @@
                 <input type="text" id="input-team-name" class="form-input" placeholder="e.g. Gen 9 OU Balance">
               </div>
               <div class="form-group" style="flex:1;">
-                <label class="form-label" for="input-team-format">Format (Tier)</label>
-                <input type="text" id="input-team-format" class="form-input" placeholder="e.g. gen9ou or gen9monotype">
+                <label class="form-label" for="btn-team-format">Format (Tier)</label>
+                <!-- custom format combobox for battle team -->
+                <div class="custom-combobox" id="combobox-team-format">
+                  <input type="hidden" id="input-team-format" value="gen9ou">
+                  <button type="button" class="combobox-trigger" id="btn-team-format">
+                    <span class="combobox-selected-text" id="text-team-format">[Gen 9] OU</span>
+                    <svg class="combobox-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </button>
+                  <div class="combobox-dropdown" id="dropdown-team-format">
+                    <div class="combobox-search-wrap">
+                      <input type="text" class="combobox-search-input" placeholder="Filter format (e.g. ou, random)...">
+                    </div>
+                    <div class="combobox-options-list"></div>
+                  </div>
+                  <input type="text" id="input-team-format-custom" class="form-input custom-format-input" placeholder="Enter custom tier (e.g. gen9anythinggoes)" style="display:none;margin-top:8px;">
+                </div>
               </div>
             </div>
 
