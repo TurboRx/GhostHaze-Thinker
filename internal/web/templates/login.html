@@ -86,11 +86,11 @@
 
       <div id="login-alert" class="login-alert"></div>
 
-      <form id="form-login">
+      <form id="form-login" novalidate>
         <div class="form-group" style="margin-bottom: 20px;">
           <label class="form-label" for="login-password">Admin Password</label>
           <div style="display: flex; gap: 8px;">
-            <input type="password" id="login-password" class="form-input" placeholder="Enter control panel password" required autofocus autocomplete="current-password">
+            <input type="password" id="login-password" class="form-input" placeholder="Enter control panel password" autofocus autocomplete="current-password">
             <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-pw" style="white-space: nowrap;">Show</button>
           </div>
           <span class="form-hint">Mandatory security enabled. Default password is <code>admin</code>.</span>
@@ -131,6 +131,14 @@
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const pw = passInput.value.trim();
+      if (!pw) {
+        alertBox.className = "login-alert error";
+        alertBox.textContent = "Please enter your admin password";
+        passInput.focus();
+        return;
+      }
+
       alertBox.className = "login-alert";
       alertBox.textContent = "";
       submitBtn.disabled = true;

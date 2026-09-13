@@ -94,6 +94,14 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     if (target === "commands") {
       fetchCommands();
+      fetchAliases();
+    }
+    if (target === "rooms") {
+      fetchBotStatus();
+      fetchSeenUsers();
+    }
+    if (target === "admin") {
+      fetchAdminFiles();
     }
 
     if (hamburger && mobileMenu) {
@@ -389,7 +397,11 @@ document.addEventListener("DOMContentLoaded", function () {
     modalForm.addEventListener("submit", function (e) {
       e.preventDefault();
       const msg = modalInputMsg ? modalInputMsg.value.trim() : "";
-      if (!msg || !activeModalTarget) return;
+      if (!msg) {
+        showAlert("error", "Message content cannot be empty");
+        return;
+      }
+      if (!activeModalTarget) return;
 
       postJSON("/api/send", { target: activeModalTarget, message: msg, is_pm: false }, function (err) {
         if (err) {
@@ -1351,8 +1363,11 @@ document.addEventListener("DOMContentLoaded", function () {
     joinForm.addEventListener("submit", function (e) {
       e.preventDefault();
       const input = document.getElementById("input-join-room");
-      const room = input.value.trim();
-      if (!room) return;
+      const room = input ? input.value.trim() : "";
+      if (!room) {
+        showAlert("error", "Please enter a chatroom name to join");
+        return;
+      }
 
       postJSON("/api/rooms/join", { room: room }, function (err) {
         if (err) {
@@ -1372,8 +1387,11 @@ document.addEventListener("DOMContentLoaded", function () {
     leaveDirectForm.addEventListener("submit", function (e) {
       e.preventDefault();
       const input = document.getElementById("input-leave-room-direct");
-      const room = input.value.trim();
-      if (!room) return;
+      const room = input ? input.value.trim() : "";
+      if (!room) {
+        showAlert("error", "Please enter a chatroom name to leave");
+        return;
+      }
       leaveRoom(room);
       input.value = "";
     });
@@ -1753,9 +1771,6 @@ document.addEventListener("DOMContentLoaded", function () {
   // initialize moderation action combobox
   initSimpleCombobox("combobox-mod-action", "btn-mod-action", "dropdown-mod-action", "select-mod-action", "text-mod-action");
 
-  // initialize ladder matchmaking format combobox
-  initInputCombobox("combobox-ladder-format", "input-ladder-format", "btn-ladder-format-toggle", "dropdown-ladder-format");
-
   // initialize timer room combobox
   initInputCombobox("combobox-timer-room", "input-timer-room", "btn-timer-room-toggle", "dropdown-timer-room");
 
@@ -1766,6 +1781,86 @@ document.addEventListener("DOMContentLoaded", function () {
   updateRoomComboboxOptions("dropdown-timer-room", "input-timer-room", ["lobby"], false);
   updateRoomComboboxOptions("dropdown-jp-room", "input-jp-room", ["lobby"], true);
 
+  // typeable matchmaking format with server-fetched format chips
+  function renderFormatChips(formats) {
+    const container = document.getElementById("server-format-chips");
+    if (!container || !Array.isArray(formats) || formats.length === 0) return;
+
+    const input = document.getElementById("input-ladder-format");
+    const currentTiers = input ? input.value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) : [];
+
+    const popularKeys = ["gen9randombattle", "gen9ou", "gen9ubers", "gen9uu", "gen9ru", "gen9nu", "gen9monotype", "gen9doublesou", "gen9vgc2024"];
+    const seen = new Set();
+    const displayList = [];
+
+    popularKeys.forEach((key) => {
+      const match = formats.find((f) => (f.id || f.ID || "").toLowerCase() === key);
+      if (match) {
+        displayList.push(match);
+        seen.add(key);
+      }
+    });
+
+    formats.forEach((f) => {
+      const id = (f.id || f.ID || "").toLowerCase();
+      if (!seen.has(id) && displayList.length < 20) {
+        displayList.push(f);
+        seen.add(id);
+      }
+    });
+
+    let html = "";
+    displayList.forEach((f) => {
+      const id = f.id || f.ID;
+      const name = f.name || f.Name || id;
+      const isActive = currentTiers.includes(id.toLowerCase());
+      html += `<span class="format-chip${isActive ? " active" : ""}" data-tier="${escapeHTML(id)}" title="${escapeHTML(name)}">${escapeHTML(id)}</span>`;
+    });
+    container.innerHTML = html;
+
+    container.querySelectorAll(".format-chip").forEach((chip) => {
+      chip.addEventListener("click", function () {
+        const tier = this.getAttribute("data-tier");
+        toggleFormatTier(tier);
+      });
+    });
+  }
+
+  function toggleFormatTier(tier) {
+    const input = document.getElementById("input-ladder-format");
+    if (!input) return;
+    let tiers = input.value.split(",").map((s) => s.trim()).filter(Boolean);
+    const lowerTier = tier.toLowerCase();
+    const existingIdx = tiers.findIndex((t) => t.toLowerCase() === lowerTier);
+    if (existingIdx >= 0) {
+      tiers.splice(existingIdx, 1);
+    } else {
+      tiers.push(tier);
+    }
+    input.value = tiers.join(", ");
+    syncFormatChips();
+  }
+
+  function syncFormatChips() {
+    const input = document.getElementById("input-ladder-format");
+    const container = document.getElementById("server-format-chips");
+    if (!input || !container) return;
+    const currentTiers = input.value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    container.querySelectorAll(".format-chip").forEach((chip) => {
+      const tier = (chip.getAttribute("data-tier") || "").toLowerCase();
+      if (currentTiers.includes(tier)) {
+        chip.classList.add("active");
+      } else {
+        chip.classList.remove("active");
+      }
+    });
+  }
+
+  const ladderFormatInput = document.getElementById("input-ladder-format");
+  if (ladderFormatInput) {
+    ladderFormatInput.addEventListener("input", syncFormatChips);
+  }
+
   function fetchFormats() {
     fetch("/api/formats")
       .then((res) => res.json())
@@ -1773,6 +1868,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (Array.isArray(data) && data.length > 0) {
           cachedFormats = data;
           populateCustomComboboxes(cachedFormats);
+          renderFormatChips(cachedFormats);
         }
       })
       .catch(() => {});
@@ -1937,7 +2033,10 @@ document.addEventListener("DOMContentLoaded", function () {
     avatarForm.addEventListener("submit", function (e) {
       e.preventDefault();
       const av = document.getElementById("input-quick-avatar").value.trim();
-      if (!av) return;
+      if (!av) {
+        showAlert("error", "Avatar ID cannot be empty");
+        return;
+      }
       postJSON("/api/bot/avatar", { avatar: av }, function (err) {
         if (err) showAlert("error", "Avatar change failed: " + err);
         else {
@@ -2082,6 +2181,10 @@ document.addEventListener("DOMContentLoaded", function () {
   // save configuration helper
   function saveBotConfig(reconnect) {
     const host = document.getElementById("cfg-server-host").value.trim();
+    if (!host) {
+      showAlert("error", "Server host cannot be empty");
+      return;
+    }
     const port = parseInt(document.getElementById("cfg-server-port").value.trim(), 10) || 443;
     const id = document.getElementById("cfg-server-id").value.trim();
     const ssl = document.getElementById("cfg-server-ssl").checked;
@@ -2180,6 +2283,510 @@ document.addEventListener("DOMContentLoaded", function () {
       .replace(/'/g, "&#039;");
   }
 
+  // file size formatter helper
+  function formatFileSize(bytes) {
+    if (!bytes || bytes <= 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  }
+
+  // timestamp formatter helper
+  function formatDate(isoStr) {
+    if (!isoStr || isoStr.startsWith("0001")) return "-";
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    return d.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  // auto-detect server tool handler
+  const btnAutoDetectServer = document.getElementById("btn-auto-detect-server");
+  if (btnAutoDetectServer) {
+    btnAutoDetectServer.addEventListener("click", function () {
+      const input = document.getElementById("input-auto-detect-server");
+      const url = input ? input.value.trim() : "";
+      if (!url) {
+        showAlert("error", "Please enter a server URL or ID to auto-detect");
+        return;
+      }
+
+      btnAutoDetectServer.disabled = true;
+      postJSON("/api/tools/get-server", { url: url }, function (err, data) {
+        btnAutoDetectServer.disabled = false;
+        if (err) {
+          showAlert("error", "Auto-detect error: " + err);
+        } else {
+          document.getElementById("cfg-server-host").value = data.host || "";
+          document.getElementById("cfg-server-port").value = data.port || 443;
+          document.getElementById("cfg-server-id").value = data.id || "";
+          document.getElementById("cfg-server-ssl").checked = !!data.ssl;
+          showAlert("success", "Auto-detected server details loaded into configuration!");
+        }
+      });
+    });
+  }
+
+  // change admin password modal handlers
+  const modalChangePw = document.getElementById("modal-change-password");
+  const btnChangePwModal = document.getElementById("btn-change-password-modal");
+  const mobileBtnChangePw = document.getElementById("mobile-btn-change-password");
+  const btnCloseChangePw = document.getElementById("btn-close-change-pw");
+  const btnCancelChangePw = document.getElementById("btn-cancel-change-pw");
+  const formChangePw = document.getElementById("form-change-password");
+
+  function openChangePwModal() {
+    if (!modalChangePw) return;
+    document.getElementById("pw-current").value = "";
+    document.getElementById("pw-new").value = "";
+    document.getElementById("pw-confirm").value = "";
+    modalChangePw.style.display = "flex";
+    if (hamburger && mobileMenu) {
+      hamburger.classList.remove("active");
+      mobileMenu.classList.remove("open");
+    }
+  }
+
+  function closeChangePwModal() {
+    if (modalChangePw) modalChangePw.style.display = "none";
+  }
+
+  if (btnChangePwModal) btnChangePwModal.addEventListener("click", openChangePwModal);
+  if (mobileBtnChangePw) mobileBtnChangePw.addEventListener("click", openChangePwModal);
+  if (btnCloseChangePw) btnCloseChangePw.addEventListener("click", closeChangePwModal);
+  if (btnCancelChangePw) btnCancelChangePw.addEventListener("click", closeChangePwModal);
+
+  if (modalChangePw) {
+    modalChangePw.addEventListener("click", function (e) {
+      if (e.target === modalChangePw) closeChangePwModal();
+    });
+  }
+
+  if (formChangePw) {
+    formChangePw.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const current = document.getElementById("pw-current").value;
+      const next = document.getElementById("pw-new").value;
+      const confirm = document.getElementById("pw-confirm").value;
+
+      if (!current || !next || !confirm) {
+        showAlert("error", "Please fill in all password fields");
+        return;
+      }
+      if (next !== confirm) {
+        showAlert("error", "New passwords do not match");
+        return;
+      }
+
+      postJSON("/api/auth/change-password", { old_password: current, new_password: next }, function (err) {
+        if (err) {
+          showAlert("error", "Failed to change password: " + err);
+        } else {
+          showAlert("success", "Admin password updated successfully!");
+          closeChangePwModal();
+        }
+      });
+    });
+  }
+
+  // bot status and anti-afk handlers
+  function fetchBotStatus() {
+    fetch("/api/bot/status")
+      .then((r) => r.json())
+      .then((data) => {
+        const input = document.getElementById("input-bot-status");
+        if (input && data.status) {
+          input.value = data.status;
+        }
+      })
+      .catch(() => {});
+
+    fetch("/api/bot/anti-afk")
+      .then((r) => r.json())
+      .then((data) => {
+        const sw = document.getElementById("switch-anti-afk");
+        if (sw) sw.checked = !!data.anti_afk;
+      })
+      .catch(() => {});
+  }
+
+  const formBotStatus = document.getElementById("form-bot-status");
+  if (formBotStatus) {
+    formBotStatus.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const statusVal = document.getElementById("input-bot-status").value.trim();
+      postJSON("/api/bot/status", { status: statusVal }, function (err) {
+        if (err) showAlert("error", "Failed to set status: " + err);
+        else showAlert("success", "Status message updated!");
+      });
+    });
+  }
+
+  const switchAntiAfk = document.getElementById("switch-anti-afk");
+  if (switchAntiAfk) {
+    switchAntiAfk.addEventListener("change", function () {
+      postJSON("/api/bot/anti-afk", { enabled: this.checked }, function (err) {
+        if (err) showAlert("error", "Failed to update anti-afk: " + err);
+        else showAlert("success", "Anti-AFK keepalive " + (switchAntiAfk.checked ? "enabled" : "disabled"));
+      });
+    });
+  }
+
+  // chatrooms quick join official and public
+  const btnJoinOfficial = document.getElementById("btn-join-official-rooms");
+  if (btnJoinOfficial) {
+    btnJoinOfficial.addEventListener("click", function () {
+      postJSON("/api/rooms/join-official", {}, function (err, data) {
+        if (err) showAlert("error", "Failed to join official chatrooms: " + err);
+        else {
+          showAlert("success", "Joined " + (data.joined ? data.joined.length : 0) + " official chatrooms");
+          updateStatus();
+          updateLogs();
+        }
+      });
+    });
+  }
+
+  const btnJoinPublic = document.getElementById("btn-join-public-rooms");
+  if (btnJoinPublic) {
+    btnJoinPublic.addEventListener("click", function () {
+      postJSON("/api/rooms/join-public", {}, function (err, data) {
+        if (err) showAlert("error", "Failed to join public chatrooms: " + err);
+        else {
+          showAlert("success", "Joined " + (data.joined ? data.joined.length : 0) + " public chatrooms");
+          updateStatus();
+          updateLogs();
+        }
+      });
+    });
+  }
+
+  // seen users directory handlers
+  let cachedSeenUsers = [];
+
+  function fetchSeenUsers() {
+    fetch("/api/users/seen")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          cachedSeenUsers = data;
+          renderSeenUsers(cachedSeenUsers);
+        }
+      })
+      .catch(() => {});
+  }
+
+  function renderSeenUsers(users) {
+    const tbody = document.getElementById("seen-table-body");
+    if (!tbody) return;
+
+    const query = document.getElementById("input-seen-search")?.value.trim().toLowerCase() || "";
+    const filtered = query
+      ? users.filter((u) => (u.username && u.username.toLowerCase().includes(query)) || (u.room && u.room.toLowerCase().includes(query)))
+      : users;
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">' +
+        (query ? 'No seen users match "' + escapeHTML(query) + '"' : 'No user activity recorded yet.') +
+        '</td></tr>';
+      return;
+    }
+
+    let html = "";
+    filtered.forEach((u) => {
+      const dateStr = formatDate(u.last_seen);
+      html += `<tr>
+        <td><strong>${escapeHTML(u.username)}</strong></td>
+        <td><span class="chip" style="font-size:11px;">${escapeHTML(u.room || "-")}</span></td>
+        <td>${escapeHTML(dateStr)}</td>
+        <td style="color:var(--text-dim);font-style:italic;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(u.last_msg || "-")}</td>
+      </tr>`;
+    });
+    tbody.innerHTML = html;
+  }
+
+  const inputSeenSearch = document.getElementById("input-seen-search");
+  if (inputSeenSearch) {
+    inputSeenSearch.addEventListener("input", function () {
+      renderSeenUsers(cachedSeenUsers);
+    });
+  }
+
+  const btnRefreshSeen = document.getElementById("btn-refresh-seen");
+  if (btnRefreshSeen) {
+    btnRefreshSeen.addEventListener("click", fetchSeenUsers);
+  }
+
+  const btnClearSeen = document.getElementById("btn-clear-seen");
+  if (btnClearSeen) {
+    btnClearSeen.addEventListener("click", function () {
+      postJSON("/api/users/seen/clear", {}, function (err) {
+        if (err) showAlert("error", "Failed to clear seen data: " + err);
+        else {
+          showAlert("success", "Seen users data cleared");
+          fetchSeenUsers();
+        }
+      });
+    });
+  }
+
+  // command aliases handlers
+  function fetchAliases() {
+    fetch("/api/commands/aliases")
+      .then((r) => r.json())
+      .then((data) => {
+        renderAliases(data || {});
+      })
+      .catch(() => {});
+  }
+
+  function renderAliases(aliases) {
+    const tbody = document.getElementById("aliases-table-body");
+    if (!tbody) return;
+
+    const keys = Object.keys(aliases);
+    if (keys.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);padding:20px;">No aliases configured yet.</td></tr>';
+      return;
+    }
+
+    let html = "";
+    keys.sort().forEach((alias) => {
+      const target = aliases[alias];
+      html += `<tr>
+        <td><code>.${escapeHTML(alias)}</code></td>
+        <td><code>.${escapeHTML(target)}</code></td>
+        <td style="text-align:right;">
+          <button class="btn btn-danger btn-sm btn-delete-alias" data-alias="${escapeHTML(alias)}">Delete</button>
+        </td>
+      </tr>`;
+    });
+    tbody.innerHTML = html;
+
+    tbody.querySelectorAll(".btn-delete-alias").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const alias = this.getAttribute("data-alias");
+        postJSON("/api/commands/aliases/delete", { alias: alias }, function (err) {
+          if (err) showAlert("error", "Failed to delete alias: " + err);
+          else {
+            showAlert("success", "Alias deleted: ." + alias);
+            fetchAliases();
+          }
+        });
+      });
+    });
+  }
+
+  const formAddAlias = document.getElementById("form-add-alias");
+  if (formAddAlias) {
+    formAddAlias.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const alias = document.getElementById("input-alias-name").value.trim().replace(/^\./, "");
+      const target = document.getElementById("input-alias-target").value.trim().replace(/^\./, "");
+
+      if (!alias || !target) {
+        showAlert("error", "Please provide both alias trigger and target command");
+        return;
+      }
+
+      postJSON("/api/commands/aliases/save", { alias: alias, target: target }, function (err) {
+        if (err) showAlert("error", "Failed to save alias: " + err);
+        else {
+          showAlert("success", "Alias saved: ." + alias + " -> ." + target);
+          document.getElementById("input-alias-name").value = "";
+          document.getElementById("input-alias-target").value = "";
+          fetchAliases();
+        }
+      });
+    });
+  }
+
+  // admin hub operations handlers
+  const btnAdminHotpatch = document.getElementById("btn-admin-hotpatch");
+  if (btnAdminHotpatch) {
+    btnAdminHotpatch.addEventListener("click", function () {
+      postJSON("/api/bot/hotpatch", {}, function (err) {
+        if (err) showAlert("error", "Hotpatch failed: " + err);
+        else showAlert("success", "Hotpatch executed successfully!");
+      });
+    });
+  }
+
+  const btnAdminReloadData = document.getElementById("btn-admin-reload-data");
+  if (btnAdminReloadData) {
+    btnAdminReloadData.addEventListener("click", function () {
+      postJSON("/api/admin/reload-data", {}, function (err) {
+        if (err) showAlert("error", "Reload data failed: " + err);
+        else {
+          showAlert("success", "Database records and stores reloaded!");
+          fetchCommands();
+          fetchAliases();
+          fetchBlacklist();
+          fetchJoinPhrases();
+          fetchTimers();
+        }
+      });
+    });
+  }
+
+  const btnAdminClearCache = document.getElementById("btn-admin-clear-cache");
+  if (btnAdminClearCache) {
+    btnAdminClearCache.addEventListener("click", function () {
+      postJSON("/api/admin/clear-cache", {}, function (err) {
+        if (err) showAlert("error", "Clear cache failed: " + err);
+        else showAlert("success", "Runtime caches cleared!");
+      });
+    });
+  }
+
+  const btnAdminClearUserData = document.getElementById("btn-admin-clear-user-data");
+  if (btnAdminClearUserData) {
+    btnAdminClearUserData.addEventListener("click", function () {
+      postJSON("/api/admin/clear-user-data", {}, function (err) {
+        if (err) showAlert("error", "Clear user data failed: " + err);
+        else {
+          showAlert("success", "User data cleared successfully!");
+          fetchSeenUsers();
+        }
+      });
+    });
+  }
+
+  // admin hub files explorer handlers
+  function fetchAdminFiles() {
+    fetch("/api/admin/files")
+      .then((r) => r.json())
+      .then((data) => {
+        renderAdminFiles(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {});
+  }
+
+  function renderAdminFiles(files) {
+    const tbody = document.getElementById("files-table-body");
+    if (!tbody) return;
+
+    if (files.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">No files found.</td></tr>';
+      return;
+    }
+
+    let html = "";
+    files.forEach((f) => {
+      const sizeStr = formatFileSize(f.size);
+      const dateStr = formatDate(f.mod_time);
+      html += `<tr>
+        <td><strong>${escapeHTML(f.name)}</strong> <span style="font-size:11px;color:var(--text-dim);margin-left:4px;">(${escapeHTML(f.path)})</span></td>
+        <td>${escapeHTML(sizeStr)}</td>
+        <td>${escapeHTML(dateStr)}</td>
+        <td style="text-align:right;">
+          <div class="table-actions" style="justify-content:flex-end;">
+            <button class="btn btn-secondary btn-sm btn-view-file" data-file="${escapeHTML(f.path)}">View</button>
+            <a href="/api/admin/files/download?file=${encodeURIComponent(f.path)}" class="btn btn-secondary btn-sm" download>Download</a>
+            <button class="btn btn-danger btn-sm btn-clear-file" data-file="${escapeHTML(f.path)}">Clear</button>
+          </div>
+        </td>
+      </tr>`;
+    });
+    tbody.innerHTML = html;
+
+    tbody.querySelectorAll(".btn-view-file").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const filePath = this.getAttribute("data-file");
+        openFileViewModal(filePath);
+      });
+    });
+
+    tbody.querySelectorAll(".btn-clear-file").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const filePath = this.getAttribute("data-file");
+        postJSON("/api/admin/files/clear", { file: filePath }, function (err) {
+          if (err) showAlert("error", "Failed to clear file: " + err);
+          else {
+            showAlert("success", "Cleared file: " + filePath);
+            fetchAdminFiles();
+          }
+        });
+      });
+    });
+  }
+
+  const btnRefreshFiles = document.getElementById("btn-refresh-files");
+  if (btnRefreshFiles) btnRefreshFiles.addEventListener("click", fetchAdminFiles);
+
+  const modalFileView = document.getElementById("modal-file-view");
+  const btnCloseFileView = document.getElementById("btn-close-file-view");
+  const btnDoneFileView = document.getElementById("btn-done-file-view");
+  const fileViewTitle = document.getElementById("file-view-title");
+  const fileViewContent = document.getElementById("file-view-content");
+
+  function openFileViewModal(filePath) {
+    if (!modalFileView) return;
+    if (fileViewTitle) fileViewTitle.textContent = "Viewing " + filePath;
+    if (fileViewContent) fileViewContent.textContent = "Loading file content...";
+    modalFileView.style.display = "flex";
+
+    fetch("/api/admin/files/view?file=" + encodeURIComponent(filePath))
+      .then((r) => {
+        if (!r.ok) throw new Error("HTTP status " + r.status);
+        return r.text();
+      })
+      .then((text) => {
+        if (fileViewContent) fileViewContent.textContent = text || "(Empty file)";
+      })
+      .catch((err) => {
+        if (fileViewContent) fileViewContent.textContent = "Error reading file: " + err.message;
+      });
+  }
+
+  function closeFileViewModal() {
+    if (modalFileView) modalFileView.style.display = "none";
+  }
+
+  if (btnCloseFileView) btnCloseFileView.addEventListener("click", closeFileViewModal);
+  if (btnDoneFileView) btnDoneFileView.addEventListener("click", closeFileViewModal);
+  if (modalFileView) {
+    modalFileView.addEventListener("click", function (e) {
+      if (e.target === modalFileView) closeFileViewModal();
+    });
+  }
+
+  // javascript eval console handlers
+  const formAdminEval = document.getElementById("form-admin-eval");
+  const inputEvalCode = document.getElementById("input-eval-code");
+  const btnEvalClear = document.getElementById("btn-eval-clear");
+  const evalOutputBox = document.getElementById("eval-output-box");
+
+  if (formAdminEval) {
+    formAdminEval.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const code = inputEvalCode ? inputEvalCode.value.trim() : "";
+      if (!code) {
+        showAlert("error", "Please enter JavaScript code to evaluate");
+        return;
+      }
+
+      if (evalOutputBox) evalOutputBox.textContent = "Executing...";
+
+      postJSON("/api/admin/eval", { code: code }, function (err, data) {
+        if (err) {
+          if (evalOutputBox) evalOutputBox.textContent = "Error: " + err;
+          showAlert("error", "Evaluation failed: " + err);
+        } else {
+          if (evalOutputBox) evalOutputBox.textContent = data.output || "(Execution completed with no output)";
+          showAlert("success", "Evaluation completed");
+        }
+      });
+    });
+  }
+
+  if (btnEvalClear) {
+    btnEvalClear.addEventListener("click", function () {
+      if (evalOutputBox) evalOutputBox.textContent = "Ready to execute.";
+      if (inputEvalCode) inputEvalCode.value = "";
+    });
+  }
+
   // initial fetch & interval loops
   updateStatus(true);
   updateLogs();
@@ -2192,6 +2799,10 @@ document.addEventListener("DOMContentLoaded", function () {
   fetchBlacklist();
   fetchJoinPhrases();
   fetchLadderStatus();
+  fetchBotStatus();
+  fetchSeenUsers();
+  fetchAliases();
+  fetchAdminFiles();
   setInterval(updateStatus, 3000);
   setInterval(updateLogs, 3000);
   setInterval(fetchLadderStatus, 3000);
