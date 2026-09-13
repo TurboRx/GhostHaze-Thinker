@@ -86,7 +86,7 @@ func (s *TimerStore) saveToFile() error {
 		return err
 	}
 
-	var list []ChatroomTimer
+	list := make([]ChatroomTimer, 0, len(s.timers))
 	for _, t := range s.timers {
 		list = append(list, *t)
 	}

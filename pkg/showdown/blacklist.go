@@ -80,7 +80,7 @@ func (s *BlacklistStore) saveToFile() error {
 		return err
 	}
 
-	var list []BlacklistEntry
+	list := make([]BlacklistEntry, 0, len(s.entries))
 	for _, entry := range s.entries {
 		list = append(list, entry)
 	}

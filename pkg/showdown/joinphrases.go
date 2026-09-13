@@ -82,7 +82,7 @@ func (s *JoinPhraseStore) saveToFile() error {
 		return err
 	}
 
-	var list []JoinPhrase
+	list := make([]JoinPhrase, 0, len(s.phrases))
 	for _, p := range s.phrases {
 		list = append(list, *p)
 	}
