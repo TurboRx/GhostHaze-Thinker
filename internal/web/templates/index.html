@@ -441,10 +441,22 @@
               <input type="text" id="input-challenge-user" class="form-input" placeholder="Opponent username" required>
             </div>
             <div class="form-group" style="flex:1;">
-              <label class="form-label" for="select-challenge-format">Battle Format</label>
-              <select id="select-challenge-format" class="form-select format-combobox">
-                <option value="gen9randombattle">[Gen 9] Random Battle</option>
-              </select>
+              <label class="form-label">Battle Format</label>
+              <div class="custom-combobox" id="combobox-challenge-format">
+                <input type="hidden" id="input-challenge-format" value="gen9randombattle">
+                <button type="button" class="combobox-trigger" id="btn-challenge-format">
+                  <span class="combobox-selected-text" id="text-challenge-format">[Gen 9] Random Battle</span>
+                  <svg class="combobox-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="combobox-dropdown" id="dropdown-challenge-format">
+                  <div class="combobox-search-wrap">
+                    <input type="text" class="combobox-search-input" placeholder="Filter format (e.g. random, ou)...">
+                  </div>
+                  <div class="combobox-options-list"></div>
+                </div>
+              </div>
               <input type="text" id="input-challenge-format-custom" class="form-input" placeholder="Type custom format (e.g. gen9customgame)" style="display:none;margin-top:6px;">
             </div>
             <button type="submit" class="btn btn-primary">Send Challenge</button>
@@ -505,9 +517,21 @@
               <input type="text" id="input-quick-challenge-user" class="form-input" placeholder="Opponent Username" required>
             </div>
             <div class="form-group" style="flex:1;">
-              <select id="select-quick-challenge-format" class="form-select format-combobox">
-                <option value="gen9randombattle">[Gen 9] Random Battle</option>
-              </select>
+              <div class="custom-combobox" id="combobox-quick-challenge-format">
+                <input type="hidden" id="input-quick-challenge-format" value="gen9randombattle">
+                <button type="button" class="combobox-trigger" id="btn-quick-challenge-format">
+                  <span class="combobox-selected-text" id="text-quick-challenge-format">[Gen 9] Random Battle</span>
+                  <svg class="combobox-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="combobox-dropdown" id="dropdown-quick-challenge-format">
+                  <div class="combobox-search-wrap">
+                    <input type="text" class="combobox-search-input" placeholder="Filter format (e.g. random, ou)...">
+                  </div>
+                  <div class="combobox-options-list"></div>
+                </div>
+              </div>
               <input type="text" id="input-quick-challenge-format-custom" class="form-input" placeholder="Type custom format (e.g. gen9customgame)" style="display:none;margin-top:6px;">
             </div>
             <button type="submit" class="btn btn-primary">Challenge</button>

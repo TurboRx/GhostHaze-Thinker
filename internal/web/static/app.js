@@ -595,22 +595,200 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // challenge user form
-  // helper to get selected format from combobox or custom input
-  function getSelectedFormat(selectId, customId) {
-    const sel = document.getElementById(selectId);
-    const custom = document.getElementById(customId);
-    if (sel && sel.value === "__custom__" && custom && custom.value.trim()) {
+  // custom format combobox implementation
+  let cachedFormats = [];
+
+  function getSelectedFormat(hiddenInputId, customInputId) {
+    const hidden = document.getElementById(hiddenInputId);
+    const custom = document.getElementById(customInputId);
+    if (hidden && hidden.value === "__custom__" && custom && custom.value.trim()) {
       return custom.value.trim();
     }
-    if (sel && sel.value && sel.value !== "__custom__") {
-      return sel.value;
-    }
-    const fallbackInput = document.getElementById(selectId.replace("select-", "input-"));
-    if (fallbackInput && fallbackInput.value.trim()) {
-      return fallbackInput.value.trim();
+    if (hidden && hidden.value && hidden.value !== "__custom__") {
+      return hidden.value;
     }
     return "gen9randombattle";
+  }
+
+  const comboboxInstances = [
+    {
+      wrapperId: "combobox-challenge-format",
+      btnId: "btn-challenge-format",
+      textId: "text-challenge-format",
+      inputId: "input-challenge-format",
+      dropdownId: "dropdown-challenge-format",
+      customId: "input-challenge-format-custom",
+    },
+    {
+      wrapperId: "combobox-quick-challenge-format",
+      btnId: "btn-quick-challenge-format",
+      textId: "text-quick-challenge-format",
+      inputId: "input-quick-challenge-format",
+      dropdownId: "dropdown-quick-challenge-format",
+      customId: "input-quick-challenge-format-custom",
+    },
+  ];
+
+  function setComboboxSelection(id, name) {
+    comboboxInstances.forEach((inst) => {
+      const input = document.getElementById(inst.inputId);
+      const text = document.getElementById(inst.textId);
+      const custom = document.getElementById(inst.customId);
+      if (input) input.value = id;
+      if (text) text.textContent = name;
+      if (custom) {
+        custom.style.display = id === "__custom__" ? "block" : "none";
+        if (id === "__custom__") custom.focus();
+      }
+
+      const dropdown = document.getElementById(inst.dropdownId);
+      if (dropdown) {
+        dropdown.querySelectorAll(".combobox-option").forEach((opt) => {
+          if (opt.getAttribute("data-id") === id) {
+            opt.classList.add("selected");
+          } else {
+            opt.classList.remove("selected");
+          }
+        });
+      }
+    });
+  }
+
+  function renderComboboxOptions(inst, formats, query) {
+    const dropdown = document.getElementById(inst.dropdownId);
+    if (!dropdown) return;
+    const list = dropdown.querySelector(".combobox-options-list");
+    if (!list) return;
+
+    const q = (query || "").trim().toLowerCase();
+    const filtered = q
+      ? formats.filter(
+          (f) =>
+            (f.name && f.name.toLowerCase().includes(q)) ||
+            (f.id && f.id.toLowerCase().includes(q)) ||
+            (f.section && f.section.toLowerCase().includes(q))
+        )
+      : formats;
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<div style="padding:14px;text-align:center;color:var(--text-dim);font-size:13px;">No formats match "${escapeHTML(q)}"</div>`;
+      return;
+    }
+
+    const currentId = document.getElementById(inst.inputId)?.value || "gen9randombattle";
+    const groups = {};
+    filtered.forEach((f) => {
+      const id = f.id || f.ID;
+      const name = f.name || f.Name || id;
+      const sec = f.section || f.Section || "Other Formats";
+      if (!id) return;
+      if (!groups[sec]) groups[sec] = [];
+      groups[sec].push({ id: id, name: name });
+    });
+
+    let html = "";
+    Object.keys(groups).forEach((sec) => {
+      html += `<div class="combobox-section-title">${escapeHTML(sec)}</div>`;
+      groups[sec].forEach((f) => {
+        const isSel = f.id === currentId ? " selected" : "";
+        html += `<div class="combobox-option${isSel}" data-id="${escapeHTML(f.id)}" data-name="${escapeHTML(f.name)}">
+          <span>${escapeHTML(f.name)}</span>
+        </div>`;
+      });
+    });
+
+    html += `<div class="combobox-option combobox-option-custom" data-id="__custom__" data-name="Custom Format...">
+      <span>+ Custom Format...</span>
+    </div>`;
+
+    list.innerHTML = html;
+
+    list.querySelectorAll(".combobox-option").forEach((opt) => {
+      opt.addEventListener("click", function (e) {
+        e.stopPropagation();
+        const id = this.getAttribute("data-id");
+        const name = this.getAttribute("data-name");
+        setComboboxSelection(id, name);
+        const wrapper = document.getElementById(inst.wrapperId);
+        if (wrapper) wrapper.classList.remove("open");
+      });
+    });
+  }
+
+  function initComboboxes() {
+    comboboxInstances.forEach((inst) => {
+      const wrapper = document.getElementById(inst.wrapperId);
+      const btn = document.getElementById(inst.btnId);
+      const dropdown = document.getElementById(inst.dropdownId);
+      if (!wrapper || !btn || !dropdown) return;
+
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        const isOpen = wrapper.classList.contains("open");
+        document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
+        if (!isOpen) {
+          wrapper.classList.add("open");
+          const searchInput = dropdown.querySelector(".combobox-search-input");
+          if (searchInput) {
+            searchInput.value = "";
+            renderComboboxOptions(inst, cachedFormats, "");
+            setTimeout(() => searchInput.focus(), 50);
+          }
+        }
+      });
+
+      const searchInput = dropdown.querySelector(".combobox-search-input");
+      if (searchInput) {
+        searchInput.addEventListener("input", function () {
+          renderComboboxOptions(inst, cachedFormats, this.value);
+        });
+        searchInput.addEventListener("click", function (e) {
+          e.stopPropagation();
+        });
+      }
+    });
+
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".custom-combobox")) {
+        document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
+      }
+    });
+  }
+
+  function populateCustomComboboxes(formats) {
+    if (!Array.isArray(formats) || formats.length === 0) return;
+
+    const defaultFmt = formats.find((f) => (f.id || f.ID) === "gen9randombattle") || formats[0];
+    if (defaultFmt) {
+      const defId = defaultFmt.id || defaultFmt.ID;
+      const defName = defaultFmt.name || defaultFmt.Name || defId;
+      comboboxInstances.forEach((inst) => {
+        const input = document.getElementById(inst.inputId);
+        const text = document.getElementById(inst.textId);
+        if (input && (!input.value || input.value === "gen9randombattle")) {
+          input.value = defId;
+          if (text) text.textContent = defName;
+        }
+      });
+    }
+
+    comboboxInstances.forEach((inst) => {
+      renderComboboxOptions(inst, formats, "");
+    });
+  }
+
+  initComboboxes();
+
+  function fetchFormats() {
+    fetch("/api/formats")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          cachedFormats = data;
+          populateCustomComboboxes(cachedFormats);
+        }
+      })
+      .catch(() => {});
   }
 
   const challengeForm = document.getElementById("form-challenge");
@@ -618,7 +796,7 @@ document.addEventListener("DOMContentLoaded", function () {
     challengeForm.addEventListener("submit", function (e) {
       e.preventDefault();
       const user = document.getElementById("input-challenge-user").value.trim();
-      const format = getSelectedFormat("select-challenge-format", "input-challenge-format-custom");
+      const format = getSelectedFormat("input-challenge-format", "input-challenge-format-custom");
 
       if (!user) {
         showAlert("error", "Username cannot be empty");
@@ -643,7 +821,7 @@ document.addEventListener("DOMContentLoaded", function () {
     quickChallengeForm.addEventListener("submit", function (e) {
       e.preventDefault();
       const user = document.getElementById("input-quick-challenge-user").value.trim();
-      const format = getSelectedFormat("select-quick-challenge-format", "input-quick-challenge-format-custom");
+      const format = getSelectedFormat("input-quick-challenge-format", "input-quick-challenge-format-custom");
 
       if (!user) {
         showAlert("error", "Username cannot be empty");
@@ -660,98 +838,6 @@ document.addEventListener("DOMContentLoaded", function () {
           updateStatus();
         }
       });
-    });
-  }
-
-  // server formats combobox population
-  let cachedFormats = [];
-
-  function fetchFormats() {
-    fetch("/api/formats")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          cachedFormats = data;
-          populateFormatComboboxes(cachedFormats);
-        }
-      })
-      .catch(() => {});
-  }
-
-  function populateFormatComboboxes(formats) {
-    if (!Array.isArray(formats) || formats.length === 0) return;
-
-    const comboboxes = [
-      {
-        select: document.getElementById("select-challenge-format"),
-        custom: document.getElementById("input-challenge-format-custom"),
-      },
-      {
-        select: document.getElementById("select-quick-challenge-format"),
-        custom: document.getElementById("input-quick-challenge-format-custom"),
-      },
-    ];
-
-    const groups = {};
-    formats.forEach((f) => {
-      const id = f.id || f.ID;
-      const name = f.name || f.Name || id;
-      const sec = f.section || f.Section || "Other Formats";
-      if (!id) return;
-      if (!groups[sec]) groups[sec] = [];
-      groups[sec].push({ id: id, name: name });
-    });
-
-    comboboxes.forEach(({ select, custom }) => {
-      if (!select) return;
-      const currentVal = select.value;
-      select.innerHTML = "";
-
-      Object.keys(groups).forEach((sec) => {
-        const optgroup = document.createElement("optgroup");
-        optgroup.label = sec;
-        groups[sec].forEach((f) => {
-          const opt = document.createElement("option");
-          opt.value = f.id;
-          opt.textContent = f.name !== f.id ? `${f.name} (${f.id})` : f.name;
-          optgroup.appendChild(opt);
-        });
-        select.appendChild(optgroup);
-      });
-
-      const customOpt = document.createElement("option");
-      customOpt.value = "__custom__";
-      customOpt.textContent = "+ Custom Format...";
-      select.appendChild(customOpt);
-
-      if (currentVal && Array.from(select.options).some((o) => o.value === currentVal)) {
-        select.value = currentVal;
-      } else if (Array.from(select.options).some((o) => o.value === "gen9randombattle")) {
-        select.value = "gen9randombattle";
-      }
-
-      if (!select._comboboxInit) {
-        select._comboboxInit = true;
-        select.addEventListener("change", function () {
-          if (custom) {
-            if (this.value === "__custom__") {
-              custom.style.display = "block";
-              custom.focus();
-            } else {
-              custom.style.display = "none";
-            }
-          }
-          // sync other combobox
-          comboboxes.forEach((other) => {
-            if (other.select && other.select !== select) {
-              if (Array.from(other.select.options).some((o) => o.value === select.value)) {
-                other.select.value = select.value;
-                if (other.custom) other.custom.style.display = select.value === "__custom__" ? "block" : "none";
-              }
-            }
-          });
-        });
-      }
     });
   }
 
