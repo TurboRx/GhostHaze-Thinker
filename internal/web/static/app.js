@@ -2241,7 +2241,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // helper post function
+  // helper post function with robust json and text error handling
   function postJSON(url, body, callback) {
     fetch(url, {
       method: "POST",
@@ -2249,9 +2249,15 @@ document.addEventListener("DOMContentLoaded", function () {
       body: JSON.stringify(body),
     })
       .then((res) => {
-        return res.json().then((data) => {
+        return res.text().then((text) => {
+          let data = null;
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (e) {
+            data = { error: text || ("HTTP status " + res.status) };
+          }
           if (!res.ok) {
-            callback(data.error || ("HTTP status " + res.status));
+            callback((data && data.error) || ("HTTP status " + res.status));
           } else {
             callback(null, data);
           }
@@ -2544,18 +2550,38 @@ document.addEventListener("DOMContentLoaded", function () {
     const tbody = document.getElementById("aliases-table-body");
     if (!tbody) return;
 
+    const descMap = {
+      data: "Showdown Pokédex lookup (stats, types, abilities)",
+      seen: "Check last seen trainer activity & chatroom",
+      randpoke: "Pick a random Pokémon species",
+      randompokemon: "Pick a random Pokémon species",
+      randmove: "Pick a random Pokémon move",
+      quote: "Print an inspirational Pokémon quote",
+      joke: "Share a Pokémon-themed joke",
+      hotpatch: "Reload dynamic data without restart",
+      help: "Display list of commands",
+      rules: "Display chatroom or tournament rules",
+      timer: "Set or check chatroom reminder timers",
+      timers: "Set or check chatroom reminder timers",
+      blacklist: "Manage user command blacklist",
+      unblacklist: "Remove user from command blacklist",
+      joinphrase: "Configure custom user greeting phrases",
+    };
+
     const keys = Object.keys(aliases);
     if (keys.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);padding:20px;">No aliases configured yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">No aliases configured yet.</td></tr>';
       return;
     }
 
     let html = "";
     keys.sort().forEach((alias) => {
       const target = aliases[alias];
+      const desc = descMap[target.toLowerCase()] || "Custom command trigger";
       html += `<tr>
         <td><code>.${escapeHTML(alias)}</code></td>
         <td><code>.${escapeHTML(target)}</code></td>
+        <td style="color:var(--text-dim);font-size:12px;">${escapeHTML(desc)}</td>
         <td style="text-align:right;">
           <button class="btn btn-danger btn-sm btn-delete-alias" data-alias="${escapeHTML(alias)}">Delete</button>
         </td>
@@ -2673,8 +2699,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     let html = "";
     files.forEach((f) => {
-      const sizeStr = formatFileSize(f.size);
-      const dateStr = formatDate(f.mod_time);
+      const sizeStr = f.size || (typeof f.bytes === "number" ? formatFileSize(f.bytes) : "-");
+      const dateStr = f.date || (f.mod_time ? formatDate(f.mod_time) : "-");
       html += `<tr>
         <td><strong>${escapeHTML(f.name)}</strong> <span style="font-size:11px;color:var(--text-dim);margin-left:4px;">(${escapeHTML(f.path)})</span></td>
         <td>${escapeHTML(sizeStr)}</td>
@@ -2729,10 +2755,17 @@ document.addEventListener("DOMContentLoaded", function () {
     fetch("/api/admin/files/view?file=" + encodeURIComponent(filePath))
       .then((r) => {
         if (!r.ok) throw new Error("HTTP status " + r.status);
-        return r.text();
+        return r.json();
       })
-      .then((text) => {
-        if (fileViewContent) fileViewContent.textContent = text || "(Empty file)";
+      .then((data) => {
+        let content = data.content !== undefined ? data.content : (typeof data === "string" ? data : JSON.stringify(data, null, 2));
+        if (filePath.endsWith(".json")) {
+          try {
+            const parsed = typeof content === "string" ? JSON.parse(content) : content;
+            content = JSON.stringify(parsed, null, 2);
+          } catch (e) {}
+        }
+        if (fileViewContent) fileViewContent.textContent = content || "(Empty file)";
       })
       .catch((err) => {
         if (fileViewContent) fileViewContent.textContent = "Error reading file: " + err.message;

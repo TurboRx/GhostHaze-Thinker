@@ -581,10 +581,10 @@
             <h2 class="card-title">Seen Users Directory</h2>
             <p class="card-description">Tracks trainers seen speaking across chatrooms with timestamp and last activity.</p>
           </div>
-          <div style="display:flex;gap:10px;align-items:center;">
-            <input type="text" id="input-seen-search" class="form-input" placeholder="Search username..." style="width:160px;height:32px;font-size:12px;">
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-seen">Refresh</button>
-            <button type="button" class="btn btn-danger btn-sm" id="btn-clear-seen">Clear Seen Data</button>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="input-seen-search" class="form-input" placeholder="Search username..." style="min-width:120px;max-width:200px;flex:1;height:32px;font-size:12px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-seen" style="white-space:nowrap;">Refresh</button>
+            <button type="button" class="btn btn-danger btn-sm" id="btn-clear-seen" style="white-space:nowrap;">Clear Data</button>
           </div>
         </div>
         <div class="table-wrapper">
@@ -1004,15 +1004,78 @@
               <tr>
                 <th>Alias Trigger</th>
                 <th>Target Command</th>
+                <th>What it Does</th>
                 <th style="text-align:right;">Actions</th>
               </tr>
             </thead>
             <tbody id="aliases-table-body">
               <tr>
-                <td colspan="3" style="text-align:center;color:var(--text-dim);padding:20px;">Loading aliases...</td>
+                <td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">Loading aliases...</td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- built-in bot commands guide reference -->
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+          <h4 style="font-size:13.5px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            Built-in Bot Commands Reference
+          </h4>
+          <p class="section-desc" style="margin-bottom:12px;">These standard commands are built directly into the bot core and can be triggered in any active chatroom or private message using the command character (default <code>.</code>).</p>
+          <div class="table-wrapper">
+            <table class="data-table" style="font-size:12.5px;">
+              <thead>
+                <tr>
+                  <th style="width:180px;">Command</th>
+                  <th>Purpose &amp; Behavior</th>
+                  <th style="width:200px;">Default Aliases</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>.data &lt;pokemon&gt;</code></td>
+                  <td>Pokédex database lookup showing types, base stats (HP, Atk, Def, SpA, SpD, Spe), and abilities.</td>
+                  <td><code>.dex</code>, <code>.dt</code>, <code>.pokedex</code></td>
+                </tr>
+                <tr>
+                  <td><code>.seen &lt;trainer&gt;</code></td>
+                  <td>Checks when and where a trainer was last seen active across chatrooms with their latest message snippet.</td>
+                  <td><span style="color:var(--text-dim);">-</span></td>
+                </tr>
+                <tr>
+                  <td><code>.randpoke</code></td>
+                  <td>Picks and prints a random Pokémon species from the competitive dex.</td>
+                  <td><span style="color:var(--text-dim);">-</span></td>
+                </tr>
+                <tr>
+                  <td><code>.randmove</code></td>
+                  <td>Picks and prints a random competitive Pokémon move name.</td>
+                  <td><span style="color:var(--text-dim);">-</span></td>
+                </tr>
+                <tr>
+                  <td><code>.quote</code></td>
+                  <td>Displays a memorable Pokémon quote from legendary trainers and Pokémon.</td>
+                  <td><span style="color:var(--text-dim);">-</span></td>
+                </tr>
+                <tr>
+                  <td><code>.joke</code></td>
+                  <td>Tells a fun Pokémon-themed joke in chat.</td>
+                  <td><span style="color:var(--text-dim);">-</span></td>
+                </tr>
+                <tr>
+                  <td><code>.hotpatch</code></td>
+                  <td>Reloads dynamic commands, blacklist, greetings, and timers live without restarting the bot.</td>
+                  <td><span style="color:var(--text-dim);">-</span></td>
+                </tr>
+                <tr>
+                  <td><code>.help</code></td>
+                  <td>Lists all available commands and their descriptions in chat.</td>
+                  <td><span style="color:var(--text-dim);">-</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -1435,7 +1498,7 @@
         <button type="button" class="modal-close-btn" id="btn-close-file-view" aria-label="Close">&times;</button>
       </div>
       <div class="form-group" style="margin-bottom:16px;">
-        <pre id="file-view-content" style="background:var(--secondary);border:1px solid var(--border);border-radius:var(--radius);padding:14px;max-height:480px;overflow:auto;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;"></pre>
+        <pre id="file-view-content" style="background:#0d1117;border:1px solid #30363d;border-radius:var(--radius);padding:16px;max-height:500px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9;white-space:pre-wrap;word-break:break-word;tab-size:2;"></pre>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:10px;">
         <button type="button" class="btn btn-secondary" id="btn-done-file-view">Close</button>
