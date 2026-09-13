@@ -211,32 +211,32 @@ func SaveEnvFile(filename string, cfg *showdown.Config) error {
 
 	var sb strings.Builder
 	sb.WriteString("# pokemon showdown bot configuration\n")
-	sb.WriteString(fmt.Sprintf("PS_SERVER_ID=%s\n", cfg.ServerID))
-	sb.WriteString(fmt.Sprintf("PS_SERVER_HOST=%s\n", cfg.ServerHost))
-	sb.WriteString(fmt.Sprintf("PS_SERVER_PORT=%d\n", cfg.ServerPort))
-	sb.WriteString(fmt.Sprintf("PS_SERVER_SSL=%s\n", sslStr))
+	fmt.Fprintf(&sb, "PS_SERVER_ID=%s\n", cfg.ServerID)
+	fmt.Fprintf(&sb, "PS_SERVER_HOST=%s\n", cfg.ServerHost)
+	fmt.Fprintf(&sb, "PS_SERVER_PORT=%d\n", cfg.ServerPort)
+	fmt.Fprintf(&sb, "PS_SERVER_SSL=%s\n", sslStr)
 	if cfg.ServerURL != "" {
-		sb.WriteString(fmt.Sprintf("PS_SERVER_URL=%s\n", cfg.ServerURL))
+		fmt.Fprintf(&sb, "PS_SERVER_URL=%s\n", cfg.ServerURL)
 	}
-	sb.WriteString(fmt.Sprintf("PS_USERNAME=%s\n", cleanUsernameConfig(cfg.Username)))
-	sb.WriteString(fmt.Sprintf("PS_PASSWORD=%s\n", cfg.Password))
-	sb.WriteString(fmt.Sprintf("PS_AVATAR=%s\n", cfg.Avatar))
-	sb.WriteString(fmt.Sprintf("PS_COMMAND_CHAR=%s\n", cfg.CommandChar))
-	sb.WriteString(fmt.Sprintf("PS_ROOMS=%s\n", strings.Join(cfg.Rooms, ",")))
-	sb.WriteString(fmt.Sprintf("PS_AUTO_BATTLE=%s\n", autoBattleStr))
-	sb.WriteString(fmt.Sprintf("PS_AUTO_LEAVE_BATTLE=%s\n", autoLeaveStr))
-	sb.WriteString(fmt.Sprintf("PS_BATTLE_WIN_MSG=%s\n", cfg.BattleWinMsg))
-	sb.WriteString(fmt.Sprintf("PS_BATTLE_LOSE_MSG=%s\n", cfg.BattleLoseMsg))
+	fmt.Fprintf(&sb, "PS_USERNAME=%s\n", cleanUsernameConfig(cfg.Username))
+	fmt.Fprintf(&sb, "PS_PASSWORD=%s\n", cfg.Password)
+	fmt.Fprintf(&sb, "PS_AVATAR=%s\n", cfg.Avatar)
+	fmt.Fprintf(&sb, "PS_COMMAND_CHAR=%s\n", cfg.CommandChar)
+	fmt.Fprintf(&sb, "PS_ROOMS=%s\n", strings.Join(cfg.Rooms, ","))
+	fmt.Fprintf(&sb, "PS_AUTO_BATTLE=%s\n", autoBattleStr)
+	fmt.Fprintf(&sb, "PS_AUTO_LEAVE_BATTLE=%s\n", autoLeaveStr)
+	fmt.Fprintf(&sb, "PS_BATTLE_WIN_MSG=%s\n", cfg.BattleWinMsg)
+	fmt.Fprintf(&sb, "PS_BATTLE_LOSE_MSG=%s\n", cfg.BattleLoseMsg)
 	if cfg.BattleStartMsg != "" {
-		sb.WriteString(fmt.Sprintf("PS_BATTLE_START_MSG=%s\n", cfg.BattleStartMsg))
+		fmt.Fprintf(&sb, "PS_BATTLE_START_MSG=%s\n", cfg.BattleStartMsg)
 	}
-	sb.WriteString(fmt.Sprintf("PS_BATTLE_FORMATS=%s\n", strings.Join(cfg.BattleFormats, ",")))
-	sb.WriteString(fmt.Sprintf("PS_BATTLE_TEAM=%s\n", cfg.BattleTeam))
+	fmt.Fprintf(&sb, "PS_BATTLE_FORMATS=%s\n", strings.Join(cfg.BattleFormats, ","))
+	fmt.Fprintf(&sb, "PS_BATTLE_TEAM=%s\n", cfg.BattleTeam)
 	pass := os.Getenv("WEB_ADMIN_PASSWORD")
 	if pass == "" {
 		pass = "admin"
 	}
-	sb.WriteString(fmt.Sprintf("WEB_ADMIN_PASSWORD=%s\n", pass))
+	fmt.Fprintf(&sb, "WEB_ADMIN_PASSWORD=%s\n", pass)
 
 	return os.WriteFile(filename, []byte(sb.String()), 0600)
 }

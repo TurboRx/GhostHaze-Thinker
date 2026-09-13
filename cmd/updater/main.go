@@ -160,7 +160,14 @@ func updateMoves(showdownDir, destPath string) error {
 
 		cat := "Physical"
 		if catMatch := catRegex.FindStringSubmatch(block); len(catMatch) > 1 {
-			cat = strings.Title(strings.ToLower(catMatch[1]))
+			switch strings.ToLower(catMatch[1]) {
+			case "special":
+				cat = "Special"
+			case "status":
+				cat = "Status"
+			default:
+				cat = "Physical"
+			}
 		}
 
 		moveType := "normal"
@@ -176,11 +183,12 @@ func updateMoves(showdownDir, destPath string) error {
 		accuracy := 100
 		if accMatch := accRegex.FindStringSubmatch(block); len(accMatch) > 1 {
 			val := accMatch[1]
-			if val == "true" {
+			switch val {
+			case "true":
 				accuracy = 100
-			} else if val == "false" {
+			case "false":
 				accuracy = 0
-			} else {
+			default:
 				if num, err := strconv.Atoi(val); err == nil {
 					accuracy = num
 				}

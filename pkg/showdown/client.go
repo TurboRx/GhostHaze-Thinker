@@ -1083,7 +1083,7 @@ func (c *Client) connectAndListen(ctx context.Context) error {
 	done := make(chan struct{})
 	defer close(done)
 
-	// close connection if context is cancelled
+	// close connection if context is canceled
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -1516,7 +1516,8 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 		_ = c.SendToRoom(room, choice)
 	}
 
-	if msg.Type == "win" || msg.Type == "tie" || msg.Type == "prematureend" || msg.Type == "expire" {
+	switch msg.Type {
+	case "win", "tie", "prematureend", "expire":
 		b.SetEnded(true)
 		winner := ""
 		if len(msg.Parts) > 0 {
@@ -1571,7 +1572,7 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 		if autoLeave {
 			go c.autoLeaveBattleAfterDelay(room, winner, myNick, winMsg, loseMsg)
 		}
-	} else if msg.Type == "deinit" {
+	case "deinit":
 		c.battleMu.Lock()
 		delete(c.battles, roomID)
 		c.battleMu.Unlock()

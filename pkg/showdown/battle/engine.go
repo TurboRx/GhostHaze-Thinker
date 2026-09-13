@@ -74,10 +74,10 @@ func (e *DefaultEngine) decideTeamPreview(b *Battle, req BattleRequest) BattleDe
 
 	// construct team order string (1-indexed) placing best lead index at position 1
 	var order strings.Builder
-	order.WriteString(fmt.Sprintf("%d", bestLeadIndex+1))
+	fmt.Fprintf(&order, "%d", bestLeadIndex+1)
 	for i := 0; i < len(pokemonList); i++ {
 		if i != bestLeadIndex {
-			order.WriteString(fmt.Sprintf("%d", i+1))
+			fmt.Fprintf(&order, "%d", i+1)
 		}
 	}
 
@@ -178,7 +178,7 @@ func (e *DefaultEngine) decideActiveTurn(b *Battle, req BattleRequest) BattleDec
 	shouldTera := false
 
 	// speed calculation
-	mySpe := 80
+	var mySpe int
 	if activePoke.Stats != nil && activePoke.Stats["spe"] > 0 {
 		mySpe = activePoke.Stats["spe"]
 	} else {
@@ -249,7 +249,6 @@ func (e *DefaultEngine) decideActiveTurn(b *Battle, req BattleRequest) BattleDec
 
 				level := 80
 				atk := 100
-				def := 100
 				if activePoke.Stats != nil {
 					if data.Category == CategoryPhysical {
 						atk = activePoke.Stats["atk"]
@@ -260,6 +259,7 @@ func (e *DefaultEngine) decideActiveTurn(b *Battle, req BattleRequest) BattleDec
 
 				// evaluate target defense using known opponent base stats and stage boosts
 				oppBaseStats := GetSpeciesBaseStats(b.OpponentActive.Species)
+				var def int
 				isPsyshockLike := cleanID(data.ID) == "psyshock" || cleanID(data.ID) == "psystrike" || cleanID(data.ID) == "secretsword"
 				if data.Category == CategoryPhysical || isPsyshockLike {
 					def = oppBaseStats["def"]

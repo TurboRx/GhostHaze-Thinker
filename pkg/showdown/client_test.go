@@ -614,9 +614,12 @@ func TestThrottleDelay(t *testing.T) {
 		ThrottleDelay: 30 * time.Millisecond,
 	})
 
-	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	wsConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
 	}
 	defer wsConn.Close()
 	client.wsConn = wsConn
@@ -700,9 +703,12 @@ func TestBattleChallengeActions(t *testing.T) {
 	defer s.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
-	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	wsConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
 	}
 	defer wsConn.Close()
 	client.wsConn = wsConn
@@ -789,9 +795,12 @@ func TestChallengesUpdate_AutoAccept(t *testing.T) {
 	defer s.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
-	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	wsConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
 	}
 	defer wsConn.Close()
 	client.wsConn = wsConn
@@ -862,9 +871,12 @@ func TestBattleRoomMessageRouting(t *testing.T) {
 	defer s.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
-	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	wsConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
 	}
 	defer wsConn.Close()
 	client.wsConn = wsConn
@@ -979,9 +991,12 @@ func TestBattleAutoLeaveAndForfeit(t *testing.T) {
 	client.username = "GhostHaze Thinker"
 
 	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
-	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	wsConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
 	}
 	defer wsConn.Close()
 	client.wsConn = wsConn

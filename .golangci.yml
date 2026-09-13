@@ -1,0 +1,37 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - unconvert
+    - misspell
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - bodyclose
+      - text: "Error return value of `.*Close` is not checked"
+        linters:
+          - errcheck
+      - text: "Error return value of `.*Clear` is not checked"
+        linters:
+          - errcheck
+      - text: "Error return value of `fmt.Fprintf` is not checked"
+        linters:
+          - errcheck
