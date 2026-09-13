@@ -570,14 +570,49 @@ document.addEventListener("DOMContentLoaded", function () {
     return (text || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   }
 
+  const pokeFormAliases = {
+    rotomw: "rotomwash",
+    rotomh: "rotomheat",
+    rotomc: "rotommow",
+    rotomm: "rotommow",
+    rotomf: "rotomfrost",
+    rotoms: "rotomfan",
+    landot: "landorustherian",
+    landorust: "landorustherian",
+    tornadust: "tornadustherian",
+    thundurust: "thundurustherian",
+    urshifurs: "urshifurapidstrike",
+    urshifuss: "urshifu",
+    calyrexs: "calyrexshadow",
+    calyrexi: "calyrexice",
+    ursalunab: "ursalunabloodmoon",
+    ursalunablood: "ursalunabloodmoon",
+    palkiao: "palkiaorigin",
+    dialgao: "dialgaorigin",
+    giratinao: "giratinaorigin",
+    zapdosg: "zapdosgalar",
+    moltresg: "moltresgalar",
+    articunog: "articunogalar",
+  };
+
   // pokemon showdown spritesheet icon helper
   function getPokemonIconHTML(name) {
     const id = toId(name);
     const icons = window.POKEMON_ICON_INDEXES || {};
-    const num = icons[id] !== undefined ? icons[id] : 0;
+    let num = 0;
+    if (icons[id] !== undefined) {
+      num = icons[id];
+    } else if (pokeFormAliases[id] && icons[pokeFormAliases[id]] !== undefined) {
+      num = icons[pokeFormAliases[id]];
+    } else {
+      const stripped = id.replace(/(alola|galar|hisui|paldea|totem|mega|gmax|origin|therian|primal|crowned|wash|heat|mow|frost|fan|dusk|dawn|ultra|bloodmoon|cornerstone|wellspring|hearthflame|hero|rapidstrike|antique|artisan|masterpiece|four|three|white|black|pirouette|resolute|sunny|rainy|snowy|attack|defense|speed|sandy|trash|sunshine|east|autumn|summer|winter|fancy|pokeball|blade|blue|orange|yellow|debutante|diamond|heart|kabuki|lareine|matron|pharaoh|star|green|indigo|violet|rubycream|matchacream|mintcream|lemoncream|saltedcream|rubyswirl|caramelswirl|rainbowswirl|roaming|terastal|stellar)$/i, "");
+      if (icons[stripped] !== undefined) {
+        num = icons[stripped];
+      }
+    }
     const top = Math.floor(num / 12) * 30;
     const left = (num % 12) * 40;
-    return `<span class="picon" style="background:transparent url('/static/pokemonicons-sheet.png') no-repeat scroll -${left}px -${top}px;"></span>`;
+    return `<span class="picon" style="background:transparent url('/static/pokemonicons-sheet.png') no-repeat scroll -${left}px -${top}px, transparent url('https://play.pokemonshowdown.com/sprites/pokemonicons-sheet.png?v20') no-repeat scroll -${left}px -${top}px;" title="${escapeHTML(name)}"></span>`;
   }
 
   // teams vault handlers
@@ -1638,6 +1673,32 @@ document.addEventListener("DOMContentLoaded", function () {
         document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
       }
     });
+
+    // global escape key listener closes active comboboxes and modals
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        const openCombos = document.querySelectorAll(".custom-combobox.open");
+        if (openCombos.length > 0) {
+          openCombos.forEach((c) => c.classList.remove("open"));
+          return;
+        }
+        const mFile = document.getElementById("modal-file-view");
+        if (mFile && mFile.style.display === "flex") {
+          mFile.style.display = "none";
+          return;
+        }
+        const mPw = document.getElementById("modal-change-password");
+        if (mPw && mPw.style.display === "flex") {
+          mPw.style.display = "none";
+          return;
+        }
+        const mMsg = document.getElementById("modal-room-msg");
+        if (mMsg && mMsg.style.display === "flex") {
+          mMsg.style.display = "none";
+          return;
+        }
+      }
+    });
   }
 
   function populateCustomComboboxes(formats) {
@@ -2307,14 +2368,20 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // alert banner helper
+  let alertTimeout = null;
   function showAlert(type, msg) {
     const alertBox = document.getElementById("global-alert");
     if (!alertBox) return;
+    if (alertTimeout) {
+      clearTimeout(alertTimeout);
+      alertTimeout = null;
+    }
     alertBox.className = "alert " + type;
     alertBox.textContent = msg;
     alertBox.style.display = "block";
-    setTimeout(() => {
+    alertTimeout = setTimeout(() => {
       alertBox.style.display = "none";
+      alertTimeout = null;
     }, 4000);
   }
 
@@ -2619,6 +2686,9 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!tbody) return;
 
     const descMap = {
+      status: "Check or set custom status message",
+      setstatus: "Check or set custom status message",
+      statusmsg: "Check or set custom status message",
       data: "Showdown Pokédex lookup (stats, types, abilities)",
       seen: "Check last seen user activity & chatroom",
       randpoke: "Pick a random Pokémon species",

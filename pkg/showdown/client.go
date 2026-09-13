@@ -1990,8 +1990,24 @@ func (c *Client) initBuiltinCommands() {
 		_ = c.Reply(room, user, "Data and dynamic commands successfully reloaded via hotpatch.")
 	})
 
+	c.HandleCommand("status", func(room, user, args string) {
+		args = strings.TrimSpace(args)
+		if args == "" {
+			current := c.StatusMessage()
+			if current != "" {
+				_ = c.Reply(room, user, fmt.Sprintf("Current status: %s", current))
+			} else {
+				_ = c.Reply(room, user, "No custom status message is currently set.")
+			}
+			return
+		}
+
+		_ = c.SetStatus(args)
+		_ = c.Reply(room, user, fmt.Sprintf("Status message updated to: %s", args))
+	})
+
 	c.HandleCommand("help", func(room, user, args string) {
-		_ = c.Reply(room, user, "Available commands: .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch")
+		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch")
 	})
 
 	// register default command aliases
@@ -1999,6 +2015,8 @@ func (c *Client) initBuiltinCommands() {
 		c.commandsStore.SetAlias("dt", "data")
 		c.commandsStore.SetAlias("dex", "data")
 		c.commandsStore.SetAlias("pokedex", "data")
+		c.commandsStore.SetAlias("setstatus", "status")
+		c.commandsStore.SetAlias("statusmsg", "status")
 	}
 }
 

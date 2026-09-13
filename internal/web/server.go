@@ -119,6 +119,17 @@ func (m *abuseMonitor) recordFailure(ip string) bool {
 	}
 	recent = append(recent, now)
 	m.attempts[ip] = recent
+
+	// prune stale attempts if map grows large
+	if len(m.attempts) > 500 {
+		cutoff := now.Add(-m.window)
+		for k, times := range m.attempts {
+			if len(times) == 0 || times[len(times)-1].Before(cutoff) {
+				delete(m.attempts, k)
+			}
+		}
+	}
+
 	if len(recent) >= m.maxAttempts {
 		m.lockedUntil[ip] = now.Add(m.lockDuration)
 		return true
@@ -519,7 +530,13 @@ func (s *Server) handleAPILogin(w http.ResponseWriter, r *http.Request) {
 	token := hex.EncodeToString(tokenBytes)
 
 	s.sessionMu.Lock()
-	s.sessions[token] = time.Now().Add(24 * time.Hour)
+	now := time.Now()
+	for t, exp := range s.sessions {
+		if now.After(exp) {
+			delete(s.sessions, t)
+		}
+	}
+	s.sessions[token] = now.Add(24 * time.Hour)
 	s.sessionMu.Unlock()
 
 	http.SetCookie(w, &http.Cookie{
@@ -2275,13 +2292,11 @@ func (s *Server) handleAPIAdminFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = os.MkdirAll("logs", 0755)
-
-	var result []AdminFileInfo
+	result := make([]AdminFileInfo, 0)
 	entries, err := os.ReadDir("logs")
 	if err == nil {
 		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
+			if e.IsDir() || !strings.HasPrefix(e.Name(), "seclog_") || !strings.HasSuffix(e.Name(), ".log") {
 				continue
 			}
 			info, err := e.Info()

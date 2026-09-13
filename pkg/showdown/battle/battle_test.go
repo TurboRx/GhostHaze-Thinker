@@ -445,7 +445,7 @@ func TestBattleHandleLine(t *testing.T) {
 
 	// player identification
 	b.HandleLine([]string{"player", "p1", "GhostHaze Thinker"}, "GhostHaze Thinker")
-	b.HandleLine([]string{"player", "p2", "EnemyTrainer"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"player", "p2", "EnemyUser"}, "GhostHaze Thinker")
 
 	if b.MyPlayerID != "p1" || b.OpponentID != "p2" {
 		t.Fatalf("failed player identification: my=%s, opp=%s", b.MyPlayerID, b.OpponentID)
@@ -483,12 +483,12 @@ func TestBattleHandleLine(t *testing.T) {
 	}
 
 	// hazards
-	b.HandleLine([]string{"-sidestart", "p2: EnemyTrainer", "move: Stealth Rock"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"-sidestart", "p2: EnemyUser", "move: Stealth Rock"}, "GhostHaze Thinker")
 	if !b.OpponentHasHazard("stealthrock") {
 		t.Fatalf("expected stealth rock hazard to be active")
 	}
 
-	b.HandleLine([]string{"-sideend", "p2: EnemyTrainer", "move: Stealth Rock"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"-sideend", "p2: EnemyUser", "move: Stealth Rock"}, "GhostHaze Thinker")
 	if b.OpponentHasHazard("stealthrock") {
 		t.Fatalf("expected stealth rock hazard to be removed")
 	}

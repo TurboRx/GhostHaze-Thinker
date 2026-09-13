@@ -708,22 +708,22 @@ func TestBattleChallengeActions(t *testing.T) {
 	client.wsConn = wsConn
 
 	// test accept challenge
-	_ = client.AcceptChallenge("Rival Trainer")
+	_ = client.AcceptChallenge("Rival User")
 	select {
 	case msg := <-sentChan:
-		if msg != "|/utm null\n|/accept rivaltrainer" {
-			t.Fatalf("expected |/utm null\\n|/accept rivaltrainer, got %s", msg)
+		if msg != "|/utm null\n|/accept rivaluser" {
+			t.Fatalf("expected |/utm null\\n|/accept rivaluser, got %s", msg)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timed out waiting for accept command")
 	}
 
 	// test reject challenge
-	_ = client.RejectChallenge("AnnoyingTrainer")
+	_ = client.RejectChallenge("AnnoyingUser")
 	select {
 	case msg := <-sentChan:
-		if msg != "|/reject annoyingtrainer" {
-			t.Fatalf("expected |/reject annoyingtrainer, got %s", msg)
+		if msg != "|/reject annoyinguser" {
+			t.Fatalf("expected |/reject annoyinguser, got %s", msg)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timed out waiting for reject command")
@@ -807,18 +807,18 @@ func TestChallengesUpdate_AutoAccept(t *testing.T) {
 	})
 
 	// simulate incoming updatechallenges with allowed format
-	client.handleRawPayload(`|updatechallenges|{"challengesFrom":{"Rival Trainer":"gen9randombattle"},"challengeTo":null}`)
+	client.handleRawPayload(`|updatechallenges|{"challengesFrom":{"Rival User":"gen9randombattle"},"challengeTo":null}`)
 
 	challengeWG.Wait()
-	if challengeFrom != "Rival Trainer" || challengeFmt != "gen9randombattle" {
+	if challengeFrom != "Rival User" || challengeFmt != "gen9randombattle" {
 		t.Fatalf("unexpected challenge dispatched: from=%s, fmt=%s", challengeFrom, challengeFmt)
 	}
 
 	// verify auto-accept sent
 	select {
 	case msg := <-sentChan:
-		if msg != "|/utm null\n|/accept rivaltrainer" {
-			t.Fatalf("expected |/utm null\\n|/accept rivaltrainer, got %s", msg)
+		if msg != "|/utm null\n|/accept rivaluser" {
+			t.Fatalf("expected |/utm null\\n|/accept rivaluser, got %s", msg)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timed out waiting for auto accept")
@@ -882,7 +882,7 @@ func TestBattleRoomMessageRouting(t *testing.T) {
 	battleRoom := "battle-gen9randombattle-999"
 
 	// battle init line
-	client.handleRawPayload(">" + battleRoom + "\n|init|battle\n|player|p1|GhostHaze Thinker|\n|player|p2|RivalTrainer|")
+	client.handleRawPayload(">" + battleRoom + "\n|init|battle\n|player|p1|GhostHaze Thinker|\n|player|p2|RivalUser|")
 
 	select {
 	case <-battleStarted:
@@ -988,7 +988,7 @@ func TestBattleAutoLeaveAndForfeit(t *testing.T) {
 	client.connected = true
 
 	battleRoom := "battle-gen9randombattle-300"
-	client.handleRawPayload(">" + battleRoom + "\n|init|battle\n|player|p1|GhostHaze Thinker\n|player|p2|EnemyTrainer")
+	client.handleRawPayload(">" + battleRoom + "\n|init|battle\n|player|p1|GhostHaze Thinker\n|player|p2|EnemyUser")
 
 	if _, ok := client.Battle(battleRoom); !ok {
 		t.Fatalf("expected battle to be active")
@@ -1012,7 +1012,7 @@ func TestBattleAutoLeaveAndForfeit(t *testing.T) {
 
 	// test autoleave on win
 	battleRoom2 := "battle-gen9randombattle-301"
-	client.handleRawPayload(">" + battleRoom2 + "\n|init|battle\n|player|p1|GhostHaze Thinker\n|player|p2|EnemyTrainer")
+	client.handleRawPayload(">" + battleRoom2 + "\n|init|battle\n|player|p1|GhostHaze Thinker\n|player|p2|EnemyUser")
 	client.handleRawPayload(">" + battleRoom2 + "\n|win|GhostHaze Thinker")
 
 	// battle should be marked ended and omitted from activebattles immediately
@@ -1079,5 +1079,36 @@ func TestCleanupStaleBattles(t *testing.T) {
 	}
 }
 
+func TestStatusCommand(t *testing.T) {
+	cfg := Config{
+		CommandChar: ".",
+		Username:    "ghosthaze thinker",
+	}
+	client := NewClient(cfg)
 
+	// verify initial empty status
+	if client.StatusMessage() != "" {
+		t.Errorf("expected empty status message initially, got %q", client.StatusMessage())
+	}
 
+	// test setting status via .status command
+	client.routeCommand("botdevelopment", "+alice", ".status Testing bot status")
+	time.Sleep(30 * time.Millisecond)
+	if client.StatusMessage() != "Testing bot status" {
+		t.Errorf("expected status message 'Testing bot status', got %q", client.StatusMessage())
+	}
+
+	// test setting status via .setstatus alias
+	client.routeCommand("botdevelopment", "+alice", ".setstatus Active and ready")
+	time.Sleep(30 * time.Millisecond)
+	if client.StatusMessage() != "Active and ready" {
+		t.Errorf("expected status message 'Active and ready', got %q", client.StatusMessage())
+	}
+
+	// test setting status via .statusmsg alias
+	client.routeCommand("botdevelopment", "+alice", ".statusmsg Challenging users")
+	time.Sleep(30 * time.Millisecond)
+	if client.StatusMessage() != "Challenging users" {
+		t.Errorf("expected status message 'Challenging users', got %q", client.StatusMessage())
+	}
+}

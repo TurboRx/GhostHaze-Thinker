@@ -80,6 +80,9 @@ func (s *ModerationStore) load() error {
 	if cfg.ExemptRanks == "" {
 		cfg.ExemptRanks = "+, %, @, *, #, ~"
 	}
+	if cfg.BannedWords == nil {
+		cfg.BannedWords = []string{}
+	}
 
 	s.config = cfg
 	return nil
@@ -127,6 +130,9 @@ func (s *ModerationStore) SaveConfig(cfg ModerationConfig) error {
 	}
 	if cfg.ExemptRanks == "" {
 		cfg.ExemptRanks = "+, %, @, *, #, ~"
+	}
+	if cfg.BannedWords == nil {
+		cfg.BannedWords = []string{}
 	}
 
 	s.config = cfg

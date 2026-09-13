@@ -477,7 +477,7 @@
         <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end;">
           <form id="form-bot-status" novalidate class="form-row" style="flex:2;min-width:280px;align-items:flex-end;">
             <div class="form-group" style="flex:1;">
-              <label class="form-label" for="input-bot-status">Custom Status Message (/status)</label>
+              <label class="form-label" for="input-bot-status">Custom Status Message</label>
               <input type="text" id="input-bot-status" class="form-input" placeholder="e.g. Challenging users | Type .help">
             </div>
             <button type="submit" class="btn btn-primary" style="height:38px;">Set Status</button>
@@ -1053,6 +1053,11 @@
                   <td><code>.data &lt;pokemon&gt;</code></td>
                   <td>Pokédex database lookup showing types, base stats (HP, Atk, Def, SpA, SpD, Spe), and abilities.</td>
                   <td><code>.dex</code>, <code>.dt</code>, <code>.pokedex</code></td>
+                </tr>
+                <tr>
+                  <td><code>.status [message]</code></td>
+                  <td>Checks current status message, or updates bot custom status message broadcast.</td>
+                  <td><code>.setstatus</code>, <code>.statusmsg</code></td>
                 </tr>
                 <tr>
                   <td><code>.seen &lt;user&gt;</code></td>

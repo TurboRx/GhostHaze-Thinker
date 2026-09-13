@@ -20,7 +20,7 @@ func TestHistoryStore_Operations(t *testing.T) {
 		BattleID:   "battle-gen9ou-1",
 		Room:       "battle-gen9ou-1",
 		Format:     "gen9ou",
-		Opponent:   "TrainerBlue",
+		Opponent:   "UserBlue",
 		Outcome:    "win",
 		Turns:      14,
 		FinishedAt: time.Now(),
@@ -33,7 +33,7 @@ func TestHistoryStore_Operations(t *testing.T) {
 		BattleID:   "battle-gen9ou-2",
 		Room:       "battle-gen9ou-2",
 		Format:     "gen9ou",
-		Opponent:   "TrainerRed",
+		Opponent:   "UserRed",
 		Outcome:    "loss",
 		Turns:      22,
 		FinishedAt: time.Now(),
@@ -43,7 +43,7 @@ func TestHistoryStore_Operations(t *testing.T) {
 		BattleID:   "battle-gen9ou-3",
 		Room:       "battle-gen9ou-3",
 		Format:     "gen9ou",
-		Opponent:   "TrainerGreen",
+		Opponent:   "UserGreen",
 		Outcome:    "win",
 		Turns:      18,
 		FinishedAt: time.Now(),
@@ -55,8 +55,8 @@ func TestHistoryStore_Operations(t *testing.T) {
 	}
 
 	// most recent should be first
-	if list[0].Opponent != "TrainerGreen" {
-		t.Fatalf("expected most recent to be TrainerGreen, got %s", list[0].Opponent)
+	if list[0].Opponent != "UserGreen" {
+		t.Fatalf("expected most recent to be UserGreen, got %s", list[0].Opponent)
 	}
 
 	stats := store.Stats()

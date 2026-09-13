@@ -77,7 +77,11 @@ func (s *HistoryStore) Load() error {
 		return err
 	}
 
-	s.records = list
+	if list == nil {
+		s.records = make([]BattleRecord, 0)
+	} else {
+		s.records = list
+	}
 	return nil
 }
 
@@ -90,7 +94,12 @@ func (s *HistoryStore) Save() error {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(s.records, "", "  ")
+	records := s.records
+	if records == nil {
+		records = make([]BattleRecord, 0)
+	}
+
+	data, err := json.MarshalIndent(records, "", "  ")
 	if err != nil {
 		return err
 	}

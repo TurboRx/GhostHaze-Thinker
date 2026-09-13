@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 )
 
 func TestWebServerEndpoints(t *testing.T) {
+	t.Cleanup(func() {
+		_ = os.RemoveAll("logs")
+	})
+
 	// initialize test client and server
 	cfg := showdown.Config{
 		ServerID:   "testserver",
@@ -391,7 +396,7 @@ func TestWebServerEndpoints(t *testing.T) {
 			BattleID:   "battle-gen9ou-test",
 			Room:       "battle-gen9ou-test",
 			Format:     "gen9ou",
-			Opponent:   "TrainerBlue",
+			Opponent:   "UserBlue",
 			Outcome:    "win",
 			Turns:      12,
 			FinishedAt: time.Now(),
@@ -507,7 +512,7 @@ func TestWebServerEndpoints(t *testing.T) {
 
 	t.Run("joinphrases endpoints", func(t *testing.T) {
 		// save join phrase
-		jpJSON := `{"username":"PokemonTrainer","room":"lobby","phrase":"Welcome {user}!","enabled":true}`
+		jpJSON := `{"username":"PokemonUser","room":"lobby","phrase":"Welcome {user}!","enabled":true}`
 		saveReq := authReq(httptest.NewRequest(http.MethodPost, "/api/joinphrases/save", bytes.NewBufferString(jpJSON)))
 		saveReq.Header.Set("Content-Type", "application/json")
 		saveRR := httptest.NewRecorder()

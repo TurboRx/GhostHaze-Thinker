@@ -66,6 +66,15 @@ func (m *AbuseMonitor) IsAbusing(username string) bool {
 		}
 	}
 
+	// prune stale keys periodically if map grows large
+	if len(m.history) > 500 {
+		for uid, times := range m.history {
+			if len(times) == 0 || times[len(times)-1].Before(cutoff) {
+				delete(m.history, uid)
+			}
+		}
+	}
+
 	// append current invocation
 	valid = append(valid, now)
 	m.history[id] = valid
