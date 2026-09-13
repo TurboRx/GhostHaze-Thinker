@@ -87,6 +87,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (target === "battles") {
       fetchFormats();
+      fetchBattleHistory();
+    }
+    if (target === "teams") {
+      fetchTeams();
+    }
+    if (target === "commands") {
+      fetchCommands();
     }
 
     if (hamburger && mobileMenu) {
@@ -263,6 +270,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (statBattles) {
           statBattles.textContent = data.active_battles_count !== undefined ? data.active_battles_count : (data.active_battles ? data.active_battles.length : 0);
+        }
+
+        const statWinRate = document.getElementById("stat-winrate");
+        const statWinRateSub = document.getElementById("stat-winrate-sub");
+        if (statWinRate) {
+          const rate = data.win_rate !== undefined ? data.win_rate : 0;
+          statWinRate.textContent = rate + "%";
+        }
+        if (statWinRateSub) {
+          const w = data.wins || 0;
+          const l = data.losses || 0;
+          const tot = data.total_battles || 0;
+          statWinRateSub.textContent = w + "W / " + l + "L (" + tot + " battles)";
         }
 
         // toggle stop/start button state
@@ -461,6 +481,315 @@ document.addEventListener("DOMContentLoaded", function () {
             updateStatus();
           }
         });
+      });
+    });
+  }
+
+  // fetch and render match history
+  function fetchBattleHistory() {
+    fetch("/api/battles/history?limit=50")
+      .then((res) => res.json())
+      .then((data) => {
+        renderBattleHistory(data.records || [], data.stats || {});
+      })
+      .catch((err) => console.error("failed to fetch battle history", err));
+  }
+
+  function renderBattleHistory(records, stats) {
+    const container = document.getElementById("battle-history-container");
+    if (!container) return;
+
+    if (!records || records.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:24px;">No completed battles recorded yet.</p>';
+      return;
+    }
+
+    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Time</th><th>Format</th><th>Opponent</th><th>Turns</th><th>Result</th><th style="text-align:right;">Replay</th></tr></thead><tbody>';
+    records.forEach((r) => {
+      const outcome = (r.outcome || "loss").toLowerCase();
+      let badgeClass = "badge-danger";
+      let badgeText = "Loss";
+      if (outcome === "win") {
+        badgeClass = "badge-success";
+        badgeText = "Victory";
+      } else if (outcome === "tie") {
+        badgeClass = "badge-secondary";
+        badgeText = "Tie";
+      }
+
+      const dateStr = r.finished_at ? new Date(r.finished_at).toLocaleTimeString() : "-";
+      const replayLink = r.replay_url || ("https://replay.pokemonshowdown.com/" + (r.room ? r.room.replace("battle-", "") : ""));
+
+      html += `<tr>
+        <td style="color:var(--text-dim);font-size:12px;">${escapeHTML(dateStr)}</td>
+        <td><span class="chip">${escapeHTML(r.format || "custom")}</span></td>
+        <td><strong>${escapeHTML(r.opponent || "Unknown")}</strong></td>
+        <td>${escapeHTML(r.turns || 0)}</td>
+        <td><span class="badge ${badgeClass}">${badgeText}</span></td>
+        <td style="text-align:right;">
+          <a href="${escapeHTML(replayLink)}" target="_blank" class="btn btn-secondary btn-sm" title="View Showdown Replay">Replay</a>
+        </td>
+      </tr>`;
+    });
+    html += "</tbody></table></div>";
+    container.innerHTML = html;
+  }
+
+  const btnClearHistory = document.getElementById("btn-clear-history");
+  if (btnClearHistory) {
+    btnClearHistory.addEventListener("click", function () {
+      postJSON("/api/battles/history/clear", {}, function (err) {
+        if (err) showAlert("error", "Failed to clear history: " + err);
+        else {
+          showAlert("success", "Match history cleared.");
+          fetchBattleHistory();
+          updateStatus();
+        }
+      });
+    });
+  }
+
+  // teams vault handlers
+  function fetchTeams() {
+    fetch("/api/teams")
+      .then((res) => res.json())
+      .then((teams) => renderTeams(teams || []))
+      .catch((err) => console.error("failed to fetch teams", err));
+  }
+
+  function renderTeams(teams) {
+    const container = document.getElementById("teams-list-container");
+    if (!container) return;
+
+    if (!teams || teams.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:32px;">No battle teams saved in the vault yet. Click <strong>+ New Team</strong> above to add your first team!</p>';
+      return;
+    }
+
+    let html = '<div class="teams-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:16px;">';
+    teams.forEach((t) => {
+      const pokes = t.pokemon || [];
+      const pokeBadges = pokes.map((p) => `<span class="badge" style="background:var(--muted);color:var(--text-main);border:1px solid var(--border);font-size:11px;padding:3px 6px;border-radius:4px;">${escapeHTML(p)}</span>`).join(" ");
+
+      html += `<div class="card team-card" style="padding:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
+          <div>
+            <h4 style="margin:0 0 4px 0;font-size:15px;font-weight:600;">${escapeHTML(t.name)}</h4>
+            <span class="chip">${escapeHTML(t.format)}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label class="switch" title="Active for challenges">
+              <input type="checkbox" class="team-toggle-active" data-id="${escapeHTML(t.id)}" ${t.active ? "checked" : ""}>
+              <span class="slider"></span>
+            </label>
+            <button type="button" class="btn btn-secondary btn-sm btn-delete-team" data-id="${escapeHTML(t.id)}" title="Delete Team" style="padding:4px 8px;color:var(--destructive);">&times;</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;">
+          ${pokeBadges || '<span style="color:var(--text-dim);font-size:12px;">Custom set</span>'}
+        </div>
+
+        <details style="margin-top:10px;">
+          <summary style="font-size:12px;color:var(--text-dim);cursor:pointer;user-select:none;">View Pokepaste Text</summary>
+          <pre style="background:var(--muted);padding:10px;border-radius:var(--radius-sm);font-size:11px;overflow-x:auto;max-height:160px;margin-top:8px;white-space:pre-wrap;">${escapeHTML(t.team_raw || t.team_packed || "")}</pre>
+        </details>
+      </div>`;
+    });
+    html += "</div>";
+    container.innerHTML = html;
+
+    // toggle handlers
+    container.querySelectorAll(".team-toggle-active").forEach((sw) => {
+      sw.addEventListener("change", function () {
+        const teamId = this.getAttribute("data-id");
+        postJSON("/api/teams/toggle", { id: teamId }, (err) => {
+          if (err) showAlert("error", "Failed to toggle team: " + err);
+          else showAlert("success", "Updated team active status");
+        });
+      });
+    });
+
+    // delete handlers
+    container.querySelectorAll(".btn-delete-team").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const teamId = this.getAttribute("data-id");
+        postJSON("/api/teams/delete", { id: teamId }, (err) => {
+          if (err) showAlert("error", "Failed to delete team: " + err);
+          else {
+            showAlert("success", "Team deleted from vault");
+            fetchTeams();
+          }
+        });
+      });
+    });
+  }
+
+  // teams form toggle and submit
+  const btnShowAddTeam = document.getElementById("btn-show-add-team");
+  const btnCancelTeam = document.getElementById("btn-cancel-team");
+  const teamFormContainer = document.getElementById("team-form-container");
+  const formBattleTeam = document.getElementById("form-battle-team");
+
+  if (btnShowAddTeam && teamFormContainer) {
+    btnShowAddTeam.addEventListener("click", function () {
+      const isVisible = teamFormContainer.style.display !== "none";
+      teamFormContainer.style.display = isVisible ? "none" : "block";
+      if (!isVisible) {
+        document.getElementById("input-team-name")?.focus();
+      }
+    });
+  }
+
+  if (btnCancelTeam && teamFormContainer) {
+    btnCancelTeam.addEventListener("click", function () {
+      teamFormContainer.style.display = "none";
+    });
+  }
+
+  if (formBattleTeam) {
+    formBattleTeam.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const payload = {
+        name: document.getElementById("input-team-name")?.value.trim() || "",
+        format: document.getElementById("input-team-format")?.value.trim() || "",
+        team_raw: document.getElementById("input-team-raw")?.value.trim() || "",
+        active: document.getElementById("switch-team-active")?.checked ?? true,
+      };
+
+      if (!payload.name || !payload.format || !payload.team_raw) {
+        showAlert("error", "Please fill in team name, format, and pokepaste export text.");
+        return;
+      }
+
+      postJSON("/api/teams/save", payload, function (err) {
+        if (err) showAlert("error", "Failed to save team: " + err);
+        else {
+          showAlert("success", "Battle team saved to vault!");
+          formBattleTeam.reset();
+          if (teamFormContainer) teamFormContainer.style.display = "none";
+          fetchTeams();
+        }
+      });
+    });
+  }
+
+  // custom commands handlers
+  function fetchCommands() {
+    fetch("/api/commands")
+      .then((res) => res.json())
+      .then((cmds) => renderCommands(cmds || []))
+      .catch((err) => console.error("failed to fetch commands", err));
+  }
+
+  function renderCommands(commands) {
+    const container = document.getElementById("commands-list-container");
+    if (!container) return;
+
+    if (!commands || commands.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:32px;">No dynamic custom commands created yet. Click <strong>+ New Command</strong> above to create your first command!</p>';
+      return;
+    }
+
+    let html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Trigger</th><th>Rank</th><th>Scope</th><th>Response</th><th>Active</th><th style="text-align:right;">Action</th></tr></thead><tbody>';
+    commands.forEach((c) => {
+      const scope = (c.rooms && c.rooms.length > 0) ? c.rooms.join(", ") : "All Rooms & PMs";
+      const rankText = c.min_rank === "all" ? "Anyone" : `${c.min_rank}+`;
+
+      html += `<tr>
+        <td><strong>.${escapeHTML(c.name)}</strong></td>
+        <td><span class="chip">${escapeHTML(rankText)}</span></td>
+        <td style="color:var(--text-dim);font-size:12px;">${escapeHTML(scope)}</td>
+        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(c.response)}">${escapeHTML(c.response)}</td>
+        <td>
+          <label class="switch">
+            <input type="checkbox" class="cmd-toggle-enabled" data-name="${escapeHTML(c.name)}" ${c.enabled ? "checked" : ""}>
+            <span class="slider"></span>
+          </label>
+        </td>
+        <td style="text-align:right;">
+          <button type="button" class="btn btn-secondary btn-sm btn-delete-command" data-name="${escapeHTML(c.name)}" title="Delete Command" style="color:var(--destructive);">&times;</button>
+        </td>
+      </tr>`;
+    });
+    html += "</tbody></table></div>";
+    container.innerHTML = html;
+
+    // toggle handlers
+    container.querySelectorAll(".cmd-toggle-enabled").forEach((sw) => {
+      sw.addEventListener("change", function () {
+        const cmdName = this.getAttribute("data-name");
+        postJSON("/api/commands/toggle", { name: cmdName }, (err) => {
+          if (err) showAlert("error", "Failed to toggle command: " + err);
+          else showAlert("success", "Updated command status");
+        });
+      });
+    });
+
+    // delete handlers
+    container.querySelectorAll(".btn-delete-command").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const cmdName = this.getAttribute("data-name");
+        postJSON("/api/commands/delete", { name: cmdName }, (err) => {
+          if (err) showAlert("error", "Failed to delete command: " + err);
+          else {
+            showAlert("success", "Command deleted");
+            fetchCommands();
+          }
+        });
+      });
+    });
+  }
+
+  // command form toggle and submit
+  const btnShowAddCommand = document.getElementById("btn-show-add-command");
+  const btnCancelCommand = document.getElementById("btn-cancel-command");
+  const commandFormContainer = document.getElementById("command-form-container");
+  const formCustomCommand = document.getElementById("form-custom-command");
+
+  if (btnShowAddCommand && commandFormContainer) {
+    btnShowAddCommand.addEventListener("click", function () {
+      const isVisible = commandFormContainer.style.display !== "none";
+      commandFormContainer.style.display = isVisible ? "none" : "block";
+      if (!isVisible) {
+        document.getElementById("input-cmd-name")?.focus();
+      }
+    });
+  }
+
+  if (btnCancelCommand && commandFormContainer) {
+    btnCancelCommand.addEventListener("click", function () {
+      commandFormContainer.style.display = "none";
+    });
+  }
+
+  if (formCustomCommand) {
+    formCustomCommand.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const rawRooms = document.getElementById("input-cmd-rooms")?.value.trim() || "";
+      const rooms = rawRooms ? rawRooms.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+      const payload = {
+        name: document.getElementById("input-cmd-name")?.value.trim() || "",
+        response: document.getElementById("input-cmd-response")?.value.trim() || "",
+        min_rank: document.getElementById("select-cmd-rank")?.value || "all",
+        rooms: rooms,
+        enabled: document.getElementById("switch-cmd-enabled")?.checked ?? true,
+      };
+
+      if (!payload.name || !payload.response) {
+        showAlert("error", "Please enter a command trigger and response message.");
+        return;
+      }
+
+      postJSON("/api/commands/save", payload, function (err) {
+        if (err) showAlert("error", "Failed to save command: " + err);
+        else {
+          showAlert("success", "Custom command saved successfully!");
+          formCustomCommand.reset();
+          if (commandFormContainer) commandFormContainer.style.display = "none";
+          fetchCommands();
+        }
       });
     });
   }
@@ -1278,6 +1607,9 @@ document.addEventListener("DOMContentLoaded", function () {
   updateStatus(true);
   updateLogs();
   fetchFormats();
+  fetchBattleHistory();
+  fetchTeams();
+  fetchCommands();
   setInterval(updateStatus, 3000);
   setInterval(updateLogs, 3000);
 });

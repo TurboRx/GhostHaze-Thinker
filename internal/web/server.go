@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -359,6 +360,19 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/battles/forfeit", s.handleAPIBattlesForfeit)
 	mux.HandleFunc("/api/battles/leave", s.handleAPIBattlesLeave)
 
+	mux.HandleFunc("/api/teams", s.handleAPITeams)
+	mux.HandleFunc("/api/teams/save", s.handleAPITeamsSave)
+	mux.HandleFunc("/api/teams/delete", s.handleAPITeamsDelete)
+	mux.HandleFunc("/api/teams/toggle", s.handleAPITeamsToggle)
+
+	mux.HandleFunc("/api/commands", s.handleAPICommands)
+	mux.HandleFunc("/api/commands/save", s.handleAPICommandsSave)
+	mux.HandleFunc("/api/commands/delete", s.handleAPICommandsDelete)
+	mux.HandleFunc("/api/commands/toggle", s.handleAPICommandsToggle)
+
+	mux.HandleFunc("/api/battles/history", s.handleAPIBattlesHistory)
+	mux.HandleFunc("/api/battles/history/clear", s.handleAPIBattlesHistoryClear)
+
 	return s.authMiddleware(mux), nil
 }
 
@@ -603,6 +617,19 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		ssl = *cfg.ServerSSL
 	}
 
+	var stats showdown.BattleStats
+	if s.client.History() != nil {
+		stats = s.client.History().Stats()
+	}
+	teamsCount := 0
+	if s.client.Teams() != nil {
+		teamsCount = len(s.client.Teams().List())
+	}
+	commandsCount := 0
+	if s.client.DynamicCommands() != nil {
+		commandsCount = len(s.client.DynamicCommands().List())
+	}
+
 	resp := map[string]any{
 		"connected":                 s.client.IsConnected(),
 		"stopped":                   s.client.IsStopped(),
@@ -630,6 +657,13 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"chat_rooms_count":          chatRoomsCount,
 		"active_battles_count":      len(battlesData),
 		"active_battles":            battlesData,
+		"win_rate":                  stats.WinRate,
+		"wins":                      stats.Wins,
+		"losses":                    stats.Losses,
+		"ties":                      stats.Ties,
+		"total_battles":             stats.TotalBattles,
+		"teams_count":               teamsCount,
+		"commands_count":            commandsCount,
 		"connected_at_ms":           connectedAtMs,
 		"server_started_at_ms":      s.startTime.UnixMilli(),
 		"uptime_seconds":            uptimeSec,
@@ -1368,4 +1402,232 @@ func writeJSON(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(data)
+}
+
+// handleapiteams returns all configured battle teams
+func (s *Server) handleAPITeams(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.client.Teams() == nil {
+		writeJSON(w, http.StatusOK, []showdown.BattleTeam{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.client.Teams().List())
+}
+
+// handleapiteamssave creates or edits a battle team
+func (s *Server) handleAPITeamsSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var team showdown.BattleTeam
+	if err := json.NewDecoder(r.Body).Decode(&team); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	if s.client.Teams() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "team vault is not initialized"})
+		return
+	}
+
+	if err := s.client.Teams().AddOrUpdate(team); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Saved battle team '%s' for format %s", team.Name, team.Format))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapiteamsdelete removes a battle team
+func (s *Server) handleAPITeamsDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "team id is required"})
+		return
+	}
+
+	if s.client.Teams() == nil || !s.client.Teams().Delete(req.ID) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "team not found"})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Deleted battle team %s", req.ID))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapiteamstoggle toggles active state of a battle team
+func (s *Server) handleAPITeamsToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "team id is required"})
+		return
+	}
+
+	if s.client.Teams() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "team vault is not initialized"})
+		return
+	}
+
+	active, err := s.client.Teams().Toggle(req.ID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "active": active})
+}
+
+// handleapicommands returns all dynamic custom commands
+func (s *Server) handleAPICommands(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.client.DynamicCommands() == nil {
+		writeJSON(w, http.StatusOK, []showdown.CustomCommand{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.client.DynamicCommands().List())
+}
+
+// handleapicommandssave adds or updates a custom command
+func (s *Server) handleAPICommandsSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var cmd showdown.CustomCommand
+	if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	if s.client.DynamicCommands() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "commands store is not initialized"})
+		return
+	}
+
+	if err := s.client.DynamicCommands().AddOrUpdate(cmd); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Saved custom command '.%s'", cmd.Name))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapicommandsdelete removes a custom command
+func (s *Server) handleAPICommandsDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "command name is required"})
+		return
+	}
+
+	if s.client.DynamicCommands() == nil || !s.client.DynamicCommands().Delete(req.Name) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "command not found"})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Deleted custom command '.%s'", req.Name))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
+}
+
+// handleapicommandstoggle toggles enabled state of a custom command
+func (s *Server) handleAPICommandsToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "command name is required"})
+		return
+	}
+
+	if s.client.DynamicCommands() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "commands store is not initialized"})
+		return
+	}
+
+	enabled, err := s.client.DynamicCommands().Toggle(req.Name)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": enabled})
+}
+
+// handleapibattleshistory returns match history records and statistics
+func (s *Server) handleAPIBattlesHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	var records []showdown.BattleRecord
+	var stats showdown.BattleStats
+	if s.client.History() != nil {
+		records = s.client.History().List(limit)
+		stats = s.client.History().Stats()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"records": records,
+		"stats":   stats,
+	})
+}
+
+// handleapibattleshistoryclear resets battle history
+func (s *Server) handleAPIBattlesHistoryClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.client.History() != nil {
+		_ = s.client.History().Clear()
+	}
+
+	s.AddLog("system", "Control Panel", "Cleared battle match history")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok"})
 }

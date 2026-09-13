@@ -994,6 +994,33 @@ body {
   border-color: rgba(156, 163, 175, 0.2);
 }
 
+.badge-success {
+  background-color: var(--success-light);
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+.badge-danger {
+  background-color: var(--destructive-light);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.badge-secondary {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+
+.team-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.team-card:hover {
+  border-color: var(--ring);
+  box-shadow: var(--shadow);
+}
+
 .log-msg {
   color: inherit;
   word-break: break-word;

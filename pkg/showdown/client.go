@@ -58,6 +58,11 @@ type Client struct {
 	battleFormats []string
 	battleTeam    string
 
+	teams              *TeamStore
+	commandsStore      *CommandStore
+	history            *HistoryStore
+	incomingChallenges map[string]string
+
 	onConnect         []func()
 	onDisconnect      []func(error)
 	onLogin           []func(username string, isGuest bool)
@@ -80,18 +85,22 @@ func NewClient(cfg Config) *Client {
 	cfg.ApplyDefaults()
 
 	return &Client{
-		config:        cfg,
-		commands:      make(map[string]CommandHandler),
-		roomInIntro:   make(map[string]bool),
-		roomUsers:     make(map[string]map[string]string),
-		roomAway:      make(map[string]map[string]bool),
-		roomTitles:    make(map[string]string),
-		formatsMap:    make(map[string]Format),
-		battles:       make(map[string]*battle.Battle),
-		battleEngine:  battle.NewDefaultEngine(),
-		autoBattle:    cfg.AutoBattle,
-		battleFormats: append([]string{}, cfg.BattleFormats...),
-		battleTeam:    cfg.BattleTeam,
+		config:             cfg,
+		commands:           make(map[string]CommandHandler),
+		roomInIntro:        make(map[string]bool),
+		roomUsers:          make(map[string]map[string]string),
+		roomAway:           make(map[string]map[string]bool),
+		roomTitles:         make(map[string]string),
+		formatsMap:         make(map[string]Format),
+		battles:            make(map[string]*battle.Battle),
+		battleEngine:       battle.NewDefaultEngine(),
+		autoBattle:         cfg.AutoBattle,
+		battleFormats:      append([]string{}, cfg.BattleFormats...),
+		battleTeam:         cfg.BattleTeam,
+		teams:              NewTeamStore("data/teams.json"),
+		commandsStore:      NewCommandStore("data/commands.json"),
+		history:            NewHistoryStore("data/history.json", 200),
+		incomingChallenges: make(map[string]string),
 	}
 }
 
@@ -626,6 +635,33 @@ func (c *Client) BattleTeam() string {
 	return c.battleTeam
 }
 
+// teams returns the battle teams vault
+func (c *Client) Teams() *TeamStore {
+	return c.teams
+}
+
+// dynamiccommands returns the dynamic commands store
+func (c *Client) DynamicCommands() *CommandStore {
+	return c.commandsStore
+}
+
+// history returns the battle match history store
+func (c *Client) History() *HistoryStore {
+	return c.history
+}
+
+// getteamforformat returns an active team for the given format, or fallback
+func (c *Client) GetTeamForFormat(format string) string {
+	if c.teams != nil {
+		if t := c.teams.GetTeamForFormat(format); t != "" {
+			return t
+		}
+	}
+	c.battleMu.RLock()
+	defer c.battleMu.RUnlock()
+	return c.battleTeam
+}
+
 func (c *Client) SetBattleEngine(engine battle.BattleEngine) {
 	c.battleMu.Lock()
 	defer c.battleMu.Unlock()
@@ -672,8 +708,10 @@ func (c *Client) AcceptChallenge(user string) error {
 	}
 
 	c.battleMu.RLock()
-	team := c.battleTeam
+	format := c.incomingChallenges[cleanUser]
 	c.battleMu.RUnlock()
+
+	team := c.GetTeamForFormat(format)
 
 	if team != "" {
 		return c.Send(fmt.Sprintf("|/utm %s\n|/accept %s", team, cleanUser))
@@ -711,9 +749,7 @@ func (c *Client) ChallengeUser(user, format string) error {
 		time.Sleep(300 * time.Millisecond)
 	}
 
-	c.battleMu.RLock()
-	team := c.battleTeam
-	c.battleMu.RUnlock()
+	team := c.GetTeamForFormat(cleanFmt)
 
 	if team != "" {
 		return c.Send(fmt.Sprintf("|/utm %s\n|/challenge %s, %s", team, cleanUser, cleanFmt))
@@ -1108,6 +1144,10 @@ func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
 	for from, format := range cu.ChallengesFrom {
 		cleanFrom := CleanUsername(from)
 		baseFormat := strings.Split(format, "@@@")[0]
+		c.battleMu.Lock()
+		c.incomingChallenges[ToID(from)] = baseFormat
+		c.incomingChallenges[ToID(cleanFrom)] = baseFormat
+		c.battleMu.Unlock()
 		c.dispatchChallenge(cleanFrom, baseFormat)
 
 		if auto {
@@ -1148,6 +1188,10 @@ func (c *Client) handlePMChallenge(from, text string) {
 	}
 
 	cleanFrom := CleanUsername(from)
+	c.battleMu.Lock()
+	c.incomingChallenges[ToID(from)] = format
+	c.incomingChallenges[ToID(cleanFrom)] = format
+	c.battleMu.Unlock()
 	c.dispatchChallenge(cleanFrom, format)
 
 	c.battleMu.RLock()
@@ -1231,6 +1275,38 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 			winner = msg.Parts[0]
 		}
 		c.dispatchBattleEnd(b, winner)
+
+		// record battle result in history store
+		if c.history != nil {
+			cleanWinner := ToID(winner)
+			cleanNick := ToID(myNick)
+			outcome := "loss"
+			if cleanWinner != "" && cleanNick != "" && cleanWinner == cleanNick {
+				outcome = "win"
+			} else if msg.Type == "tie" || winner == "" {
+				outcome = "tie"
+			}
+			format := b.Tier
+			if format == "" {
+				parts := strings.Split(room, "-")
+				if len(parts) >= 2 {
+					format = parts[1]
+				}
+			}
+			opponent := b.OpponentName
+			if opponent == "" {
+				opponent = b.OpponentID
+			}
+			_ = c.history.Record(BattleRecord{
+				BattleID:   room,
+				Room:       room,
+				Format:     format,
+				Opponent:   opponent,
+				Outcome:    outcome,
+				Turns:      b.Turn,
+				FinishedAt: time.Now(),
+			})
+		}
 
 		c.stateMu.RLock()
 		autoLeave := c.config.ShouldAutoLeaveBattle()
@@ -1609,9 +1685,34 @@ func (c *Client) routeCommand(room, user, text string) {
 	handler, exists := c.commands[cmdName]
 	c.handlerMu.RUnlock()
 
+	cleanUser := CleanUsername(user)
 	if exists && handler != nil {
-		cleanUser := CleanUsername(user)
 		go handler(room, cleanUser, args)
+		return
+	}
+
+	// evaluate dynamic custom commands
+	if c.commandsStore != nil {
+		if dcmd, ok := c.commandsStore.Get(cmdName); ok && dcmd.Enabled {
+			userRank := UserRank(user)
+			if CanExecute(userRank, dcmd.MinRank) {
+				allowedInRoom := true
+				if len(dcmd.Rooms) > 0 && room != "" {
+					allowedInRoom = false
+					currRoomID := ToRoomID(room)
+					for _, r := range dcmd.Rooms {
+						if ToRoomID(r) == currRoomID {
+							allowedInRoom = true
+							break
+						}
+					}
+				}
+				if allowedInRoom {
+					replyText := FormatCommandResponse(dcmd.Response, cleanUser, currentBotNick, args)
+					_ = c.Reply(room, cleanUser, replyText)
+				}
+			}
+		}
 	}
 }
 

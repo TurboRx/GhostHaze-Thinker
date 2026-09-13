@@ -295,6 +295,132 @@ func TestWebServerEndpoints(t *testing.T) {
 			t.Errorf("expected restored command char '$', got %s", activeCfg.CommandChar)
 		}
 	})
+
+	t.Run("teams endpoints crud", func(t *testing.T) {
+		// save team
+		teamJSON := `{"name":"OU Team","format":"gen9ou","team_raw":"Pikachu @ Light Ball\nAbility: Lightning Rod\n- Thunderbolt\n","active":true}`
+		saveReq := authReq(httptest.NewRequest(http.MethodPost, "/api/teams/save", bytes.NewBufferString(teamJSON)))
+		saveReq.Header.Set("Content-Type", "application/json")
+		saveRR := httptest.NewRecorder()
+		mux.ServeHTTP(saveRR, saveReq)
+		if saveRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for teams save, got %d: %s", saveRR.Code, saveRR.Body.String())
+		}
+
+		// list teams
+		listReq := authReq(httptest.NewRequest(http.MethodGet, "/api/teams", nil))
+		listRR := httptest.NewRecorder()
+		mux.ServeHTTP(listRR, listReq)
+		if listRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for teams list, got %d", listRR.Code)
+		}
+		var teams []showdown.BattleTeam
+		if err := json.Unmarshal(listRR.Body.Bytes(), &teams); err != nil || len(teams) != 1 {
+			t.Fatalf("expected 1 team returned, got %v", teams)
+		}
+		teamID := teams[0].ID
+
+		// toggle team
+		toggleJSON := `{"id":"` + teamID + `"}`
+		toggleReq := authReq(httptest.NewRequest(http.MethodPost, "/api/teams/toggle", bytes.NewBufferString(toggleJSON)))
+		toggleReq.Header.Set("Content-Type", "application/json")
+		toggleRR := httptest.NewRecorder()
+		mux.ServeHTTP(toggleRR, toggleReq)
+		if toggleRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for teams toggle, got %d", toggleRR.Code)
+		}
+
+		// delete team
+		delJSON := `{"id":"` + teamID + `"}`
+		delReq := authReq(httptest.NewRequest(http.MethodPost, "/api/teams/delete", bytes.NewBufferString(delJSON)))
+		delReq.Header.Set("Content-Type", "application/json")
+		delRR := httptest.NewRecorder()
+		mux.ServeHTTP(delRR, delReq)
+		if delRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for teams delete, got %d", delRR.Code)
+		}
+	})
+
+	t.Run("commands endpoints crud", func(t *testing.T) {
+		// save command
+		cmdJSON := `{"name":"rules","response":"Be respectful!","min_rank":"all","enabled":true}`
+		saveReq := authReq(httptest.NewRequest(http.MethodPost, "/api/commands/save", bytes.NewBufferString(cmdJSON)))
+		saveReq.Header.Set("Content-Type", "application/json")
+		saveRR := httptest.NewRecorder()
+		mux.ServeHTTP(saveRR, saveReq)
+		if saveRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for commands save, got %d: %s", saveRR.Code, saveRR.Body.String())
+		}
+
+		// list commands
+		listReq := authReq(httptest.NewRequest(http.MethodGet, "/api/commands", nil))
+		listRR := httptest.NewRecorder()
+		mux.ServeHTTP(listRR, listReq)
+		if listRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for commands list, got %d", listRR.Code)
+		}
+		var cmds []showdown.CustomCommand
+		if err := json.Unmarshal(listRR.Body.Bytes(), &cmds); err != nil || len(cmds) != 1 {
+			t.Fatalf("expected 1 command returned, got %v", cmds)
+		}
+
+		// toggle command
+		toggleJSON := `{"name":"rules"}`
+		toggleReq := authReq(httptest.NewRequest(http.MethodPost, "/api/commands/toggle", bytes.NewBufferString(toggleJSON)))
+		toggleReq.Header.Set("Content-Type", "application/json")
+		toggleRR := httptest.NewRecorder()
+		mux.ServeHTTP(toggleRR, toggleReq)
+		if toggleRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for commands toggle, got %d", toggleRR.Code)
+		}
+
+		// delete command
+		delJSON := `{"name":"rules"}`
+		delReq := authReq(httptest.NewRequest(http.MethodPost, "/api/commands/delete", bytes.NewBufferString(delJSON)))
+		delReq.Header.Set("Content-Type", "application/json")
+		delRR := httptest.NewRecorder()
+		mux.ServeHTTP(delRR, delReq)
+		if delRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for commands delete, got %d", delRR.Code)
+		}
+	})
+
+	t.Run("battle history endpoints", func(t *testing.T) {
+		// record dummy battle directly into client history
+		_ = client.History().Record(showdown.BattleRecord{
+			BattleID:   "battle-gen9ou-test",
+			Room:       "battle-gen9ou-test",
+			Format:     "gen9ou",
+			Opponent:   "TrainerBlue",
+			Outcome:    "win",
+			Turns:      12,
+			FinishedAt: time.Now(),
+		})
+
+		// fetch history
+		req := authReq(httptest.NewRequest(http.MethodGet, "/api/battles/history?limit=10", nil))
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 for battle history, got %d", rr.Code)
+		}
+
+		var payload struct {
+			Records []showdown.BattleRecord `json:"records"`
+			Stats   showdown.BattleStats    `json:"stats"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil || len(payload.Records) == 0 {
+			t.Fatalf("expected records returned, got %v", payload)
+		}
+
+		// clear history
+		clearReq := authReq(httptest.NewRequest(http.MethodPost, "/api/battles/history/clear", nil))
+		clearRR := httptest.NewRecorder()
+		mux.ServeHTTP(clearRR, clearReq)
+		if clearRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for history clear, got %d", clearRR.Code)
+		}
+	})
 }
 
 func TestWebAuthenticationAndLockout(t *testing.T) {
