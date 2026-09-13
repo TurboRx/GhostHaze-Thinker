@@ -95,11 +95,11 @@
 
       <!-- animated hamburger button -->
       <button id="hamburger" class="hamburger" aria-label="Toggle navigation menu">
-        <svg class="hamburger-svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="3" y1="6" x2="21" y2="6" class="line top"></line>
-          <line x1="3" y1="12" x2="21" y2="12" class="line mid"></line>
-          <line x1="3" y1="18" x2="21" y2="18" class="line bot"></line>
-        </svg>
+        <span class="hamburger-box">
+          <span class="hamburger-line top"></span>
+          <span class="hamburger-line mid"></span>
+          <span class="hamburger-line bot"></span>
+        </span>
       </button>
     </div>
   </header>
@@ -1463,7 +1463,9 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 class="modal-title">Send Message to <span id="modal-room-target">-</span></h3>
-        <button type="button" class="modal-close-btn" id="btn-close-modal" aria-label="Close dialog">&times;</button>
+        <button type="button" class="modal-close-btn" id="btn-close-modal" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       </div>
       <form id="form-modal-room-msg" novalidate>
         <div class="form-group" style="margin-bottom:18px;">
@@ -1483,7 +1485,9 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 class="modal-title">Change Admin Password</h3>
-        <button type="button" class="modal-close-btn" id="btn-close-change-pw" aria-label="Close">&times;</button>
+        <button type="button" class="modal-close-btn" id="btn-close-change-pw" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       </div>
       <form id="form-change-password" novalidate>
         <div class="form-group" style="margin-bottom:14px;">
@@ -1511,7 +1515,9 @@
     <div class="modal-card" style="max-width:800px;width:95%;">
       <div class="modal-header">
         <h3 class="modal-title" id="file-view-title">View File</h3>
-        <button type="button" class="modal-close-btn" id="btn-close-file-view" aria-label="Close">&times;</button>
+        <button type="button" class="modal-close-btn" id="btn-close-file-view" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       </div>
       <div class="form-group" style="margin-bottom:16px;">
         <pre id="file-view-content" style="background:#0d1117;border:1px solid #30363d;border-radius:var(--radius);padding:16px;max-height:500px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9;white-space:pre-wrap;word-break:break-word;tab-size:2;"></pre>

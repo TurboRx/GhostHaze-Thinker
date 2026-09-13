@@ -406,39 +406,76 @@ body {
 /* hamburger menu button with cross morph animation */
 .hamburger {
   display: none;
+  width: 36px;
+  height: 36px;
   background: var(--secondary);
   border: 1px solid var(--border);
   color: var(--foreground);
   cursor: pointer;
-  padding: 6px;
+  padding: 0;
   border-radius: var(--radius);
   transition: border-color 0.15s ease, background 0.15s ease;
   flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
 }
 
 .hamburger:hover {
   border-color: var(--border-focus);
 }
 
-.hamburger .line {
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
-  transform-origin: 12px 12px;
+.hamburger-box {
+  width: 18px;
+  height: 14px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
-.hamburger.active .line.top {
+.hamburger-line {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background-color: var(--foreground);
+  border-radius: 1px;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s ease;
+  transform-origin: center;
+}
+
+.hamburger.active .hamburger-line.top {
   transform: translateY(6px) rotate(45deg);
 }
 
-.hamburger.active .line.mid {
+.hamburger.active .hamburger-line.mid {
   opacity: 0;
+  transform: scaleX(0);
 }
 
-.hamburger.active .line.bot {
+.hamburger.active .hamburger-line.bot {
   transform: translateY(-6px) rotate(-45deg);
 }
 
-.hamburger-svg {
-  display: block;
+/* pokemon team preview badges */
+.poke-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.poke-icon-badge img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  vertical-align: middle;
 }
 
 .mobile-menu {
@@ -1242,14 +1279,17 @@ body {
 }
 
 .modal-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: none;
   color: var(--muted-foreground);
-  font-size: 20px;
   cursor: pointer;
-  padding: 4px 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border-radius: var(--radius-sm);
-  line-height: 1;
   transition: all 0.12s ease;
 }
 
@@ -1369,13 +1409,22 @@ body {
   .hamburger {
     width: 32px;
     height: 32px;
-    padding: 4px;
+    padding: 0;
     margin-right: 0;
     flex-shrink: 0;
   }
-  .hamburger-svg {
-    width: 22px;
-    height: 22px;
+  .hamburger-box {
+    width: 16px;
+    height: 12px;
+  }
+  .hamburger-line {
+    width: 16px;
+  }
+  .hamburger.active .hamburger-line.top {
+    transform: translateY(5px) rotate(45deg);
+  }
+  .hamburger.active .hamburger-line.bot {
+    transform: translateY(-5px) rotate(-45deg);
   }
   .container {
     padding: 14px 10px;
