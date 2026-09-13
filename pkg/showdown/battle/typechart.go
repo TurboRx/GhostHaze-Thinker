@@ -14,7 +14,7 @@ const (
 	EffSuper2   = 4.0
 )
 
-// typeChart maps [defendingType][attackingType] -> effectiveness multiplier
+// typechart maps [defendingtype][attackingtype] -> effectiveness multiplier
 var typeChart = map[string]map[string]float64{
 	"bug": {
 		"fire": 2.0, "flying": 2.0, "rock": 2.0,
@@ -125,7 +125,7 @@ func GetMultipleEffectiveness(attackType string, defTypes ...string) float64 {
 	return total
 }
 
-// speciesTypes maps standard pokemon species names (lowercased) to their primary and secondary types.
+// speciestypes maps standard pokemon species names (lowercased) to their primary and secondary types.
 var speciesTypes = map[string][]string{
 	// gen 9 meta
 	"koraidon":      {"fighting", "dragon"},

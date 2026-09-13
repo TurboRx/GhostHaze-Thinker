@@ -315,7 +315,7 @@ func TestBattleEngine_PriorityFinisher(t *testing.T) {
 			{
 				Moves: []RequestMove{
 					{ID: "surf", Move: "Surf", PP: 15},
-					{ID: "aquajet", Move: "Aqua Jet", PP: 20}, // priority 1 move securing quick KO
+					{ID: "aquajet", Move: "Aqua Jet", PP: 20}, // priority 1 move securing quick ko
 				},
 			},
 		},
@@ -608,6 +608,17 @@ func TestEmbeddedDataset(t *testing.T) {
 	_, noSet := GetRandomBattleSet("NonExistentMon")
 	if noSet {
 		t.Fatalf("expected no random set for nonexistent mon")
+	}
+
+	// test ability data lookup
+	ability, hasAbility := GetAbilityData("Wonder Guard")
+	if !hasAbility || ability.Rating < 4 {
+		t.Fatalf("unexpected ability data for wonder guard: %+v (hasAbility=%v)", ability, hasAbility)
+	}
+
+	_, noAbility := GetAbilityData("NonExistentAbility")
+	if noAbility {
+		t.Fatalf("expected no ability data for nonexistent ability")
 	}
 }
 

@@ -133,7 +133,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "poke":
-		// team preview poke broadcast e.g. |poke|p2|Garchomp, L80, M|item
+		// team preview poke broadcast e.g. |poke|p2|garchomp, l80, m|item
 		if len(parts) >= 3 {
 			playerID := parts[1]
 			if b.OpponentID != "" && playerID == b.OpponentID {
@@ -145,7 +145,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "switch", "drag":
-		// e.g. |switch|p2a: Garchomp|Garchomp, L80, M|100/100
+		// e.g. |switch|p2a: garchomp|garchomp, l80, m|100/100
 		if len(parts) >= 4 {
 			ident := parts[1]
 			isOpp := b.isOpponentIdent(ident)
@@ -207,7 +207,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "-damage", "-heal":
-		// e.g. |-damage|p2a: Garchomp|45/100
+		// e.g. |-damage|p2a: garchomp|45/100
 		if len(parts) >= 3 {
 			ident := parts[1]
 			if b.isOpponentIdent(ident) {
@@ -218,7 +218,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "-status":
-		// e.g. |-status|p2a: Garchomp|brn
+		// e.g. |-status|p2a: garchomp|brn
 		if len(parts) >= 3 {
 			ident := parts[1]
 			if b.isOpponentIdent(ident) {
@@ -257,7 +257,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "-sidestart":
-		// e.g. |-sidestart|p2: username|move: Stealth Rock
+		// e.g. |-sidestart|p2: username|move: stealth rock
 		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
 			effect := strings.ToLower(parts[2])
 			if strings.Contains(effect, "stealth rock") {
@@ -286,7 +286,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "move":
-		// e.g. |move|p2a: Garchomp|Earthquake|p1a: Blastoise
+		// e.g. |move|p2a: garchomp|earthquake|p1a: blastoise
 		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
 			moveID := cleanID(parts[2])
 			exists := false
@@ -302,13 +302,13 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "-ability":
-		// e.g. |-ability|p2a: Rotom|Levitate
+		// e.g. |-ability|p2a: rotom|levitate
 		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
 			b.OpponentActive.Ability = cleanID(parts[2])
 		}
 
 	case "-item":
-		// e.g. |-item|p2a: Garchomp|Leftovers
+		// e.g. |-item|p2a: garchomp|leftovers
 		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
 			b.OpponentActive.Item = cleanID(parts[2])
 		}

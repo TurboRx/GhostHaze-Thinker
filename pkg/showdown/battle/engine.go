@@ -72,7 +72,7 @@ func (e *DefaultEngine) decideTeamPreview(b *Battle, req BattleRequest) BattleDe
 		}
 	}
 
-	// construct team order string (1-indexed) placing bestLeadIndex at position 1
+	// construct team order string (1-indexed) placing best lead index at position 1
 	var order strings.Builder
 	order.WriteString(fmt.Sprintf("%d", bestLeadIndex+1))
 	for i := 0; i < len(pokemonList); i++ {

@@ -49,7 +49,7 @@ func (c *Config) ApplyDefaults() {
 		c.ServerID = DefaultServerID
 	}
 
-	// if ServerURL is not explicitly specified, derive it from ServerID, ServerHost, ServerPort, ServerSSL
+	// if server url is not explicitly specified, derive it from server id, host, port, ssl
 	if c.ServerURL == "" {
 		host := c.ServerHost
 		port := c.ServerPort
@@ -78,7 +78,7 @@ func (c *Config) ApplyDefaults() {
 		}
 	}
 
-	// if LoginURL is not explicitly specified, derive it from LoginServer and ServerID
+	// if login url is not explicitly specified, derive it from login server and server id
 	if c.LoginURL == "" {
 		loginHost := c.LoginServer
 		if loginHost == "" {

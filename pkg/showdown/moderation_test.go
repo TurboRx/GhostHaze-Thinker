@@ -60,7 +60,7 @@ func TestModerationStore(t *testing.T) {
 		t.Errorf("expected short message to be allowed")
 	}
 
-	// test exempt user rank (e.g. +Voice or @Mod)
+	// test exempt user rank (e.g. +voice or @mod)
 	violationExempt, _, _ := store.CheckMessage("@ModUser", "THIS IS AN ALL CAPS SHOUTING MESSAGE")
 	if violationExempt {
 		t.Errorf("expected exempt rank to bypass moderation")

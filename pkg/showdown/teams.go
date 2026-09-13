@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -289,7 +288,7 @@ func ParsePokepaste(text string) ([]string, string, error) {
 			current = &pokeSet{}
 			teamSets = append(teamSets, current)
 
-			// parse header line: [Nickname (Species)] [(Gender)] [@ Item]
+			// parse header line: [nickname (species)] [(gender)] [@ item]
 			if idx := strings.LastIndex(line, " @ "); idx != -1 {
 				current.item = strings.TrimSpace(line[idx+3:])
 				line = strings.TrimSpace(line[:idx])
@@ -448,7 +447,7 @@ func ParsePokepaste(text string) ([]string, string, error) {
 		}
 		sb.WriteString("|")
 
-		// 12. misc: happiness,pokeball,hpType,gigantamax,dynamaxLevel,teraType
+		// 12. misc: happiness, pokeball, hptype, gigantamax, dynamaxlevel, teratype
 		if s.teraType != "" {
 			sb.WriteString(",,,,," + s.teraType)
 		}
@@ -467,7 +466,3 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
-// inttostr is a safe integer to string conversion
-func intToStr(i int) string {
-	return strconv.Itoa(i)
-}

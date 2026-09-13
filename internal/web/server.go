@@ -2259,20 +2259,6 @@ type AdminFileInfo struct {
 	IsLog bool   `json:"is_log"`
 }
 
-// formatbytesize formats byte count into human-readable string
-func formatByteSize(b int64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-}
-
 // sanitizeadminpath verifies path is safe inside data or logs
 func sanitizeAdminPath(p string) (string, error) {
 	clean := filepath.Clean(strings.TrimSpace(p))
@@ -2309,7 +2295,7 @@ func (s *Server) handleAPIAdminFiles(w http.ResponseWriter, r *http.Request) {
 			kb := float64(info.Size()) / 1024.0
 			sizeStr := fmt.Sprintf("%.2f KB", kb)
 
-			// parse human-readable date matching showdown-chatbot (e.g. September 13, 2026)
+			// parse human-readable date matching showdown-chatbot (e.g. september 13, 2026)
 			dateStr := info.ModTime().Format("January 02, 2006")
 			parts := strings.Split(strings.TrimSuffix(e.Name(), ".log"), "_")
 			if len(parts) == 4 && parts[0] == "seclog" {

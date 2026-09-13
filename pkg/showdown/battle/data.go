@@ -125,7 +125,7 @@ func getEmbeddedRandomSets() map[string]map[string]RandomBattleSpeciesData {
 		// try parsing as multi-gen map {"gen1": ..., "gen9": ...}
 		var multiGen map[string]map[string]RandomBattleSpeciesData
 		if err := json.Unmarshal(embeddedRandomSetsJSON, &multiGen); err == nil && len(multiGen) > 0 {
-			// verify if keys look like genN
+			// verify if keys look like genn
 			for k := range multiGen {
 				if strings.HasPrefix(k, "gen") {
 					embeddedMultiGenSets = multiGen
@@ -234,7 +234,7 @@ func GetRandomBattleSet(species string) (RandomBattleSpeciesData, bool) {
 	return GetGenRandomBattleSet(9, species)
 }
 
-// getspeciestier returns the competitive tier (e.g. OU, UU, Ubers) for a species.
+// getspeciestier returns the competitive tier (e.g. ou, uu, ubers) for a species.
 func GetSpeciesTier(species string) string {
 	formats := getEmbeddedFormats()
 	clean := cleanID(species)

@@ -50,7 +50,7 @@ func TestApplyDefaults(t *testing.T) {
 		t.Errorf("expected throttle delay 0 when negative, got %v", cfgNoThrottle.ThrottleDelay)
 	}
 
-	// test side server auto-derivation by ServerID using dummy server name
+	// test side server auto-derivation by server id using dummy server name
 	cfgSideServer := Config{ServerID: "testserver"}
 	cfgSideServer.ApplyDefaults()
 	if cfgSideServer.ServerURL != "wss://testserver.psim.us/showdown/websocket" {
@@ -368,13 +368,13 @@ func TestReplyHelperRouting(t *testing.T) {
 		t.Error("expected error for empty target")
 	}
 
-	// empty room -> routes to SendPM
+	// empty room -> routes to sendpm
 	errPM := client.Reply("", "alice", "hi")
 	if errPM == nil || !strings.Contains(errPM.Error(), "websocket is not connected") {
 		t.Errorf("expected websocket disconnected error from SendPM, got %v", errPM)
 	}
 
-	// non-empty room -> routes to SendToRoom
+	// non-empty room -> routes to sendtoroom
 	errRoom := client.Reply("botdevelopment", "alice", "hi")
 	if errRoom == nil || !strings.Contains(errRoom.Error(), "websocket is not connected") {
 		t.Errorf("expected websocket disconnected error from SendToRoom, got %v", errRoom)
