@@ -41,6 +41,10 @@ func NewJoinPhraseStore(filePath string) *JoinPhraseStore {
 }
 
 // load reads phrases from the json file
+func (s *JoinPhraseStore) Load() error {
+	return s.load()
+}
+
 func (s *JoinPhraseStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

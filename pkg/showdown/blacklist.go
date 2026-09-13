@@ -34,6 +34,10 @@ func NewBlacklistStore(filePath string) *BlacklistStore {
 }
 
 // load reads blacklist entries from json
+func (s *BlacklistStore) Load() error {
+	return s.load()
+}
+
 func (s *BlacklistStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -18,3 +18,5 @@ smogon-showdown/
 # Runtime data directories
 data/
 **/data/
+logs/
+**/logs/

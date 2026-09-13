@@ -46,6 +46,10 @@ func NewTimerStore(filePath string) *TimerStore {
 }
 
 // load reads timers from the json file
+func (s *TimerStore) Load() error {
+	return s.load()
+}
+
 func (s *TimerStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
