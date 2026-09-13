@@ -195,6 +195,25 @@ func TestWebServerEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("logs clear endpoint", func(t *testing.T) {
+		srv.AddLog("chat", "lobby", "message to be cleared")
+		req := httptest.NewRequest(http.MethodPost, "/api/logs/clear", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200 for clear logs, got %d", rr.Code)
+		}
+
+		logs := srv.LogsList()
+		// should only contain the single clear log entry
+		for _, l := range logs {
+			if l.Message == "message to be cleared" {
+				t.Errorf("expected 'message to be cleared' to have been deleted")
+			}
+		}
+	})
+
 	t.Run("bot stop endpoint", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/bot/stop", nil)
 		rr := httptest.NewRecorder()

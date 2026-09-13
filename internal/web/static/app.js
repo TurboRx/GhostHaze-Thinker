@@ -490,8 +490,15 @@ document.addEventListener("DOMContentLoaded", function () {
   const clearLogsBtn = document.getElementById("btn-clear-logs");
   if (clearLogsBtn) {
     clearLogsBtn.addEventListener("click", function () {
-      cachedLogs = [];
-      renderLogs();
+      postJSON("/api/logs/clear", {}, function (err) {
+        if (err) {
+          showAlert("error", "Failed to clear logs: " + err);
+        } else {
+          cachedLogs = [];
+          renderLogs();
+          showAlert("success", "Activity logs cleared");
+        }
+      });
     });
   }
 

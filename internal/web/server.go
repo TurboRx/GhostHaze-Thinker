@@ -258,6 +258,13 @@ func (s *Server) LogsList() []LogEntry {
 	return res
 }
 
+// clearlogs empties the circular log buffer
+func (s *Server) ClearLogs() {
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	s.logs = []LogEntry{}
+}
+
 // formatduration formats duration into human readable string
 func formatDuration(d time.Duration) string {
 	d = d.Round(time.Second)
@@ -331,6 +338,7 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/status", s.handleAPIStatus)
 	mux.HandleFunc("/api/logs", s.handleAPILogs)
 	mux.HandleFunc("/api/logs/raw", s.handleAPILogsRaw)
+	mux.HandleFunc("/api/logs/clear", s.handleAPILogsClear)
 	mux.HandleFunc("/api/backup/download", s.handleAPIBackupDownload)
 	mux.HandleFunc("/api/backup/restore", s.handleAPIBackupRestore)
 	mux.HandleFunc("/api/rooms/join", s.handleAPIRoomsJoin)
@@ -656,6 +664,18 @@ func (s *Server) handleAPILogsRaw(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = w.Write([]byte(sb.String()))
+}
+
+// handleapilogsclear empties all stored activity events
+func (s *Server) handleAPILogsClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.ClearLogs()
+	s.AddLog("system", "Activity Log", "Logs cleared by user")
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // handleapibackupdownload generates a downloadable configuration backup json file
