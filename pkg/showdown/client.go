@@ -971,9 +971,15 @@ func (c *Client) processMessage(msg RawMessage) {
 		if len(msg.Parts) > 0 {
 			roomType = msg.Parts[0]
 		}
-		c.stateMu.Lock()
-		c.roomInIntro[ToRoomID(msg.Room)] = true
-		c.stateMu.Unlock()
+		roomID := ToRoomID(msg.Room)
+		if roomID != "" {
+			c.stateMu.Lock()
+			c.roomInIntro[roomID] = true
+			if c.roomUsers[roomID] == nil {
+				c.roomUsers[roomID] = make(map[string]string)
+			}
+			c.stateMu.Unlock()
+		}
 		c.dispatchRoomJoin(msg.Room, roomType)
 
 	case "deinit":

@@ -15,6 +15,9 @@ func ParseRawStream(raw string, currentRoom string) ([]RawMessage, string) {
 		trimmed := strings.TrimRight(line, "\r")
 		if strings.HasPrefix(trimmed, ">") {
 			room = strings.TrimSpace(trimmed[1:])
+			if room == "" {
+				room = "lobby"
+			}
 			continue
 		}
 		if !strings.HasPrefix(trimmed, "|") || len(trimmed) <= 1 {
@@ -30,8 +33,17 @@ func ParseRawStream(raw string, currentRoom string) ([]RawMessage, string) {
 		msgType := parts[0]
 		paramSlice := parts[1:]
 
+		effectiveRoom := room
+		// in showdown chat messages and room events without explicit room belong to lobby
+		if effectiveRoom == "" {
+			switch msgType {
+			case "c", "c:", "chat", "init", "deinit", "title", "users", "j", "J", "l", "L", "n", "N", "raw", "html":
+				effectiveRoom = "lobby"
+			}
+		}
+
 		messages = append(messages, RawMessage{
-			Room:  room,
+			Room:  effectiveRoom,
 			Type:  msgType,
 			Parts: paramSlice,
 			Raw:   trimmed,
