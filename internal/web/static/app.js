@@ -356,20 +356,6 @@ document.addEventListener("DOMContentLoaded", function () {
       </tr>`;
     });
     tbody.innerHTML = html;
-
-    tbody.querySelectorAll(".btn-leave-room").forEach((btn) => {
-      btn.addEventListener("click", function () {
-        const roomName = this.getAttribute("data-room");
-        leaveRoom(roomName);
-      });
-    });
-
-    tbody.querySelectorAll(".btn-quick-msg").forEach((btn) => {
-      btn.addEventListener("click", function () {
-        const roomName = this.getAttribute("data-room");
-        openRoomModal(roomName);
-      });
-    });
   }
 
   // render active battle list
@@ -532,6 +518,36 @@ document.addEventListener("DOMContentLoaded", function () {
           updateStatus();
         }
       });
+    });
+  }
+
+  // direct leave room form
+  const leaveDirectForm = document.getElementById("form-leave-room-direct");
+  if (leaveDirectForm) {
+    leaveDirectForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const input = document.getElementById("input-leave-room-direct");
+      const room = input.value.trim();
+      if (!room) return;
+      leaveRoom(room);
+      input.value = "";
+    });
+  }
+
+  // delegate table actions for chatroom rows
+  const roomsTableBody = document.getElementById("rooms-table-body");
+  if (roomsTableBody) {
+    roomsTableBody.addEventListener("click", function (e) {
+      const leaveBtn = e.target.closest(".btn-leave-room");
+      if (leaveBtn) {
+        const room = leaveBtn.getAttribute("data-room");
+        if (room) leaveRoom(room);
+      }
+      const msgBtn = e.target.closest(".btn-quick-msg");
+      if (msgBtn) {
+        const room = msgBtn.getAttribute("data-room");
+        if (room) openRoomModal(room);
+      }
     });
   }
 

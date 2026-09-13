@@ -886,7 +886,20 @@ func (s *Server) handleAPIRoomsLeave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.AddLog("room", "Control Panel", "Requested leave: "+room)
+	// remove room from configured auto-join rooms if present and persist
+	s.client.UpdateConfig(func(cfg *showdown.Config) {
+		var updated []string
+		for _, rm := range cfg.Rooms {
+			if showdown.ToRoomID(rm) != showdown.ToRoomID(room) {
+				updated = append(updated, rm)
+			}
+		}
+		cfg.Rooms = updated
+	})
+	savedCfg := s.client.ClientConfig()
+	_ = config.SaveEnvFile(".env", &savedCfg)
+
+	s.AddLog("room", "Control Panel", "Left chatroom: "+room)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "room": room})
 }
 

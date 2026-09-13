@@ -315,14 +315,25 @@
     <section id="tab-rooms" class="tab-pane">
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header">
-          <h2 class="card-title">Join a Chatroom</h2>
+          <h2 class="card-title">Join or Leave a Chatroom</h2>
         </div>
-        <form id="form-join-room" class="form-row">
-          <div class="form-group">
-            <input type="text" id="input-join-room" class="form-input" placeholder="Chatroom identifier (e.g. lobby, myroom)" required>
-          </div>
-          <button type="submit" class="btn btn-primary">Join Chatroom</button>
-        </form>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;">
+          <form id="form-join-room" class="form-row" style="flex:1;min-width:260px;">
+            <div class="form-group">
+              <label class="form-label" for="input-join-room">Join Chatroom</label>
+              <input type="text" id="input-join-room" class="form-input" placeholder="e.g. lobby, myroom" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Join Chatroom</button>
+          </form>
+
+          <form id="form-leave-room-direct" class="form-row" style="flex:1;min-width:260px;">
+            <div class="form-group">
+              <label class="form-label" for="input-leave-room-direct">Leave Chatroom</label>
+              <input type="text" id="input-leave-room-direct" class="form-input" placeholder="e.g. lobby, myroom" required>
+            </div>
+            <button type="submit" class="btn btn-danger">Leave Chatroom</button>
+          </form>
+        </div>
       </div>
 
       <div class="card">

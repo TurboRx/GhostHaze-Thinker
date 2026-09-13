@@ -304,16 +304,26 @@ func (c *Client) LeaveRoom(room string) error {
 	if trimmed == "" {
 		return errors.New("cannot leave room: room name is empty")
 	}
+	roomID := ToRoomID(trimmed)
 	if strings.HasPrefix(trimmed, "battle-") {
 		_ = c.SendToRoom(trimmed, "/leavebattle")
-		roomID := ToRoomID(trimmed)
 		c.battleMu.Lock()
 		delete(c.battles, roomID)
 		c.battleMu.Unlock()
 	}
 	_ = c.SendToRoom(trimmed, "/leave")
 	_ = c.Send(fmt.Sprintf("|/noreply /leave %s", trimmed))
-	return c.Send(fmt.Sprintf("|/leave %s", trimmed))
+	err := c.Send(fmt.Sprintf("|/leave %s", trimmed))
+
+	c.stateMu.Lock()
+	delete(c.roomInIntro, roomID)
+	delete(c.roomUsers, roomID)
+	delete(c.roomAway, roomID)
+	delete(c.roomTitles, roomID)
+	c.stateMu.Unlock()
+
+	c.dispatchRoomLeave(trimmed)
+	return err
 }
 
 // forfeitbattle sends forfeit to the battle room and vacates the room

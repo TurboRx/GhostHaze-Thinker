@@ -134,9 +134,6 @@ func main() {
 
 	bot.OnChat(func(msg showdown.ChatMessage) {
 		logInfo("[%s] %s: %s", msg.Room, msg.User, msg.Text)
-		if webServer != nil {
-			webServer.AddLog("chat", msg.Room, fmt.Sprintf("%s: %s", msg.User, msg.Text))
-		}
 	})
 
 	bot.OnChallenge(func(from, format string) {
