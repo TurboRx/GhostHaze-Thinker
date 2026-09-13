@@ -113,9 +113,6 @@ func (c *Config) ApplyDefaults() {
 			Timeout: 15 * time.Second,
 		}
 	}
-	if c.AutoBattle && len(c.BattleFormats) == 0 {
-		c.BattleFormats = []string{"gen9randombattle"}
-	}
 	if c.AutoLeaveBattle == nil {
 		leave := true
 		c.AutoLeaveBattle = &leave

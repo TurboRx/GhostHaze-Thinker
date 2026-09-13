@@ -121,6 +121,9 @@ func Load() (*Config, error) {
 		webHost = val
 	}
 	webAdminPassword := strings.TrimSpace(os.Getenv("WEB_ADMIN_PASSWORD"))
+	if webAdminPassword == "" {
+		webAdminPassword = "admin"
+	}
 
 	return &Config{
 		Config:           cfg,
@@ -229,9 +232,11 @@ func SaveEnvFile(filename string, cfg *showdown.Config) error {
 	}
 	sb.WriteString(fmt.Sprintf("PS_BATTLE_FORMATS=%s\n", strings.Join(cfg.BattleFormats, ",")))
 	sb.WriteString(fmt.Sprintf("PS_BATTLE_TEAM=%s\n", cfg.BattleTeam))
-	if pass := os.Getenv("WEB_ADMIN_PASSWORD"); pass != "" {
-		sb.WriteString(fmt.Sprintf("WEB_ADMIN_PASSWORD=%s\n", pass))
+	pass := os.Getenv("WEB_ADMIN_PASSWORD")
+	if pass == "" {
+		pass = "admin"
 	}
+	sb.WriteString(fmt.Sprintf("WEB_ADMIN_PASSWORD=%s\n", pass))
 
 	return os.WriteFile(filename, []byte(sb.String()), 0600)
 }

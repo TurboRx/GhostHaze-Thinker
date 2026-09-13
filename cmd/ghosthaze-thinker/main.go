@@ -60,6 +60,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	processStartTime := time.Now()
 	bot := showdown.NewClient(*cfg.Config)
 
 	// initialize native web control panel if enabled
@@ -218,6 +219,21 @@ func main() {
 		_ = bot.Reply(room, user, fmt.Sprintf("Left room %s.", targetRoom))
 	})
 
+	bot.HandleCommand("uptime", func(room, user, args string) {
+		uptimeStr := formatDHMS(time.Since(processStartTime))
+		_ = bot.Reply(room, user, fmt.Sprintf("Bot Uptime: %s", uptimeStr))
+	})
+
+	bot.HandleCommand("contime", func(room, user, args string) {
+		connAt := bot.ConnectedAt()
+		if connAt.IsZero() {
+			_ = bot.Reply(room, user, "Connection Time: Not connected")
+			return
+		}
+		conStr := formatDHMS(time.Since(connAt))
+		_ = bot.Reply(room, user, fmt.Sprintf("Connection Time: %s", conStr))
+	})
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -240,4 +256,49 @@ func main() {
 	}
 
 	logInfo("Disconnected.")
+}
+
+// formatdhms formats a duration into days, hours, minutes, seconds like showdown chatbot
+func formatDHMS(d time.Duration) string {
+	totalSec := int64(d.Seconds())
+	if totalSec < 0 {
+		totalSec = 0
+	}
+	sec := totalSec % 60
+	totalMin := totalSec / 60
+	min := totalMin % 60
+	totalHours := totalMin / 60
+	hours := totalHours % 24
+	days := totalHours / 24
+
+	var parts []string
+	if days > 0 {
+		if days == 1 {
+			parts = append(parts, "1 day")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d days", days))
+		}
+	}
+	if hours > 0 {
+		if hours == 1 {
+			parts = append(parts, "1 hour")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d hours", hours))
+		}
+	}
+	if min > 0 {
+		if min == 1 {
+			parts = append(parts, "1 minute")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d minutes", min))
+		}
+	}
+	if sec > 0 || len(parts) == 0 {
+		if sec == 1 {
+			parts = append(parts, "1 second")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d seconds", sec))
+		}
+	}
+	return strings.Join(parts, ", ")
 }

@@ -637,8 +637,8 @@ func TestBattleConfigAndDefaults(t *testing.T) {
 	}
 	cfg.ApplyDefaults()
 
-	if len(cfg.BattleFormats) != 1 || cfg.BattleFormats[0] != "gen9randombattle" {
-		t.Fatalf("expected default battle format gen9randombattle, got %v", cfg.BattleFormats)
+	if len(cfg.BattleFormats) != 0 {
+		t.Fatalf("expected empty default battle formats to allow all formats, got %v", cfg.BattleFormats)
 	}
 
 	client := NewClient(cfg)
@@ -711,8 +711,8 @@ func TestBattleChallengeActions(t *testing.T) {
 	_ = client.AcceptChallenge("Rival Trainer")
 	select {
 	case msg := <-sentChan:
-		if msg != "|/accept rivaltrainer" {
-			t.Fatalf("expected |/accept rivaltrainer, got %s", msg)
+		if msg != "|/utm null\n|/accept rivaltrainer" {
+			t.Fatalf("expected |/utm null\\n|/accept rivaltrainer, got %s", msg)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timed out waiting for accept command")
@@ -733,8 +733,8 @@ func TestBattleChallengeActions(t *testing.T) {
 	_ = client.ChallengeUser("Friend", "")
 	select {
 	case msg := <-sentChan:
-		if msg != "|/challenge friend, gen9randombattle" {
-			t.Fatalf("expected |/challenge friend, gen9randombattle, got %s", msg)
+		if msg != "|/utm null\n|/challenge friend, gen9randombattle" {
+			t.Fatalf("expected |/utm null\\n|/challenge friend, gen9randombattle, got %s", msg)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timed out waiting for challenge command")
@@ -817,8 +817,8 @@ func TestChallengesUpdate_AutoAccept(t *testing.T) {
 	// verify auto-accept sent
 	select {
 	case msg := <-sentChan:
-		if msg != "|/accept rivaltrainer" {
-			t.Fatalf("expected |/accept rivaltrainer, got %s", msg)
+		if msg != "|/utm null\n|/accept rivaltrainer" {
+			t.Fatalf("expected |/utm null\\n|/accept rivaltrainer, got %s", msg)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timed out waiting for auto accept")

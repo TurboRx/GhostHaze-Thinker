@@ -167,6 +167,9 @@ func NewServer(client *showdown.Client, host string, port int, adminPassword ...
 	if len(adminPassword) > 0 {
 		pw = adminPassword[0]
 	}
+	if pw == "" {
+		pw = "admin"
+	}
 
 	s := &Server{
 		client:        client,
@@ -188,14 +191,15 @@ func NewServer(client *showdown.Client, host string, port int, adminPassword ...
 func (s *Server) SetAdminPassword(pw string) {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
+	if pw == "" {
+		pw = "admin"
+	}
 	s.adminPassword = pw
 }
 
 // isauthenabled returns whether admin password protection is turned on
 func (s *Server) IsAuthEnabled() bool {
-	s.sessionMu.RLock()
-	defer s.sessionMu.RUnlock()
-	return s.adminPassword != ""
+	return true
 }
 
 // isauthenticated checks if request contains a valid session cookie or token
@@ -345,6 +349,7 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/rooms/leave", s.handleAPIRoomsLeave)
 	mux.HandleFunc("/api/send", s.handleAPISend)
 	mux.HandleFunc("/api/challenge", s.handleAPIChallenge)
+	mux.HandleFunc("/api/formats", s.handleAPIFormats)
 	mux.HandleFunc("/api/tools/get-server", s.handleAPIGetServer)
 	mux.HandleFunc("/api/config/update", s.handleAPIConfigUpdate)
 	mux.HandleFunc("/api/bot/stop", s.handleAPIBotStop)
@@ -401,8 +406,11 @@ func (s *Server) handleAPILogin(w http.ResponseWriter, r *http.Request) {
 	s.sessionMu.RLock()
 	adminPass := s.adminPassword
 	s.sessionMu.RUnlock()
+	if adminPass == "" {
+		adminPass = "admin"
+	}
 
-	if adminPass == "" || subtle.ConstantTimeCompare([]byte(req.Password), []byte(adminPass)) == 1 {
+	if subtle.ConstantTimeCompare([]byte(req.Password), []byte(adminPass)) == 1 {
 		valid = true
 	}
 
@@ -621,6 +629,7 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"active_battles_count":      len(battlesData),
 		"active_battles":            battlesData,
 		"connected_at_ms":           connectedAtMs,
+		"server_started_at_ms":      s.startTime.UnixMilli(),
 		"uptime_seconds":            uptimeSec,
 		"connection_uptime_seconds": uptimeSec,
 		"server_uptime_seconds":     serverUptimeSec,
@@ -980,6 +989,16 @@ func (s *Server) handleAPIChallenge(w http.ResponseWriter, r *http.Request) {
 
 	s.AddLog("battle", "Challenge", fmt.Sprintf("Challenged %s in %s", user, format))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "user": user, "format": format})
+}
+
+// handleapiformats returns the list of formats fetched from the showdown server
+func (s *Server) handleAPIFormats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	formats := s.client.Formats()
+	writeJSON(w, http.StatusOK, formats)
 }
 
 // handleapigetserver resolves showdown server parameters

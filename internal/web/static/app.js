@@ -85,6 +85,10 @@ document.addEventListener("DOMContentLoaded", function () {
       activePane.classList.add("active");
     }
 
+    if (target === "battles") {
+      fetchFormats();
+    }
+
     if (hamburger && mobileMenu) {
       hamburger.classList.remove("active");
       mobileMenu.classList.remove("open");
@@ -164,15 +168,19 @@ document.addEventListener("DOMContentLoaded", function () {
         isConnected = !!data.connected;
         isStopped = !!data.stopped;
 
-        if (data.connection_uptime_seconds > 0 && isConnected) {
-          connectionStartMs = Date.now() - data.connection_uptime_seconds * 1000;
-        } else if (data.connected_at_ms > 0 && isConnected) {
+        if (data.connected_at_ms > 0 && isConnected) {
           connectionStartMs = data.connected_at_ms;
+        } else if (data.connection_uptime_seconds > 0 && isConnected) {
+          if (connectionStartMs <= 0) {
+            connectionStartMs = Date.now() - data.connection_uptime_seconds * 1000;
+          }
         } else {
           connectionStartMs = 0;
         }
 
-        if (data.server_uptime_seconds > 0) {
+        if (data.server_started_at_ms > 0) {
+          serverStartMs = data.server_started_at_ms;
+        } else if (data.server_uptime_seconds > 0 && serverStartMs <= 0) {
           serverStartMs = Date.now() - data.server_uptime_seconds * 1000;
         }
 
@@ -350,8 +358,10 @@ document.addEventListener("DOMContentLoaded", function () {
         <td><strong>${escapeHTML(r)}</strong></td>
         <td><span class="chip" style="background:var(--success-light);color:#34d399;">Active</span></td>
         <td style="text-align:right;">
-          <button type="button" class="btn btn-secondary btn-sm btn-quick-msg" data-room="${escapeHTML(r)}" style="margin-right:6px;">Message</button>
-          <button type="button" class="btn btn-danger btn-sm btn-leave-room" data-room="${escapeHTML(r)}">Leave</button>
+          <div class="table-actions">
+            <button type="button" class="btn btn-secondary btn-sm btn-quick-msg" data-room="${escapeHTML(r)}">Message</button>
+            <button type="button" class="btn btn-danger btn-sm btn-leave-room" data-room="${escapeHTML(r)}">Leave</button>
+          </div>
         </td>
       </tr>`;
     });
@@ -625,6 +635,115 @@ document.addEventListener("DOMContentLoaded", function () {
           updateStatus();
         }
       });
+    });
+  }
+
+  // preset format buttons
+  document.querySelectorAll(".preset-chip-btn").forEach((btn) => {
+    btn.addEventListener("click", function () {
+      const fmt = this.getAttribute("data-format");
+      const targetId = this.getAttribute("data-target");
+      if (fmt && targetId) {
+        const targetInput = document.getElementById(targetId);
+        if (targetInput) {
+          targetInput.value = fmt;
+          showAlert("success", "Selected format: " + fmt);
+        }
+      }
+    });
+  });
+
+  // server formats state and rendering
+  let cachedFormats = [];
+
+  function fetchFormats() {
+    fetch("/api/formats")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          cachedFormats = data;
+          renderFormats(cachedFormats);
+        }
+      })
+      .catch(() => {});
+  }
+
+  function renderFormats(formats, query) {
+    const container = document.getElementById("formats-list-container");
+    const countBadge = document.getElementById("formats-count-badge");
+    if (!container) return;
+
+    const q = (query || "").trim().toLowerCase();
+    const filtered = q
+      ? formats.filter(
+          (f) =>
+            (f.name && f.name.toLowerCase().includes(q)) ||
+            (f.id && f.id.toLowerCase().includes(q)) ||
+            (f.section && f.section.toLowerCase().includes(q))
+        )
+      : formats;
+
+    if (countBadge) {
+      countBadge.textContent = `${filtered.length} Formats`;
+    }
+
+    if (filtered.length === 0) {
+      container.innerHTML = `<p style="color:var(--text-dim);text-align:center;padding:16px;">${
+        formats.length === 0
+          ? "No formats received from server yet."
+          : "No formats match your search."
+      }</p>`;
+      return;
+    }
+
+    const groups = {};
+    filtered.forEach((f) => {
+      const sec = f.section || "Other Formats";
+      if (!groups[sec]) groups[sec] = [];
+      groups[sec].push(f);
+    });
+
+    let html = "";
+    Object.keys(groups).forEach((sec) => {
+      html += `<div class="formats-section">
+        <div class="formats-section-title">${escapeHTML(sec)}</div>
+        <div class="formats-badges-wrap">`;
+      groups[sec].forEach((f) => {
+        html += `<div class="format-chip" data-format-id="${escapeHTML(
+          f.id
+        )}" title="Click to select ${escapeHTML(f.name || f.id)}">
+          <span>${escapeHTML(f.name || f.id)}</span>
+          <span class="format-chip-id">${escapeHTML(f.id)}</span>
+        </div>`;
+      });
+      html += `</div></div>`;
+    });
+
+    container.innerHTML = html;
+
+    container.querySelectorAll(".format-chip").forEach((chip) => {
+      chip.addEventListener("click", function () {
+        const fmtId = this.getAttribute("data-format-id");
+        if (!fmtId) return;
+
+        const quickFmt = document.getElementById("input-quick-challenge-format");
+        if (quickFmt) quickFmt.value = fmtId;
+
+        const toolFmt = document.getElementById("input-challenge-format");
+        if (toolFmt) toolFmt.value = fmtId;
+
+        showAlert("success", "Selected format: " + fmtId);
+
+        const quickOpponent = document.getElementById("input-quick-challenge-user");
+        if (quickOpponent) quickOpponent.focus();
+      });
+    });
+  }
+
+  const searchFormatsInput = document.getElementById("input-search-formats");
+  if (searchFormatsInput) {
+    searchFormatsInput.addEventListener("input", function () {
+      renderFormats(cachedFormats, this.value);
     });
   }
 
@@ -980,6 +1099,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // initial fetch & interval loops
   updateStatus(true);
   updateLogs();
+  fetchFormats();
   setInterval(updateStatus, 3000);
   setInterval(updateLogs, 3000);
 });

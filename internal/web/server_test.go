@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/TurboRx/GhostHaze-Thinker/pkg/showdown"
 )
@@ -30,8 +31,17 @@ func TestWebServerEndpoints(t *testing.T) {
 		t.Fatalf("failed to build mux: %v", err)
 	}
 
+	srv.sessionMu.Lock()
+	srv.sessions["test-session"] = time.Now().Add(time.Hour)
+	srv.sessionMu.Unlock()
+
+	authReq := func(req *http.Request) *http.Request {
+		req.AddCookie(&http.Cookie{Name: "ghosthaze_session", Value: "test-session"})
+		return req
+	}
+
 	t.Run("index html renders successfully", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := authReq(httptest.NewRequest(http.MethodGet, "/", nil))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -45,7 +55,7 @@ func TestWebServerEndpoints(t *testing.T) {
 	})
 
 	t.Run("api status returns valid json", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		req := authReq(httptest.NewRequest(http.MethodGet, "/api/status", nil))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -78,7 +88,7 @@ func TestWebServerEndpoints(t *testing.T) {
 
 	t.Run("logs api and addlog", func(t *testing.T) {
 		srv.AddLog("system", "TestUnit", "Test log message")
-		req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+		req := authReq(httptest.NewRequest(http.MethodGet, "/api/logs", nil))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -96,7 +106,7 @@ func TestWebServerEndpoints(t *testing.T) {
 
 	t.Run("get-server tool api fast path", func(t *testing.T) {
 		body := bytes.NewBufferString(`{"url":"play.pokemonshowdown.com"}`)
-		req := httptest.NewRequest(http.MethodPost, "/api/tools/get-server", body)
+		req := authReq(httptest.NewRequest(http.MethodPost, "/api/tools/get-server", body))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -113,7 +123,7 @@ func TestWebServerEndpoints(t *testing.T) {
 	})
 
 	t.Run("not found for unknown path", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/unknown/path", nil)
+		req := authReq(httptest.NewRequest(http.MethodGet, "/unknown/path", nil))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -122,9 +132,19 @@ func TestWebServerEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("formats api endpoint", func(t *testing.T) {
+		req := authReq(httptest.NewRequest(http.MethodGet, "/api/formats", nil))
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200 for formats api, got %d", rr.Code)
+		}
+	})
+
 	t.Run("config update and avatar endpoints", func(t *testing.T) {
 		configPayload := `{"server_id":"dummytest","server_host":"dummytest.psim.us","server_port":8000,"server_ssl":true,"command_char":"!","avatar":"123","auto_battle":true}`
-		req := httptest.NewRequest(http.MethodPost, "/api/config/update", bytes.NewBufferString(configPayload))
+		req := authReq(httptest.NewRequest(http.MethodPost, "/api/config/update", bytes.NewBufferString(configPayload)))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -134,7 +154,7 @@ func TestWebServerEndpoints(t *testing.T) {
 
 		// test avatar endpoint
 		avatarPayload := `{"avatar":"169"}`
-		avatarReq := httptest.NewRequest(http.MethodPost, "/api/bot/avatar", bytes.NewBufferString(avatarPayload))
+		avatarReq := authReq(httptest.NewRequest(http.MethodPost, "/api/bot/avatar", bytes.NewBufferString(avatarPayload)))
 		avatarRR := httptest.NewRecorder()
 		mux.ServeHTTP(avatarRR, avatarReq)
 
@@ -144,7 +164,7 @@ func TestWebServerEndpoints(t *testing.T) {
 		}
 
 		// test reconnect endpoint
-		reconnectReq := httptest.NewRequest(http.MethodPost, "/api/bot/reconnect", nil)
+		reconnectReq := authReq(httptest.NewRequest(http.MethodPost, "/api/bot/reconnect", nil))
 		reconnectRR := httptest.NewRecorder()
 		mux.ServeHTTP(reconnectRR, reconnectReq)
 
@@ -153,14 +173,14 @@ func TestWebServerEndpoints(t *testing.T) {
 		}
 
 		// test battle forfeit and leave endpoints
-		forfeitReq := httptest.NewRequest(http.MethodPost, "/api/battles/forfeit", bytes.NewBufferString(`{"room":"battle-gen9randombattle-9999"}`))
+		forfeitReq := authReq(httptest.NewRequest(http.MethodPost, "/api/battles/forfeit", bytes.NewBufferString(`{"room":"battle-gen9randombattle-9999"}`)))
 		forfeitRR := httptest.NewRecorder()
 		mux.ServeHTTP(forfeitRR, forfeitReq)
 		if forfeitRR.Code != http.StatusOK && forfeitRR.Code != http.StatusInternalServerError {
 			t.Errorf("unexpected status for forfeit: %d", forfeitRR.Code)
 		}
 
-		leaveReq := httptest.NewRequest(http.MethodPost, "/api/battles/leave", bytes.NewBufferString(`{"room":"battle-gen9randombattle-9999"}`))
+		leaveReq := authReq(httptest.NewRequest(http.MethodPost, "/api/battles/leave", bytes.NewBufferString(`{"room":"battle-gen9randombattle-9999"}`)))
 		leaveRR := httptest.NewRecorder()
 		mux.ServeHTTP(leaveRR, leaveReq)
 		if leaveRR.Code != http.StatusOK && leaveRR.Code != http.StatusInternalServerError {
@@ -169,7 +189,7 @@ func TestWebServerEndpoints(t *testing.T) {
 
 		// test bot login endpoint
 		loginPayload := `{"username":"testeruser","password":"mypassword"}`
-		loginReq := httptest.NewRequest(http.MethodPost, "/api/bot/login", bytes.NewBufferString(loginPayload))
+		loginReq := authReq(httptest.NewRequest(http.MethodPost, "/api/bot/login", bytes.NewBufferString(loginPayload)))
 		loginRR := httptest.NewRecorder()
 		mux.ServeHTTP(loginRR, loginReq)
 		if loginRR.Code != http.StatusOK {
@@ -179,7 +199,7 @@ func TestWebServerEndpoints(t *testing.T) {
 
 	t.Run("raw logs endpoint serves plain text", func(t *testing.T) {
 		srv.AddLog("chat", "lobby", "hello world from raw test")
-		req := httptest.NewRequest(http.MethodGet, "/api/logs/raw", nil)
+		req := authReq(httptest.NewRequest(http.MethodGet, "/api/logs/raw", nil))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -197,7 +217,7 @@ func TestWebServerEndpoints(t *testing.T) {
 
 	t.Run("logs clear endpoint", func(t *testing.T) {
 		srv.AddLog("chat", "lobby", "message to be cleared")
-		req := httptest.NewRequest(http.MethodPost, "/api/logs/clear", nil)
+		req := authReq(httptest.NewRequest(http.MethodPost, "/api/logs/clear", nil))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -215,7 +235,7 @@ func TestWebServerEndpoints(t *testing.T) {
 	})
 
 	t.Run("bot stop endpoint", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/bot/stop", nil)
+		req := authReq(httptest.NewRequest(http.MethodPost, "/api/bot/stop", nil))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -227,7 +247,7 @@ func TestWebServerEndpoints(t *testing.T) {
 		}
 
 		// resume with reconnect
-		reconnectReq := httptest.NewRequest(http.MethodPost, "/api/bot/reconnect", nil)
+		reconnectReq := authReq(httptest.NewRequest(http.MethodPost, "/api/bot/reconnect", nil))
 		reconnectRR := httptest.NewRecorder()
 		mux.ServeHTTP(reconnectRR, reconnectReq)
 		if reconnectRR.Code != http.StatusOK {
@@ -240,7 +260,7 @@ func TestWebServerEndpoints(t *testing.T) {
 
 	t.Run("backup download and restore", func(t *testing.T) {
 		// download backup
-		req := httptest.NewRequest(http.MethodGet, "/api/backup/download", nil)
+		req := authReq(httptest.NewRequest(http.MethodGet, "/api/backup/download", nil))
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 
@@ -261,7 +281,7 @@ func TestWebServerEndpoints(t *testing.T) {
 		payload.Config.Rooms = []string{"lobby"}
 		modifiedBytes, _ := json.Marshal(payload)
 
-		restoreReq := httptest.NewRequest(http.MethodPost, "/api/backup/restore", bytes.NewBuffer(modifiedBytes))
+		restoreReq := authReq(httptest.NewRequest(http.MethodPost, "/api/backup/restore", bytes.NewBuffer(modifiedBytes)))
 		restoreReq.Header.Set("Content-Type", "application/json")
 		restoreRR := httptest.NewRecorder()
 		mux.ServeHTTP(restoreRR, restoreReq)

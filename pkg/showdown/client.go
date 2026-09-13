@@ -659,7 +659,7 @@ func (c *Client) AcceptChallenge(user string) error {
 	if team != "" {
 		return c.Send(fmt.Sprintf("|/utm %s\n|/accept %s", team, cleanUser))
 	}
-	return c.Send(fmt.Sprintf("|/accept %s", cleanUser))
+	return c.Send(fmt.Sprintf("|/utm null\n|/accept %s", cleanUser))
 }
 
 func (c *Client) RejectChallenge(user string) error {
@@ -686,7 +686,7 @@ func (c *Client) ChallengeUser(user, format string) error {
 	if team != "" {
 		return c.Send(fmt.Sprintf("|/utm %s\n|/challenge %s, %s", team, cleanUser, cleanFmt))
 	}
-	return c.Send(fmt.Sprintf("|/challenge %s, %s", cleanUser, cleanFmt))
+	return c.Send(fmt.Sprintf("|/utm null\n|/challenge %s, %s", cleanUser, cleanFmt))
 }
 
 func (c *Client) CancelChallengeTo(user string) error {
@@ -1031,6 +1031,11 @@ func (c *Client) processMessage(msg RawMessage) {
 		if pm, ok := ParsePrivateMessage(msg); ok {
 			c.dispatchPM(pm)
 			c.routeCommand("", pm.From, pm.Text)
+
+			// check for direct challenge notification via pm
+			if strings.HasPrefix(pm.Text, "/challenge") {
+				c.handlePMChallenge(pm.From, pm.Text)
+			}
 		}
 
 	case "updatechallenges":
@@ -1070,7 +1075,8 @@ func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
 
 	for from, format := range cu.ChallengesFrom {
 		cleanFrom := CleanUsername(from)
-		c.dispatchChallenge(cleanFrom, format)
+		baseFormat := strings.Split(format, "@@@")[0]
+		c.dispatchChallenge(cleanFrom, baseFormat)
 
 		if auto {
 			if currentBattles >= maxBattles {
@@ -1080,7 +1086,7 @@ func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
 			if len(allowedFormats) == 0 {
 				allowed = true
 			} else {
-				normFmt := ToID(format)
+				normFmt := ToID(baseFormat)
 				for _, af := range allowedFormats {
 					if ToID(af) == normFmt {
 						allowed = true
@@ -1093,6 +1099,59 @@ func (c *Client) handleChallengesUpdate(cu challengesUpdate) {
 				currentBattles++
 			}
 		}
+	}
+}
+
+// handlepmchallenge handles incoming /challenge notifications sent via private message
+func (c *Client) handlePMChallenge(from, text string) {
+	challData := strings.TrimSpace(strings.TrimPrefix(text, "/challenge"))
+	if challData == "" {
+		return
+	}
+	parts := strings.Split(challData, "|")
+	format := strings.TrimSpace(parts[0])
+	format = strings.Split(format, "@@@")[0]
+	if format == "" {
+		return
+	}
+
+	cleanFrom := CleanUsername(from)
+	c.dispatchChallenge(cleanFrom, format)
+
+	c.battleMu.RLock()
+	auto := c.autoBattle
+	allowedFormats := append([]string{}, c.battleFormats...)
+	maxBattles := c.config.MaxBattles
+	if maxBattles <= 0 {
+		maxBattles = 1
+	}
+	currentBattles := 0
+	for _, b := range c.battles {
+		if !b.IsEnded() {
+			currentBattles++
+		}
+	}
+	c.battleMu.RUnlock()
+
+	if !auto || currentBattles >= maxBattles {
+		return
+	}
+
+	allowed := false
+	if len(allowedFormats) == 0 {
+		allowed = true
+	} else {
+		normFmt := ToID(format)
+		for _, af := range allowedFormats {
+			if ToID(af) == normFmt {
+				allowed = true
+				break
+			}
+		}
+	}
+
+	if allowed {
+		_ = c.AcceptChallenge(cleanFrom)
 	}
 }
 
