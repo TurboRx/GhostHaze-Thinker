@@ -433,7 +433,13 @@ func (s *Server) handleAPILogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Password string `json:"password"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	contentType := r.Header.Get("Content-Type")
+	if strings.Contains(contentType, "application/json") {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	} else {
+		_ = r.ParseForm()
+		req.Password = r.FormValue("password")
+	}
 	if req.Password == "" {
 		req.Password = r.FormValue("password")
 	}
