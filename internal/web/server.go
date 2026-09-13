@@ -16,6 +16,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -235,13 +237,14 @@ func (s *Server) IsAuthenticated(r *http.Request) bool {
 	return false
 }
 
-// addlog appends an event to the circular log buffer
+// addlog appends an event to the circular log buffer and writes to persistent logs
 func (s *Server) AddLog(entryType, source, msg string) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 
+	now := time.Now()
 	entry := LogEntry{
-		Time:    time.Now().Format("15:04:05"),
+		Time:    now.Format("15:04:05"),
 		Type:    entryType,
 		Source:  source,
 		Message: msg,
@@ -250,6 +253,19 @@ func (s *Server) AddLog(entryType, source, msg string) {
 	s.logs = append([]LogEntry{entry}, s.logs...)
 	if len(s.logs) > s.maxLogs {
 		s.logs = s.logs[:s.maxLogs]
+	}
+
+	// append to disk log files
+	_ = os.MkdirAll("logs", 0755)
+	logLine := fmt.Sprintf("[%s] [%s] [%s] %s\n", now.Format("2006-01-02 15:04:05"), entryType, source, msg)
+	if f, err := os.OpenFile("logs/security.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+		_, _ = f.WriteString(logLine)
+		_ = f.Close()
+	}
+	dailyPath := fmt.Sprintf("logs/%s.log", now.Format("2006-01-02"))
+	if f, err := os.OpenFile(dailyPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+		_, _ = f.WriteString(logLine)
+		_ = f.Close()
 	}
 }
 
@@ -394,6 +410,34 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/ladder/status", s.handleAPILadderStatus)
 	mux.HandleFunc("/api/ladder/start", s.handleAPILadderStart)
 	mux.HandleFunc("/api/ladder/stop", s.handleAPILadderStop)
+
+	// auth actions
+	mux.HandleFunc("/api/auth/change-password", s.handleAPIChangePassword)
+
+	// chatroom status and keepalive
+	mux.HandleFunc("/api/bot/status", s.handleAPIBotStatus)
+	mux.HandleFunc("/api/bot/anti-afk", s.handleAPIAntiAFK)
+	mux.HandleFunc("/api/rooms/join-official", s.handleAPIJoinOfficialRooms)
+	mux.HandleFunc("/api/rooms/join-public", s.handleAPIJoinPublicRooms)
+
+	// admin and maintenance
+	mux.HandleFunc("/api/admin/files", s.handleAPIAdminFiles)
+	mux.HandleFunc("/api/admin/files/view", s.handleAPIAdminFileView)
+	mux.HandleFunc("/api/admin/files/download", s.handleAPIAdminFileDownload)
+	mux.HandleFunc("/api/admin/files/clear", s.handleAPIAdminFileClear)
+	mux.HandleFunc("/api/admin/reload-data", s.handleAPIAdminReloadData)
+	mux.HandleFunc("/api/admin/clear-cache", s.handleAPIAdminClearCache)
+	mux.HandleFunc("/api/admin/clear-user-data", s.handleAPIAdminClearUserData)
+	mux.HandleFunc("/api/admin/eval", s.handleAPIAdminEval)
+
+	// user seen tracking
+	mux.HandleFunc("/api/users/seen", s.handleAPIUsersSeen)
+	mux.HandleFunc("/api/users/seen/clear", s.handleAPIUsersSeenClear)
+
+	// command aliases
+	mux.HandleFunc("/api/commands/aliases", s.handleAPICommandsAliases)
+	mux.HandleFunc("/api/commands/aliases/save", s.handleAPICommandsAliasesSave)
+	mux.HandleFunc("/api/commands/aliases/delete", s.handleAPICommandsAliasesDelete)
 
 	return s.authMiddleware(mux), nil
 }
@@ -2057,3 +2101,508 @@ func (s *Server) handleAPILadderStop(w http.ResponseWriter, r *http.Request) {
 	s.AddLog("system", "Control Panel", "Stopped ranked ladder matchmaking")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ladder": s.client.Ladder().Status()})
 }
+
+// handleapichangepassword updates the web panel admin password
+func (s *Server) handleAPIChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		OldPassword string `json:"old_password"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	s.sessionMu.RLock()
+	currentPass := s.adminPassword
+	s.sessionMu.RUnlock()
+	if currentPass == "" {
+		currentPass = "admin"
+	}
+
+	if subtle.ConstantTimeCompare([]byte(req.OldPassword), []byte(currentPass)) != 1 {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Current admin password does not match"})
+		return
+	}
+
+	trimmedNew := strings.TrimSpace(req.NewPassword)
+	if trimmedNew == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "New password cannot be blank"})
+		return
+	}
+
+	s.SetAdminPassword(trimmedNew)
+	_ = os.Setenv("WEB_ADMIN_PASSWORD", trimmedNew)
+
+	savedCfg := s.client.ClientConfig()
+	_ = config.SaveEnvFile(".env", &savedCfg)
+
+	s.AddLog("system", "Auth", "Admin password successfully changed")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Password updated successfully"})
+}
+
+// handleapibotstatus reads or sets the bot custom status message
+func (s *Server) handleAPIBotStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": s.client.StatusMessage(),
+		})
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	if err := s.client.SetStatus(req.Status); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Chatrooms", fmt.Sprintf("Bot status updated to: %s", req.Status))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": req.Status})
+}
+
+// handleapiantiafk gets or toggles anti-afk keepalive ticker
+func (s *Server) handleAPIAntiAFK(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]bool{
+			"anti_afk": s.client.AntiAFK(),
+		})
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	s.client.SetAntiAFK(req.Enabled)
+	s.AddLog("system", "Chatrooms", fmt.Sprintf("Anti-AFK keepalive set to: %v", req.Enabled))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "anti_afk": req.Enabled})
+}
+
+// handleapijoinofficialrooms instructs bot to join all official chatrooms
+func (s *Server) handleAPIJoinOfficialRooms(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := s.client.JoinOfficialRooms(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Chatrooms", "Joining all official chatrooms")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Joined official chatrooms"})
+}
+
+// handleapijoinpublicrooms instructs bot to join all public chatrooms
+func (s *Server) handleAPIJoinPublicRooms(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := s.client.JoinPublicRooms(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Chatrooms", "Joining all public chatrooms")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Joined public chatrooms"})
+}
+
+// adminfileinfo represents a file entry in logs or data explorer
+type AdminFileInfo struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	Size  string `json:"size"`
+	Bytes int64  `json:"bytes"`
+	Date  string `json:"date"`
+	IsLog bool   `json:"is_log"`
+}
+
+// formatbytesize formats byte count into human-readable string
+func formatByteSize(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// sanitizeadminpath verifies path is safe inside data or logs
+func sanitizeAdminPath(p string) (string, error) {
+	clean := filepath.Clean(strings.TrimSpace(p))
+	if strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
+		return "", errors.New("invalid path traversal")
+	}
+	if !strings.HasPrefix(clean, "logs/") && !strings.HasPrefix(clean, "data/") && clean != "logs" && clean != "data" {
+		return "", errors.New("access denied outside logs or data directory")
+	}
+	return clean, nil
+}
+
+// handleapiadminfiles lists security logs and data files
+func (s *Server) handleAPIAdminFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	_ = os.MkdirAll("logs", 0755)
+	_ = os.MkdirAll("data", 0755)
+
+	var result []AdminFileInfo
+	for _, dir := range []string{"logs", "data"} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			relPath := filepath.Join(dir, e.Name())
+			result = append(result, AdminFileInfo{
+				Name:  e.Name(),
+				Path:  relPath,
+				Size:  formatByteSize(info.Size()),
+				Bytes: info.Size(),
+				Date:  info.ModTime().Format("2006-01-02 15:04:05"),
+				IsLog: dir == "logs",
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleapiadminfileview displays file contents
+func (s *Server) handleAPIAdminFileView(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pathParam := r.URL.Query().Get("file")
+	cleanPath, err := sanitizeAdminPath(pathParam)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	data, err := os.ReadFile(cleanPath)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found: " + err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"path":    cleanPath,
+		"content": string(data),
+		"size":    len(data),
+	})
+}
+
+// handleapiadminfiledownload streams the file for download
+func (s *Server) handleAPIAdminFileDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pathParam := r.URL.Query().Get("file")
+	cleanPath, err := sanitizeAdminPath(pathParam)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(cleanPath)))
+	http.ServeFile(w, r, cleanPath)
+}
+
+// handleapiadminfileclear empties the selected file
+func (s *Server) handleAPIAdminFileClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		File string `json:"file"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.File == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "file parameter required"})
+		return
+	}
+
+	cleanPath, err := sanitizeAdminPath(req.File)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	var emptyContent []byte
+	if strings.HasSuffix(cleanPath, ".json") {
+		emptyContent = []byte("[]\n")
+	} else {
+		emptyContent = []byte("")
+	}
+
+	if err := os.WriteFile(cleanPath, emptyContent, 0644); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Admin", fmt.Sprintf("Cleared file: %s", cleanPath))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "file cleared successfully"})
+}
+
+// handleapiadminreloaddata reloads teams, commands, blacklist, joinphrases, timers from disk
+func (s *Server) handleAPIAdminReloadData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.client.DynamicCommands() != nil {
+		_ = s.client.DynamicCommands().Load()
+	}
+	if s.client.Teams() != nil {
+		_ = s.client.Teams().Load()
+	}
+	if s.client.Blacklist() != nil {
+		_ = s.client.Blacklist().Load()
+	}
+	if s.client.JoinPhrases() != nil {
+		_ = s.client.JoinPhrases().Load()
+	}
+	if s.client.Timers() != nil {
+		_ = s.client.Timers().Load()
+	}
+
+	s.AddLog("system", "Admin", "All data files reloaded successfully from disk")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Data reloaded successfully"})
+}
+
+// handleapiadminclearcache empties runtime memory caches
+func (s *Server) handleAPIAdminClearCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.ClearLogs()
+	if s.client.History() != nil {
+		_ = s.client.History().Clear()
+	}
+
+	s.AddLog("system", "Admin", "Runtime caches and battle history cleared")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Caches cleared successfully"})
+}
+
+// handleapiadminclearuserdata clears seen users tracking database
+func (s *Server) handleAPIAdminClearUserData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.client.Seen() != nil {
+		s.client.Seen().Clear()
+	}
+
+	s.AddLog("system", "Admin", "User seen tracking data cleared")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "User data cleared successfully"})
+}
+
+// handleapiadmineval executes javascript code safely using node runtime
+func (s *Server) handleAPIAdminEval(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Code) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "javascript code is required"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	nodePath, err := exec.LookPath("node")
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"output":  "node.js runtime not found on host",
+		})
+		return
+	}
+
+	cmd := exec.CommandContext(ctx, nodePath, "-e", req.Code)
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	runErr := cmd.Run()
+	output := outBuf.String()
+	if errBuf.Len() > 0 {
+		if output != "" {
+			output += "\n"
+		}
+		output += errBuf.String()
+	}
+	if runErr != nil && output == "" {
+		output = runErr.Error()
+	}
+
+	s.AddLog("system", "Eval", "Executed JavaScript evaluation")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": runErr == nil,
+		"output":  output,
+	})
+}
+
+// handleapiusersseen returns recently seen users or lookup for a single user
+func (s *Server) handleAPIUsersSeen(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userParam := strings.TrimSpace(r.URL.Query().Get("user"))
+	if s.client.Seen() == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+
+	if userParam != "" {
+		if entry, ok := s.client.Seen().Get(userParam); ok {
+			writeJSON(w, http.StatusOK, entry)
+			return
+		}
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found in seen database"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, s.client.Seen().GetAll(100))
+}
+
+// handleapiusersseenclear wipes seen store
+func (s *Server) handleAPIUsersSeenClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.client.Seen() != nil {
+		s.client.Seen().Clear()
+	}
+
+	s.AddLog("system", "Chatrooms", "Seen database cleared")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Seen database cleared"})
+}
+
+// handleapicommandsaliases returns list of command aliases
+func (s *Server) handleAPICommandsAliases(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.client.DynamicCommands() == nil {
+		writeJSON(w, http.StatusOK, map[string]string{})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, s.client.DynamicCommands().ListAliases())
+}
+
+// handleapicommandsaliasessave creates or updates an alias
+func (s *Server) handleAPICommandsAliasesSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Alias  string `json:"alias"`
+		Target string `json:"target"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	if s.client.DynamicCommands() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "commands store not initialized"})
+		return
+	}
+
+	s.client.DynamicCommands().SetAlias(req.Alias, req.Target)
+	s.AddLog("system", "Commands", fmt.Sprintf("Added command alias: %s -> %s", req.Alias, req.Target))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "alias saved successfully"})
+}
+
+// handleapicommandsaliasesdelete removes an alias
+func (s *Server) handleAPICommandsAliasesDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Alias string `json:"alias"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Alias) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "alias parameter is required"})
+		return
+	}
+
+	if s.client.DynamicCommands() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "commands store not initialized"})
+		return
+	}
+
+	s.client.DynamicCommands().DeleteAlias(req.Alias)
+	s.AddLog("system", "Commands", fmt.Sprintf("Removed command alias: %s", req.Alias))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "alias deleted successfully"})
+}
+
