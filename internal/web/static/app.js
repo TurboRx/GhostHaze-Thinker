@@ -1797,7 +1797,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (targetInput) {
       if (val === "pm") {
         targetInput.placeholder = "e.g. username";
-        if (targetLabel) targetLabel.textContent = "Trainer Username";
+        if (targetLabel) targetLabel.textContent = "Username";
       } else {
         targetInput.placeholder = "e.g. lobby";
         if (targetLabel) targetLabel.textContent = "Chatroom Name";
@@ -2620,7 +2620,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const descMap = {
       data: "Showdown Pokédex lookup (stats, types, abilities)",
-      seen: "Check last seen trainer activity & chatroom",
+      seen: "Check last seen user activity & chatroom",
       randpoke: "Pick a random Pokémon species",
       randompokemon: "Pick a random Pokémon species",
       randmove: "Pick a random Pokémon move",
@@ -2761,21 +2761,21 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!tbody) return;
 
     if (files.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">No files found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">No security logs found.</td></tr>';
       return;
     }
 
     let html = "";
     files.forEach((f) => {
-      const sizeStr = f.size || (typeof f.bytes === "number" ? formatFileSize(f.bytes) : "-");
-      const dateStr = f.date || (f.mod_time ? formatDate(f.mod_time) : "-");
+      const sizeStr = f.size || (typeof f.bytes === "number" ? (Math.round((f.bytes / 1024) * 100) / 100) + " KB" : "-");
+      const dateStr = f.date || "-";
       html += `<tr>
-        <td><strong>${escapeHTML(f.name)}</strong> <span style="font-size:11px;color:var(--text-dim);margin-left:4px;">(${escapeHTML(f.path)})</span></td>
+        <td><strong>${escapeHTML(f.name)}</strong></td>
         <td>${escapeHTML(sizeStr)}</td>
         <td>${escapeHTML(dateStr)}</td>
         <td style="text-align:right;">
           <div class="table-actions" style="justify-content:flex-end;">
-            <button class="btn btn-secondary btn-sm btn-view-file" data-file="${escapeHTML(f.path)}">View</button>
+            <button class="btn btn-secondary btn-sm btn-view-file" data-file="${escapeHTML(f.path)}">View Log</button>
             <a href="/api/admin/files/download?file=${encodeURIComponent(f.path)}" class="btn btn-secondary btn-sm" download>Download</a>
             <button class="btn btn-danger btn-sm btn-clear-file" data-file="${escapeHTML(f.path)}">Clear</button>
           </div>
@@ -2797,7 +2797,7 @@ document.addEventListener("DOMContentLoaded", function () {
         postJSON("/api/admin/files/clear", { file: filePath }, function (err) {
           if (err) showAlert("error", "Failed to clear file: " + err);
           else {
-            showAlert("success", "Cleared file: " + filePath);
+            showAlert("success", "Cleared log file: " + filePath);
             fetchAdminFiles();
           }
         });
@@ -2830,10 +2830,17 @@ document.addEventListener("DOMContentLoaded", function () {
         if (filePath.endsWith(".json")) {
           try {
             const parsed = typeof content === "string" ? JSON.parse(content) : content;
-            content = JSON.stringify(parsed, null, 2);
+            if (parsed === null || (Array.isArray(parsed) && parsed.length === 0) || (typeof parsed === "object" && Object.keys(parsed).length === 0)) {
+              content = "(Empty dataset - no records stored yet)";
+            } else {
+              content = JSON.stringify(parsed, null, 2);
+            }
           } catch (e) {}
         }
-        if (fileViewContent) fileViewContent.textContent = content || "(Empty file)";
+        if (!content || content.trim() === "" || content.trim() === "null" || content.trim() === "[]") {
+          content = "(Empty log file)";
+        }
+        if (fileViewContent) fileViewContent.textContent = content;
       })
       .catch((err) => {
         if (fileViewContent) fileViewContent.textContent = "Error reading file: " + err.message;

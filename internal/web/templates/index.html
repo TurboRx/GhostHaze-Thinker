@@ -478,7 +478,7 @@
           <form id="form-bot-status" novalidate class="form-row" style="flex:2;min-width:280px;align-items:flex-end;">
             <div class="form-group" style="flex:1;">
               <label class="form-label" for="input-bot-status">Custom Status Message (/status)</label>
-              <input type="text" id="input-bot-status" class="form-input" placeholder="e.g. Challenging trainers | Type .help">
+              <input type="text" id="input-bot-status" class="form-input" placeholder="e.g. Challenging users | Type .help">
             </div>
             <button type="submit" class="btn btn-primary" style="height:38px;">Set Status</button>
           </form>
@@ -579,7 +579,7 @@
         <div class="card-header" style="flex-wrap:wrap;gap:12px;">
           <div>
             <h2 class="card-title">Seen Users Directory</h2>
-            <p class="card-description">Tracks trainers seen speaking across chatrooms with timestamp and last activity.</p>
+            <p class="card-description">Tracks users seen speaking across chatrooms with timestamp and last activity.</p>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <input type="text" id="input-seen-search" class="form-input" placeholder="Search username..." style="min-width:120px;max-width:200px;flex:1;height:32px;font-size:12px;">
@@ -669,13 +669,13 @@
         <div class="card-header">
           <div>
             <h2 class="card-title">Battle Challenge Tool</h2>
-            <p class="card-description">Directly issue a battle challenge to any trainer on the server.</p>
+            <p class="card-description">Directly issue a battle challenge to any user on the server.</p>
           </div>
         </div>
         <form id="form-challenge" novalidate>
           <div class="form-row">
             <div class="form-group" style="flex:1;">
-              <label class="form-label" for="input-challenge-user">Trainer Username</label>
+              <label class="form-label" for="input-challenge-user">Username</label>
               <input type="text" id="input-challenge-user" class="form-input" placeholder="Opponent username">
             </div>
             <div class="form-group" style="flex:1;">
@@ -708,7 +708,7 @@
         <div class="card-header">
           <div>
             <h2 class="card-title">Set Avatar Tool</h2>
-            <p class="card-description">Instantly change the trainer sprite of the bot on the server.</p>
+            <p class="card-description">Instantly change the avatar sprite of the bot on the server.</p>
           </div>
         </div>
         <form id="form-quick-avatar" novalidate class="form-row">
@@ -1055,8 +1055,8 @@
                   <td><code>.dex</code>, <code>.dt</code>, <code>.pokedex</code></td>
                 </tr>
                 <tr>
-                  <td><code>.seen &lt;trainer&gt;</code></td>
-                  <td>Checks when and where a trainer was last seen active across chatrooms with their latest message snippet.</td>
+                  <td><code>.seen &lt;user&gt;</code></td>
+                  <td>Checks when and where a user was last seen active across chatrooms with their latest message snippet.</td>
                   <td><span style="color:var(--text-dim);">-</span></td>
                 </tr>
                 <tr>
@@ -1071,7 +1071,7 @@
                 </tr>
                 <tr>
                   <td><code>.quote</code></td>
-                  <td>Displays a memorable Pokémon quote from legendary trainers and Pokémon.</td>
+                  <td>Displays a memorable Pokémon quote from legendary users and Pokémon.</td>
                   <td><span style="color:var(--text-dim);">-</span></td>
                 </tr>
                 <tr>
@@ -1376,14 +1376,14 @@
         </div>
       </div>
 
-      <!-- security logs & file explorer -->
+      <!-- security logs explorer matching showdown-chatbot seclog -->
       <div class="card" style="margin-bottom: 20px;">
         <div class="card-header" style="flex-wrap:wrap;gap:12px;">
           <div>
-            <h2 class="card-title">Security Logs &amp; Data Files Explorer</h2>
-            <p class="card-description">Inspect, download, and manage system security logs and JSON database records.</p>
+            <h2 class="card-title">Security Log - Files</h2>
+            <p class="card-description">Inspect and view system security logs tracked by date.</p>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-files">Refresh Files</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-files">Refresh Logs</button>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
@@ -1391,13 +1391,13 @@
               <tr>
                 <th>File</th>
                 <th>Size</th>
-                <th>Date Modified</th>
-                <th style="text-align:right;">Option</th>
+                <th>Date</th>
+                <th style="text-align:right;">Options</th>
               </tr>
             </thead>
             <tbody id="files-table-body">
               <tr>
-                <td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">Loading files...</td>
+                <td colspan="4" style="text-align:center;color:var(--text-dim);padding:20px;">Loading logs...</td>
               </tr>
             </tbody>
           </table>
