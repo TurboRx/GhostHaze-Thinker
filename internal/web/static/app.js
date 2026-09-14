@@ -53,15 +53,30 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // hamburger mobile navigation drawer with 90deg animation
+  // hamburger mobile navigation drawer with backdrop overlay
   const hamburger = document.getElementById("hamburger");
   const mobileMenu = document.getElementById("mobile-menu");
-  if (hamburger && mobileMenu) {
-    hamburger.addEventListener("click", function () {
-      this.classList.toggle("active");
-      mobileMenu.classList.toggle("open");
-    });
+  const mobileBackdrop = document.getElementById("mobile-menu-backdrop");
+
+  function closeMobileMenu() {
+    if (hamburger && mobileMenu) {
+      hamburger.classList.remove("active");
+      mobileMenu.classList.remove("open");
+      if (mobileBackdrop) mobileBackdrop.style.display = "none";
+    }
   }
+
+  function toggleMobileMenu() {
+    if (hamburger && mobileMenu) {
+      const willOpen = !mobileMenu.classList.contains("open");
+      hamburger.classList.toggle("active", willOpen);
+      mobileMenu.classList.toggle("open", willOpen);
+      if (mobileBackdrop) mobileBackdrop.style.display = willOpen ? "block" : "none";
+    }
+  }
+
+  if (hamburger) hamburger.addEventListener("click", toggleMobileMenu);
+  if (mobileBackdrop) mobileBackdrop.addEventListener("click", closeMobileMenu);
 
   // tab navigation switching
   const tabs = document.querySelectorAll(".nav-tab-btn");
@@ -104,11 +119,20 @@ document.addEventListener("DOMContentLoaded", function () {
       fetchAdminFiles();
     }
 
-    if (hamburger && mobileMenu) {
-      hamburger.classList.remove("active");
-      mobileMenu.classList.remove("open");
-    }
+    closeMobileMenu();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  // close modals and mobile menu on escape key
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      closeMobileMenu();
+      closeConfirmModal();
+      closeFileViewModal();
+      const cpModal = document.getElementById("modal-change-password");
+      if (cpModal) cpModal.style.display = "none";
+    }
+  });
 
   tabs.forEach(function (tab) {
     tab.addEventListener("click", function () {
@@ -302,6 +326,56 @@ document.addEventListener("DOMContentLoaded", function () {
           } else {
             toggleBtn.className = "btn btn-danger";
             toggleBtn.textContent = "Stop Bot";
+          }
+        }
+
+        // docked status bar updates
+        const sbDot = document.getElementById("sb-dot");
+        const sbStatusLabel = document.getElementById("sb-status-label");
+        const sbServer = document.getElementById("sb-server");
+        const sbUser = document.getElementById("sb-user");
+        const sbStatusMsg = document.getElementById("sb-status-msg");
+        const sbRooms = document.getElementById("sb-rooms");
+        const sbBattles = document.getElementById("sb-battles");
+        const sbUptime = document.getElementById("sb-uptime");
+        const sbBtnPower = document.getElementById("sb-btn-power");
+        const sbBtnPowerText = document.getElementById("sb-btn-power-text");
+
+        if (sbDot && sbStatusLabel) {
+          if (isStopped) {
+            sbDot.className = "status-dot offline";
+            sbStatusLabel.textContent = "Stopped";
+          } else if (isConnected) {
+            sbDot.className = "status-dot online";
+            sbStatusLabel.textContent = data.is_guest ? "Online (Guest)" : (data.logged_in ? "Online" : "Connecting");
+          } else {
+            sbDot.className = "status-dot offline";
+            sbStatusLabel.textContent = "Offline";
+          }
+        }
+        if (sbServer) sbServer.textContent = data.server_id || "showdown";
+        if (sbUser) sbUser.textContent = data.username || data.config_username || "Guest";
+        if (sbStatusMsg) {
+          sbStatusMsg.textContent = data.status_message || "No status message set";
+        }
+        if (sbRooms) {
+          const rCount = data.chat_rooms_count !== undefined ? data.chat_rooms_count : (data.rooms ? data.rooms.length : 0);
+          sbRooms.textContent = rCount + " rooms";
+        }
+        if (sbBattles) {
+          const bCount = data.active_battles_count !== undefined ? data.active_battles_count : (data.active_battles ? data.active_battles.length : 0);
+          sbBattles.textContent = bCount + " battles";
+        }
+        if (sbUptime) sbUptime.textContent = data.uptime || "0s";
+        if (sbBtnPower && sbBtnPowerText) {
+          if (isStopped) {
+            sbBtnPower.className = "status-bar-action-btn sb-btn-start";
+            sbBtnPowerText.textContent = "Start";
+            sbBtnPower.title = "Start Bot";
+          } else {
+            sbBtnPower.className = "status-bar-action-btn sb-btn-stop";
+            sbBtnPowerText.textContent = "Stop";
+            sbBtnPower.title = "Stop Bot";
           }
         }
 
@@ -2367,9 +2441,84 @@ document.addEventListener("DOMContentLoaded", function () {
       .catch((err) => callback(err.message || err));
   }
 
+  // toast notifications helper
+  function showToast(type, msg) {
+    const container = document.getElementById("toast-container");
+    if (!container || !msg) return;
+    const toast = document.createElement("div");
+    toast.className = "toast " + (type || "info");
+
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "toast-icon";
+    if (type === "success") {
+      iconWrap.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    } else if (type === "error" || type === "destructive") {
+      iconWrap.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+    } else {
+      iconWrap.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
+    }
+
+    const msgSpan = document.createElement("span");
+    msgSpan.className = "toast-msg";
+    msgSpan.textContent = msg;
+
+    toast.appendChild(iconWrap);
+    toast.appendChild(msgSpan);
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(8px) scale(0.95)";
+      setTimeout(() => toast.remove(), 200);
+    }, 3500);
+  }
+
+  // custom non-native confirmation dialog helper
+  let confirmCallback = null;
+  function showConfirmDialog(title, message, isDestructive, onConfirm) {
+    const modal = document.getElementById("modal-confirm");
+    const titleEl = document.getElementById("confirm-modal-title");
+    const msgEl = document.getElementById("confirm-modal-message");
+    const okBtn = document.getElementById("btn-ok-confirm");
+    if (!modal) {
+      if (typeof onConfirm === "function") onConfirm();
+      return;
+    }
+
+    if (titleEl) titleEl.textContent = title || "Confirm Action";
+    if (msgEl) msgEl.textContent = message || "Are you sure you want to proceed?";
+    if (okBtn) {
+      okBtn.className = isDestructive ? "btn btn-destructive" : "btn btn-primary";
+      okBtn.textContent = isDestructive ? "Confirm" : "Continue";
+    }
+
+    confirmCallback = onConfirm;
+    modal.style.display = "flex";
+  }
+
+  function closeConfirmModal() {
+    const modal = document.getElementById("modal-confirm");
+    if (modal) modal.style.display = "none";
+    confirmCallback = null;
+  }
+
+  const cancelConfirmBtn = document.getElementById("btn-cancel-confirm");
+  const cancelConfirmXBtn = document.getElementById("btn-cancel-confirm-x");
+  const okConfirmBtn = document.getElementById("btn-ok-confirm");
+  if (cancelConfirmBtn) cancelConfirmBtn.addEventListener("click", closeConfirmModal);
+  if (cancelConfirmXBtn) cancelConfirmXBtn.addEventListener("click", closeConfirmModal);
+  if (okConfirmBtn) {
+    okConfirmBtn.addEventListener("click", function () {
+      const cb = confirmCallback;
+      closeConfirmModal();
+      if (typeof cb === "function") cb();
+    });
+  }
+
   // alert banner helper
   let alertTimeout = null;
   function showAlert(type, msg) {
+    showToast(type, msg);
     const alertBox = document.getElementById("global-alert");
     if (!alertBox) return;
     if (alertTimeout) {
@@ -2796,23 +2945,37 @@ document.addEventListener("DOMContentLoaded", function () {
   const btnAdminClearCache = document.getElementById("btn-admin-clear-cache");
   if (btnAdminClearCache) {
     btnAdminClearCache.addEventListener("click", function () {
-      postJSON("/api/admin/clear-cache", {}, function (err) {
-        if (err) showAlert("error", "Clear cache failed: " + err);
-        else showAlert("success", "Runtime caches cleared!");
-      });
+      showConfirmDialog(
+        "Clear Runtime Cache",
+        "Are you sure you want to flush memory caches and reload local database indexes?",
+        false,
+        function () {
+          postJSON("/api/admin/clear-cache", {}, function (err) {
+            if (err) showAlert("error", "Clear cache failed: " + err);
+            else showAlert("success", "Runtime caches cleared!");
+          });
+        }
+      );
     });
   }
 
   const btnAdminClearUserData = document.getElementById("btn-admin-clear-user-data");
   if (btnAdminClearUserData) {
     btnAdminClearUserData.addEventListener("click", function () {
-      postJSON("/api/admin/clear-user-data", {}, function (err) {
-        if (err) showAlert("error", "Clear user data failed: " + err);
-        else {
-          showAlert("success", "User data cleared successfully!");
-          fetchSeenUsers();
+      showConfirmDialog(
+        "Clear User Data",
+        "Are you sure you want to clear stored user data directory and seen history? This action cannot be undone.",
+        true,
+        function () {
+          postJSON("/api/admin/clear-user-data", {}, function (err) {
+            if (err) showAlert("error", "Clear user data failed: " + err);
+            else {
+              showAlert("success", "User data cleared successfully!");
+              fetchSeenUsers();
+            }
+          });
         }
-      });
+      );
     });
   }
 
@@ -2864,13 +3027,20 @@ document.addEventListener("DOMContentLoaded", function () {
     tbody.querySelectorAll(".btn-clear-file").forEach((btn) => {
       btn.addEventListener("click", function () {
         const filePath = this.getAttribute("data-file");
-        postJSON("/api/admin/files/clear", { file: filePath }, function (err) {
-          if (err) showAlert("error", "Failed to clear file: " + err);
-          else {
-            showAlert("success", "Cleared log file: " + filePath);
-            fetchAdminFiles();
+        showConfirmDialog(
+          "Clear Log File",
+          "Are you sure you want to wipe the contents of " + filePath + "?",
+          true,
+          function () {
+            postJSON("/api/admin/files/clear", { file: filePath }, function (err) {
+              if (err) showAlert("error", "Failed to clear file: " + err);
+              else {
+                showAlert("success", "Cleared log file: " + filePath);
+                fetchAdminFiles();
+              }
+            });
           }
-        });
+        );
       });
     });
   }
@@ -2962,6 +3132,44 @@ document.addEventListener("DOMContentLoaded", function () {
     btnEvalClear.addEventListener("click", function () {
       if (evalOutputBox) evalOutputBox.textContent = "Ready to execute.";
       if (inputEvalCode) inputEvalCode.value = "";
+    });
+  }
+
+  // docked status bar actions
+  const sbBtnLogs = document.getElementById("sb-btn-logs");
+  if (sbBtnLogs) {
+    sbBtnLogs.addEventListener("click", function () {
+      switchTab("logs");
+    });
+  }
+
+  const sbBtnPower = document.getElementById("sb-btn-power");
+  if (sbBtnPower) {
+    sbBtnPower.addEventListener("click", function () {
+      if (isStopped) {
+        postJSON("/api/bot/start", {}, function (err) {
+          if (err) showAlert("error", "Failed to start bot: " + err);
+          else {
+            showAlert("success", "Bot started successfully!");
+            updateStatus();
+          }
+        });
+      } else {
+        showConfirmDialog(
+          "Stop Bot",
+          "Are you sure you want to stop the bot? It will disconnect from the Pokémon Showdown server and stop handling battles.",
+          true,
+          function () {
+            postJSON("/api/bot/stop", {}, function (err) {
+              if (err) showAlert("error", "Failed to stop bot: " + err);
+              else {
+                showAlert("success", "Bot stopped.");
+                updateStatus();
+              }
+            });
+          }
+        );
+      }
     });
   }
 

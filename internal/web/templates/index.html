@@ -124,6 +124,7 @@
       {{end}}
     </ul>
   </div>
+  <div id="mobile-menu-backdrop" class="mobile-menu-backdrop" style="display:none;"></div>
 
   <!-- main dashboard body -->
   <main class="container">
@@ -1542,8 +1543,83 @@
     </div>
   </div>
 
-  <footer class="footer">
-    <span>GhostHaze-Thinker &bull; Pokémon Showdown Bot &amp; Client in Go</span>
+  <!-- modal: custom non-native confirmation dialog -->
+  <div id="modal-confirm" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div class="modal-card" style="max-width:440px;width:92%;">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="confirm-icon-wrap" id="confirm-modal-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          </div>
+          <h3 class="modal-title" id="confirm-modal-title">Confirm Action</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-cancel-confirm-x" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <p id="confirm-modal-message" style="margin-bottom:20px;color:var(--muted-foreground);font-size:13.5px;line-height:1.5;">Are you sure you want to proceed?</p>
+      <div style="display:flex;justify-content:flex-end;gap:10px;">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-confirm">Cancel</button>
+        <button type="button" class="btn btn-destructive" id="btn-ok-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- toast alert container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- docked bottom status bar -->
+  <footer id="status-bar" class="status-bar" role="status" aria-live="polite">
+    <div class="status-bar-container">
+      <div class="status-bar-left">
+        <div class="status-bar-item status-live-pill" id="sb-status-pill" title="Connection Status">
+          <span class="status-dot {{if and .Connected (not .Stopped)}}online{{else}}offline{{end}}" id="sb-dot"></span>
+          <span id="sb-status-label">{{if .Stopped}}Stopped{{else if .Connected}}Online{{else}}Offline{{end}}</span>
+        </div>
+        <div class="status-bar-item status-bar-sep"></div>
+        <div class="status-bar-item sb-hide-xs" id="sb-server-info" title="Target Showdown Server">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+          <span id="sb-server">{{.ServerID}}</span>
+        </div>
+        <div class="status-bar-item status-bar-sep sb-hide-xs"></div>
+        <div class="status-bar-item" id="sb-username-info" title="Bot Identity">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          <span id="sb-user">{{if .Username}}{{.Username}}{{else}}Guest{{end}}</span>
+        </div>
+        <div class="status-bar-item status-bar-sep sb-hide-sm"></div>
+        <div class="status-bar-item sb-hide-sm" id="sb-custom-status" title="Custom Status Message">
+          <span class="status-bar-tag">Status</span>
+          <span id="sb-status-msg" class="status-msg-truncate">{{if .StatusMessage}}{{.StatusMessage}}{{else}}No status message set{{end}}</span>
+        </div>
+      </div>
+      <div class="status-bar-right">
+        <div class="status-bar-item sb-hide-xs" title="Active Joined Chatrooms">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span id="sb-rooms">{{.ChatRoomsCount}} rooms</span>
+        </div>
+        <div class="status-bar-item status-bar-sep sb-hide-xs"></div>
+        <div class="status-bar-item sb-hide-sm" title="Active In-Progress Battles">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" y1="19" x2="19" y2="13"></line><line x1="16" y1="16" x2="20" y2="20"></line><line x1="19" y1="21" x2="21" y2="19"></line></svg>
+          <span id="sb-battles">{{len .ActiveBattles}} battles</span>
+        </div>
+        <div class="status-bar-item status-bar-sep sb-hide-sm"></div>
+        <div class="status-bar-item sb-hide-xs" title="Server Process Runtime">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span id="sb-uptime">{{.Uptime}}</span>
+        </div>
+        <div class="status-bar-item status-bar-sep sb-hide-xs"></div>
+        <div class="status-bar-actions">
+          <button type="button" class="status-bar-action-btn" id="sb-btn-logs" title="Jump to Activity Log">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            <span>Logs</span>
+          </button>
+          <button type="button" class="status-bar-action-btn {{if .Stopped}}sb-btn-start{{else}}sb-btn-stop{{end}}" id="sb-btn-power" title="{{if .Stopped}}Start Bot{{else}}Stop Bot{{end}}">
+            <span class="sb-btn-dot"></span>
+            <span id="sb-btn-power-text">{{if .Stopped}}Start{{else}}Stop{{end}}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </footer>
 
   <script src="/static/pokemon_icons.js"></script>
