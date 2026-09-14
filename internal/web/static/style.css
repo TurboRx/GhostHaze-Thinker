@@ -1044,6 +1044,7 @@ body {
 /* tables */
 .table-wrapper {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -1688,12 +1689,19 @@ body {
   gap: 12px;
 }
 
-.status-bar-left,
-.status-bar-right {
+.status-bar-left {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+  overflow: hidden;
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .status-bar-item {
@@ -1895,7 +1903,7 @@ body {
 }
 
 /* responsive visibility helpers for status bar */
-@media (max-width: 768px) {
+@media (max-width: 868px) {
   .sb-hide-sm {
     display: none !important;
   }
