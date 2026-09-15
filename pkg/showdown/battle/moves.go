@@ -1,6 +1,8 @@
 package battle
 
-
+import (
+	"strings"
+)
 
 type MoveCategory string
 
@@ -206,4 +208,76 @@ func CalculateDamage(level int, basePower int, atk int, def int, stab float64, t
 	}
 	base := (((2.0*float64(level)/5.0 + 2.0) * float64(basePower) * float64(atk) / float64(def)) / 50.0 + 2.0)
 	return base * stab * typeEff * burnFactor
+}
+
+// isgrounded checks whether a pokemon touches the ground considering type, ability, and item.
+func IsGrounded(types []string, ability string, item string) bool {
+	itemClean := cleanID(item)
+	if itemClean == "ironball" {
+		return true
+	}
+	if itemClean == "airballoon" {
+		return false
+	}
+	abilityClean := cleanID(ability)
+	if abilityClean == "levitate" {
+		return false
+	}
+	for _, t := range types {
+		if strings.EqualFold(t, "flying") {
+			return false
+		}
+	}
+	return true
+}
+
+// calculatedamagewithweatherandterrain estimates damage dealt including weather and terrain modifiers.
+func CalculateDamageWithWeatherAndTerrain(level int, basePower int, atk int, def int, stab float64, typeEff float64, isBurned bool, isPhysical bool, moveType string, moveID string, weather string, terrain string, attackerGrounded bool, defenderGrounded bool) float64 {
+	dmg := CalculateDamage(level, basePower, atk, def, stab, typeEff, isBurned, isPhysical)
+	if dmg <= 0.0 {
+		return 0.0
+	}
+
+	moveTypeClean := strings.ToLower(moveType)
+	weatherClean := strings.ToLower(weather)
+	if strings.Contains(weatherClean, "rain") {
+		switch moveTypeClean {
+		case "water":
+			dmg *= 1.5
+		case "fire":
+			dmg *= 0.5
+		}
+	} else if strings.Contains(weatherClean, "sun") {
+		switch moveTypeClean {
+		case "fire":
+			dmg *= 1.5
+		case "water":
+			dmg *= 0.5
+		}
+	}
+
+	terrainClean := strings.ToLower(terrain)
+	if strings.Contains(terrainClean, "electric") {
+		if attackerGrounded && moveTypeClean == "electric" {
+			dmg *= 1.3
+		}
+	} else if strings.Contains(terrainClean, "grassy") {
+		if attackerGrounded && moveTypeClean == "grass" {
+			dmg *= 1.3
+		}
+		cleanM := cleanID(moveID)
+		if defenderGrounded && (cleanM == "earthquake" || cleanM == "bulldoze" || cleanM == "magnitude") {
+			dmg *= 0.5
+		}
+	} else if strings.Contains(terrainClean, "psychic") {
+		if attackerGrounded && moveTypeClean == "psychic" {
+			dmg *= 1.3
+		}
+	} else if strings.Contains(terrainClean, "misty") {
+		if defenderGrounded && moveTypeClean == "dragon" {
+			dmg *= 0.5
+		}
+	}
+
+	return dmg
 }

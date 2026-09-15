@@ -32,22 +32,31 @@ type OpponentBenchPoke struct {
 type Battle struct {
 	mu sync.RWMutex
 
-	Room            string
-	MyPlayerID      string
-	OpponentID      string
-	OpponentName    string
-	Gametype        string
-	Tier            string
-	Turn            int
-	OpponentActive  OpponentActivePoke
-	OpponentTeam    []OpponentBenchPoke
-	OpponentHazards map[string]bool
-	Ended           bool
-	Winner          string
-	LastRQID        int
-	Engine          BattleEngine
-	LastActivity    time.Time
-	TimerActive     bool
+	Room                 string
+	MyPlayerID           string
+	OpponentID           string
+	OpponentName         string
+	Gametype             string
+	Tier                 string
+	Turn                 int
+	OpponentActive       OpponentActivePoke
+	OpponentTeam         []OpponentBenchPoke
+	OpponentHazards      map[string]bool
+	OpponentHazardLayers map[string]int
+	MyHazards            map[string]int
+	MyBoosts             map[string]int
+	MyVolatiles          map[string]bool
+	OpponentVolatiles    map[string]bool
+	Weather              string
+	Terrain              string
+	ConsecutiveProtects  int
+	LastMoveUsed         string
+	Ended                bool
+	Winner               string
+	LastRQID             int
+	Engine               BattleEngine
+	LastActivity         time.Time
+	TimerActive          bool
 }
 
 func NewBattle(room string, engine BattleEngine) *Battle {
@@ -55,9 +64,14 @@ func NewBattle(room string, engine BattleEngine) *Battle {
 		engine = NewDefaultEngine()
 	}
 	return &Battle{
-		Room:            room,
-		Gametype:        "singles",
-		OpponentHazards: make(map[string]bool),
+		Room:                 room,
+		Gametype:             "singles",
+		OpponentHazards:      make(map[string]bool),
+		OpponentHazardLayers: make(map[string]int),
+		MyHazards:            make(map[string]int),
+		MyBoosts:             make(map[string]int),
+		MyVolatiles:          make(map[string]bool),
+		OpponentVolatiles:    make(map[string]bool),
 		OpponentActive: OpponentActivePoke{
 			HPPercent: 1.0,
 			Boosts:    make(map[string]int),
@@ -203,6 +217,12 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 					Ability:   rememberedAbility,
 					Item:      rememberedItem,
 				}
+				b.OpponentVolatiles = make(map[string]bool)
+			} else {
+				// reset active boosts and volatiles on our switch
+				b.MyBoosts = make(map[string]int)
+				b.MyVolatiles = make(map[string]bool)
+				b.ConsecutiveProtects = 0
 			}
 		}
 
@@ -235,69 +255,194 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "-boost":
-		if len(parts) >= 4 && b.isOpponentIdent(parts[1]) {
+		if len(parts) >= 4 {
 			stat := parts[2]
 			if amount, err := strconv.Atoi(parts[3]); err == nil {
-				if b.OpponentActive.Boosts == nil {
-					b.OpponentActive.Boosts = make(map[string]int)
+				if b.isOpponentIdent(parts[1]) {
+					if b.OpponentActive.Boosts == nil {
+						b.OpponentActive.Boosts = make(map[string]int)
+					}
+					b.OpponentActive.Boosts[stat] += amount
+				} else {
+					if b.MyBoosts == nil {
+						b.MyBoosts = make(map[string]int)
+					}
+					b.MyBoosts[stat] += amount
 				}
-				b.OpponentActive.Boosts[stat] += amount
 			}
 		}
 
 	case "-unboost":
-		if len(parts) >= 4 && b.isOpponentIdent(parts[1]) {
+		if len(parts) >= 4 {
 			stat := parts[2]
 			if amount, err := strconv.Atoi(parts[3]); err == nil {
-				if b.OpponentActive.Boosts == nil {
-					b.OpponentActive.Boosts = make(map[string]int)
+				if b.isOpponentIdent(parts[1]) {
+					if b.OpponentActive.Boosts == nil {
+						b.OpponentActive.Boosts = make(map[string]int)
+					}
+					b.OpponentActive.Boosts[stat] -= amount
+				} else {
+					if b.MyBoosts == nil {
+						b.MyBoosts = make(map[string]int)
+					}
+					b.MyBoosts[stat] -= amount
 				}
-				b.OpponentActive.Boosts[stat] -= amount
 			}
 		}
 
+	case "-clearboost":
+		if len(parts) >= 2 {
+			if b.isOpponentIdent(parts[1]) {
+				b.OpponentActive.Boosts = make(map[string]int)
+			} else {
+				b.MyBoosts = make(map[string]int)
+			}
+		}
+
+	case "-clearallboost":
+		b.OpponentActive.Boosts = make(map[string]int)
+		b.MyBoosts = make(map[string]int)
+
 	case "-sidestart":
 		// e.g. |-sidestart|p2: username|move: stealth rock
-		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
+		if len(parts) >= 3 {
 			effect := strings.ToLower(parts[2])
+			isOpp := b.isOpponentIdent(parts[1])
+			hazard := ""
 			if strings.Contains(effect, "stealth rock") {
-				b.OpponentHazards["stealthrock"] = true
-			} else if strings.Contains(effect, "spikes") {
-				b.OpponentHazards["spikes"] = true
+				hazard = "stealthrock"
 			} else if strings.Contains(effect, "toxic spikes") {
-				b.OpponentHazards["toxicspikes"] = true
+				hazard = "toxicspikes"
+			} else if strings.Contains(effect, "spikes") {
+				hazard = "spikes"
 			} else if strings.Contains(effect, "sticky web") {
-				b.OpponentHazards["stickyweb"] = true
+				hazard = "stickyweb"
+			}
+			if hazard != "" {
+				if isOpp {
+					b.OpponentHazards[hazard] = true
+					if b.OpponentHazardLayers == nil {
+						b.OpponentHazardLayers = make(map[string]int)
+					}
+					b.OpponentHazardLayers[hazard]++
+				} else {
+					if b.MyHazards == nil {
+						b.MyHazards = make(map[string]int)
+					}
+					b.MyHazards[hazard]++
+				}
 			}
 		}
 
 	case "-sideend":
-		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
+		if len(parts) >= 3 {
 			effect := strings.ToLower(parts[2])
+			isOpp := b.isOpponentIdent(parts[1])
+			hazard := ""
 			if strings.Contains(effect, "stealth rock") {
-				delete(b.OpponentHazards, "stealthrock")
-			} else if strings.Contains(effect, "spikes") {
-				delete(b.OpponentHazards, "spikes")
+				hazard = "stealthrock"
 			} else if strings.Contains(effect, "toxic spikes") {
-				delete(b.OpponentHazards, "toxicspikes")
+				hazard = "toxicspikes"
+			} else if strings.Contains(effect, "spikes") {
+				hazard = "spikes"
 			} else if strings.Contains(effect, "sticky web") {
-				delete(b.OpponentHazards, "stickyweb")
+				hazard = "stickyweb"
+			}
+			if hazard != "" {
+				if isOpp {
+					delete(b.OpponentHazards, hazard)
+					if b.OpponentHazardLayers != nil {
+						delete(b.OpponentHazardLayers, hazard)
+					}
+				} else {
+					if b.MyHazards != nil {
+						delete(b.MyHazards, hazard)
+					}
+				}
+			}
+		}
+
+	case "-weather":
+		// e.g. |-weather|raindance|[from] ability: drizzle
+		if len(parts) >= 2 {
+			w := cleanID(parts[1])
+			if w == "none" || w == "clear" {
+				b.Weather = ""
+			} else {
+				b.Weather = w
+			}
+		}
+
+	case "-fieldstart":
+		// e.g. |-fieldstart|move: electric terrain
+		if len(parts) >= 2 {
+			f := cleanID(parts[1])
+			if strings.Contains(f, "electric") {
+				b.Terrain = "electricterrain"
+			} else if strings.Contains(f, "grassy") {
+				b.Terrain = "grassyterrain"
+			} else if strings.Contains(f, "psychic") {
+				b.Terrain = "psychicterrain"
+			} else if strings.Contains(f, "misty") {
+				b.Terrain = "mistyterrain"
+			}
+		}
+
+	case "-fieldend":
+		b.Terrain = ""
+
+	case "-start":
+		// e.g. |-start|p1a: garchomp|substitute
+		if len(parts) >= 3 {
+			isOpp := b.isOpponentIdent(parts[1])
+			effect := cleanID(parts[2])
+			if isOpp {
+				if b.OpponentVolatiles == nil {
+					b.OpponentVolatiles = make(map[string]bool)
+				}
+				b.OpponentVolatiles[effect] = true
+			} else {
+				if b.MyVolatiles == nil {
+					b.MyVolatiles = make(map[string]bool)
+				}
+				b.MyVolatiles[effect] = true
+			}
+		}
+
+	case "-end":
+		if len(parts) >= 3 {
+			isOpp := b.isOpponentIdent(parts[1])
+			effect := cleanID(parts[2])
+			if isOpp && b.OpponentVolatiles != nil {
+				delete(b.OpponentVolatiles, effect)
+			} else if !isOpp && b.MyVolatiles != nil {
+				delete(b.MyVolatiles, effect)
 			}
 		}
 
 	case "move":
 		// e.g. |move|p2a: garchomp|earthquake|p1a: blastoise
-		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
+		if len(parts) >= 3 {
 			moveID := cleanID(parts[2])
-			exists := false
-			for _, m := range b.OpponentActive.Moves {
-				if m == moveID {
-					exists = true
-					break
+			if b.isOpponentIdent(parts[1]) {
+				exists := false
+				for _, m := range b.OpponentActive.Moves {
+					if m == moveID {
+						exists = true
+						break
+					}
 				}
-			}
-			if !exists {
-				b.OpponentActive.Moves = append(b.OpponentActive.Moves, moveID)
+				if !exists {
+					b.OpponentActive.Moves = append(b.OpponentActive.Moves, moveID)
+				}
+			} else {
+				// our move
+				b.LastMoveUsed = moveID
+				if moveID == "protect" || moveID == "detect" || moveID == "spikyshield" || moveID == "banefulbunker" || moveID == "kingsshield" || moveID == "silktrap" || moveID == "burningbulwark" {
+					b.ConsecutiveProtects++
+				} else {
+					b.ConsecutiveProtects = 0
+				}
 			}
 		}
 

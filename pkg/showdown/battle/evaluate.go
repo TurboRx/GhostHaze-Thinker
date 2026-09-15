@@ -1,0 +1,299 @@
+package battle
+
+import (
+	"strings"
+)
+
+// simulatedpokemon holds the minimal battle state needed for turn evaluation.
+type SimulatedPokemon struct {
+	Species   string
+	HPPercent float64
+	Status    string
+	Boosts    map[string]int
+	Item      string
+	Ability   string
+	Volatiles map[string]bool
+	Fainted   bool
+}
+
+// simulatedstate represents the complete board state during minimax search.
+type SimulatedState struct {
+	OurActive           SimulatedPokemon
+	OurBench            []SimulatedPokemon
+	OppActive           SimulatedPokemon
+	OppBench            []SimulatedPokemon
+	Weather             string
+	Terrain             string
+	OurHazards          map[string]int
+	OppHazards          map[string]int
+	ConsecutiveProtects int
+}
+
+// evaluatebattlestate scores a simulated battle state from our perspective.
+// a positive score favors our team; a negative score favors the opponent.
+func EvaluateBattleState(s *SimulatedState) float64 {
+	// 1. check terminal win / loss conditions
+	ourAlive := 0
+	if !s.OurActive.Fainted && s.OurActive.HPPercent > 0.001 {
+		ourAlive++
+	}
+	for _, p := range s.OurBench {
+		if !p.Fainted && p.HPPercent > 0.001 {
+			ourAlive++
+		}
+	}
+
+	oppAlive := 0
+	if !s.OppActive.Fainted && s.OppActive.HPPercent > 0.001 {
+		oppAlive++
+	}
+	for _, p := range s.OppBench {
+		if !p.Fainted && p.HPPercent > 0.001 {
+			oppAlive++
+		}
+	}
+
+	if ourAlive == 0 {
+		return -10000.0 - (s.OppActive.HPPercent * 100.0)
+	}
+	if oppAlive == 0 {
+		// prefer clean victories where our team took minimal or zero damage
+		return 10000.0 + (s.OurActive.HPPercent * 100.0)
+	}
+
+	score := 0.0
+
+	// 2. pokemon count differential (+35 per alive advantage)
+	score += float64(ourAlive-oppAlive) * 35.0
+
+	// 3. active pokemon hp evaluation
+	if !s.OurActive.Fainted {
+		score += s.OurActive.HPPercent * 120.0
+	}
+	if !s.OppActive.Fainted {
+		score -= s.OppActive.HPPercent * 120.0
+	}
+
+	// 4. bench pokemon hp evaluation
+	for _, p := range s.OurBench {
+		if !p.Fainted {
+			score += p.HPPercent * 80.0
+		}
+	}
+	for _, p := range s.OppBench {
+		if !p.Fainted {
+			score -= p.HPPercent * 80.0
+		}
+	}
+
+	// 5. stat boosts for active pokemon
+	score += evaluateActiveBoosts(s.OurActive)
+	score -= evaluateActiveBoosts(s.OppActive)
+
+	// 6. major status penalties
+	score += evaluateStatusPenalty(s.OurActive)
+	for _, p := range s.OurBench {
+		score += evaluateStatusPenalty(p) * 0.5
+	}
+	score -= evaluateStatusPenalty(s.OppActive)
+	for _, p := range s.OppBench {
+		score -= evaluateStatusPenalty(p) * 0.5
+	}
+
+	// 7. volatiles evaluation (substitute, leech seed, confusion)
+	if s.OurActive.Volatiles != nil {
+		if s.OurActive.Volatiles["substitute"] {
+			score += 65.0
+		}
+		if s.OurActive.Volatiles["leechseed"] {
+			score -= 30.0
+		}
+		if s.OurActive.Volatiles["confusion"] {
+			score -= 15.0
+		}
+	}
+	if s.OppActive.Volatiles != nil {
+		if s.OppActive.Volatiles["substitute"] {
+			score -= 65.0
+		}
+		if s.OppActive.Volatiles["leechseed"] {
+			score += 30.0
+		}
+		if s.OppActive.Volatiles["confusion"] {
+			score += 15.0
+		}
+	}
+
+	// 8. entry hazard evaluation scaled by bench count
+	ourBenchCount := 0.0
+	for _, p := range s.OurBench {
+		if !p.Fainted {
+			ourBenchCount++
+		}
+	}
+	oppBenchCount := 0.0
+	for _, p := range s.OppBench {
+		if !p.Fainted {
+			oppBenchCount++
+		}
+	}
+	// if bench count is unknown (early in battle), assume standard bench size of 5
+	if oppBenchCount == 0 && len(s.OppBench) == 0 {
+		oppBenchCount = 5.0
+	}
+	if ourBenchCount == 0 && len(s.OurBench) == 0 {
+		ourBenchCount = 5.0
+	}
+
+	if s.OurHazards != nil {
+		if s.OurHazards["stealthrock"] > 0 && ourBenchCount > 0 {
+			score -= 35.0 + (ourBenchCount * 20.0)
+		}
+		if layers := s.OurHazards["spikes"]; layers > 0 && ourBenchCount > 0 {
+			score -= float64(layers) * (15.0 + (ourBenchCount * 10.0))
+		}
+		if layers := s.OurHazards["toxicspikes"]; layers > 0 && ourBenchCount > 0 {
+			score -= float64(layers) * (18.0 + (ourBenchCount * 10.0))
+		}
+		if s.OurHazards["stickyweb"] > 0 && ourBenchCount > 0 {
+			score -= 25.0 + (ourBenchCount * 15.0)
+		}
+	}
+	if s.OppHazards != nil {
+		if s.OppHazards["stealthrock"] > 0 && oppBenchCount > 0 {
+			score += 35.0 + (oppBenchCount * 20.0)
+		}
+		if layers := s.OppHazards["spikes"]; layers > 0 && oppBenchCount > 0 {
+			score += float64(layers) * (15.0 + (oppBenchCount * 10.0))
+		}
+		if layers := s.OppHazards["toxicspikes"]; layers > 0 && oppBenchCount > 0 {
+			score += float64(layers) * (18.0 + (oppBenchCount * 10.0))
+		}
+		if s.OppHazards["stickyweb"] > 0 && oppBenchCount > 0 {
+			score += 25.0 + (oppBenchCount * 15.0)
+		}
+	}
+
+	// 9. active speed advantage
+	ourSpe := calculatePokemonSpeed(s.OurActive, s.Weather, s.Terrain)
+	oppSpe := calculatePokemonSpeed(s.OppActive, s.Weather, s.Terrain)
+	if ourSpe > oppSpe {
+		score += 15.0
+	} else if oppSpe > ourSpe {
+		score -= 15.0
+	}
+
+	return score
+}
+
+// evaluateactiveboosts calculates the net advantage of stat stages.
+func evaluateActiveBoosts(p SimulatedPokemon) float64 {
+	if p.Boosts == nil || p.Fainted {
+		return 0.0
+	}
+	boostScore := 0.0
+
+	// speed boost is crucial for turn priority
+	speMult := statStageMultiplier(p.Boosts["spe"])
+	boostScore += (speMult - 1.0) * 35.0
+
+	// offensive boosts
+	atkMult := statStageMultiplier(p.Boosts["atk"])
+	boostScore += (atkMult - 1.0) * 30.0
+	spaMult := statStageMultiplier(p.Boosts["spa"])
+	boostScore += (spaMult - 1.0) * 30.0
+
+	// defensive boosts
+	defMult := statStageMultiplier(p.Boosts["def"])
+	boostScore += (defMult - 1.0) * 15.0
+	spdMult := statStageMultiplier(p.Boosts["spd"])
+	boostScore += (spdMult - 1.0) * 15.0
+
+	return boostScore
+}
+
+// evaluatestatuspenalty calculates the negative score penalty for status conditions.
+func evaluateStatusPenalty(p SimulatedPokemon) float64 {
+	if p.Status == "" || p.Fainted {
+		return 0.0
+	}
+	switch p.Status {
+	case "slp":
+		return -35.0
+	case "frz":
+		return -40.0
+	case "tox":
+		return -30.0
+	case "par":
+		return -25.0
+	case "psn":
+		return -12.0
+	case "brn":
+		abilityClean := cleanID(p.Ability)
+		if abilityClean == "guts" || abilityClean == "marvelscale" {
+			return 15.0
+		}
+		return -25.0
+	default:
+		return -10.0
+	}
+}
+
+// statstagemultiplier converts an integer stage [-6..+6] to an effective multiplier.
+func statStageMultiplier(stage int) float64 {
+	if stage > 6 {
+		stage = 6
+	} else if stage < -6 {
+		stage = -6
+	}
+	if stage >= 0 {
+		return float64(2+stage) / 2.0
+	}
+	return 2.0 / float64(2-stage)
+}
+
+// calculatepokemonspeed computes effective speed considering base stat, stage, paralysis, and weather.
+func calculatePokemonSpeed(p SimulatedPokemon, weather, terrain string) int {
+	if p.Fainted {
+		return 0
+	}
+	baseStats := GetSpeciesBaseStats(p.Species)
+	spe := baseStats["spe"]
+
+	// stat stage multiplier
+	if p.Boosts != nil {
+		stage := p.Boosts["spe"]
+		spe = int(float64(spe) * statStageMultiplier(stage))
+	}
+
+	// paralysis halves speed
+	if p.Status == "par" {
+		spe = spe / 2
+	}
+
+	// choice scarf boosts speed by 1.5x
+	itemClean := cleanID(p.Item)
+	if itemClean == "choicescarf" {
+		spe = int(float64(spe) * 1.5)
+	}
+
+	// weather ability boosts
+	abilityClean := cleanID(p.Ability)
+	weatherClean := strings.ToLower(weather)
+	if strings.Contains(weatherClean, "rain") && abilityClean == "swiftswim" {
+		spe *= 2
+	} else if strings.Contains(weatherClean, "sun") && abilityClean == "chlorophyll" {
+		spe *= 2
+	} else if strings.Contains(weatherClean, "sand") && abilityClean == "sandrush" {
+		spe *= 2
+	} else if (strings.Contains(weatherClean, "snow") || strings.Contains(weatherClean, "hail")) && abilityClean == "slushrush" {
+		spe *= 2
+	}
+
+	// electric terrain surge surfer
+	if strings.Contains(strings.ToLower(terrain), "electric") && abilityClean == "surgesurfer" {
+		spe *= 2
+	}
+
+	return spe
+}
