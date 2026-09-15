@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    name: Lint
+  lint-go:
+    name: Lint Go
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -25,6 +25,34 @@ jobs:
         with:
           version: latest
           args: --timeout=5m
+
+  lint-web:
+    name: Lint Web (JS & CSS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: latest
+
+      - name: Run Biome
+        run: biome ci .
+
+  lint-docker:
+    name: Lint Dockerfile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          config: .hadolint.yaml
 
   test:
     name: Test

@@ -18,15 +18,16 @@ LABEL org.opencontainers.image.description="A Pokémon Showdown bot and client l
 LABEL org.opencontainers.image.licenses="MIT"
 
 # root certificates and tzdata are required for secure websocket connections
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates tzdata \
-    && addgroup -S ghosthaze && adduser -S ghosthaze -G ghosthaze
+    && addgroup -S -g 10001 ghosthaze && adduser -S -u 10001 -G ghosthaze ghosthaze
 
 WORKDIR /app
 
 COPY --from=builder /build/ghosthaze-thinker /app/ghosthaze-thinker
 
 # run unprivileged for security
-USER ghosthaze
+USER 10001:10001
 
 EXPOSE 8080
 

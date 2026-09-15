@@ -1,0 +1,30 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
+  "files": {
+    "includes": [
+      "internal/web/static/**/*.js",
+      "internal/web/static/**/*.css",
+      "!**/pokemon_icons.js"
+    ]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "complexity": {
+        "noImportantStyles": "off",
+        "useArrowFunction": "off"
+      },
+      "style": {
+        "useTemplate": "off"
+      }
+    }
+  },
+  "css": {
+    "parser": {
+      "cssModules": false
+    }
+  }
+}

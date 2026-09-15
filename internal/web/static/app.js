@@ -94,7 +94,9 @@ document.addEventListener("DOMContentLoaded", function () {
       else b.classList.remove("active");
     });
 
-    panes.forEach((p) => p.classList.remove("active"));
+    panes.forEach((p) => {
+      p.classList.remove("active");
+    });
     const activePane = document.getElementById("tab-" + target);
     if (activePane) {
       activePane.classList.add("active");
@@ -585,7 +587,7 @@ document.addEventListener("DOMContentLoaded", function () {
       .catch((err) => console.error("failed to fetch battle history", err));
   }
 
-  function renderBattleHistory(records, stats) {
+  function renderBattleHistory(records, _stats) {
     const container = document.getElementById("battle-history-container");
     if (!container) return;
 
@@ -1463,7 +1465,9 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll(".log-filter-btn").forEach((btn) => {
     btn.addEventListener("click", function (e) {
       e.preventDefault();
-      document.querySelectorAll(".log-filter-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".log-filter-btn").forEach((b) => {
+        b.classList.remove("active");
+      });
       this.classList.add("active");
       activeLogFilter = this.getAttribute("data-filter") || "all";
       renderLogs();
@@ -1586,10 +1590,10 @@ document.addEventListener("DOMContentLoaded", function () {
   function getSelectedFormat(hiddenInputId, customInputId) {
     const hidden = document.getElementById(hiddenInputId);
     const custom = document.getElementById(customInputId);
-    if (hidden && hidden.value === "__custom__" && custom && custom.value.trim()) {
+    if (hidden && hidden.value === "__custom__" && custom?.value.trim()) {
       return custom.value.trim();
     }
-    if (hidden && hidden.value && hidden.value !== "__custom__") {
+    if (hidden?.value && hidden.value !== "__custom__") {
       return hidden.value;
     }
     return "gen9randombattle";
@@ -1658,9 +1662,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const filtered = q
       ? formats.filter(
           (f) =>
-            (f.name && f.name.toLowerCase().includes(q)) ||
-            (f.id && f.id.toLowerCase().includes(q)) ||
-            (f.section && f.section.toLowerCase().includes(q))
+            (f.name?.toLowerCase().includes(q)) ||
+            (f.id?.toLowerCase().includes(q)) ||
+            (f.section?.toLowerCase().includes(q))
         )
       : formats;
 
@@ -1719,7 +1723,9 @@ document.addEventListener("DOMContentLoaded", function () {
       btn.addEventListener("click", function (e) {
         e.stopPropagation();
         const isOpen = wrapper.classList.contains("open");
-        document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
+        document.querySelectorAll(".custom-combobox").forEach((c) => {
+          c.classList.remove("open");
+        });
         if (!isOpen) {
           wrapper.classList.add("open");
           const searchInput = dropdown.querySelector(".combobox-search-input");
@@ -1744,7 +1750,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     document.addEventListener("click", function (e) {
       if (!e.target.closest(".custom-combobox")) {
-        document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
+        document.querySelectorAll(".custom-combobox").forEach((c) => {
+          c.classList.remove("open");
+        });
       }
     });
 
@@ -1753,7 +1761,9 @@ document.addEventListener("DOMContentLoaded", function () {
       if (e.key === "Escape") {
         const openCombos = document.querySelectorAll(".custom-combobox.open");
         if (openCombos.length > 0) {
-          openCombos.forEach((c) => c.classList.remove("open"));
+          openCombos.forEach((c) => {
+            c.classList.remove("open");
+          });
           return;
         }
         const mFile = document.getElementById("modal-file-view");
@@ -1811,7 +1821,9 @@ document.addEventListener("DOMContentLoaded", function () {
     btn.addEventListener("click", function (e) {
       e.stopPropagation();
       const isOpen = wrapper.classList.contains("open");
-      document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
+      document.querySelectorAll(".custom-combobox").forEach((c) => {
+        c.classList.remove("open");
+      });
       if (!isOpen) {
         wrapper.classList.add("open");
       }
@@ -1824,7 +1836,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const name = this.getAttribute("data-name") || this.textContent.trim();
         if (input) input.value = val;
         if (text) text.textContent = name;
-        dropdown.querySelectorAll(".combobox-option").forEach((o) => o.classList.remove("selected"));
+        dropdown.querySelectorAll(".combobox-option").forEach((o) => {
+          o.classList.remove("selected");
+        });
         this.classList.add("selected");
         wrapper.classList.remove("open");
         if (typeof onChange === "function") {
@@ -1834,7 +1848,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  function setSimpleComboboxValue(wrapperId, hiddenInputId, textId, dropdownId, val) {
+  function setSimpleComboboxValue(_wrapperId, hiddenInputId, textId, dropdownId, val) {
     const input = document.getElementById(hiddenInputId);
     const text = document.getElementById(textId);
     const dropdown = document.getElementById(dropdownId);
@@ -1863,7 +1877,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function toggle(forceOpen) {
       const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : !wrapper.classList.contains("open");
-      document.querySelectorAll(".custom-combobox").forEach((c) => c.classList.remove("open"));
+      document.querySelectorAll(".custom-combobox").forEach((c) => {
+        c.classList.remove("open");
+      });
       if (shouldOpen) {
         wrapper.classList.add("open");
       }
@@ -1886,7 +1902,9 @@ document.addEventListener("DOMContentLoaded", function () {
         e.stopPropagation();
         const val = this.getAttribute("data-id");
         input.value = val;
-        dropdown.querySelectorAll(".combobox-option").forEach((o) => o.classList.remove("selected"));
+        dropdown.querySelectorAll(".combobox-option").forEach((o) => {
+          o.classList.remove("selected");
+        });
         this.classList.add("selected");
         wrapper.classList.remove("open");
         if (typeof onSelect === "function") {
@@ -2004,7 +2022,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function toggleFormatTier(tier) {
     const input = document.getElementById("input-ladder-format");
     if (!input) return;
-    let tiers = input.value.split(",").map((s) => s.trim()).filter(Boolean);
+    const tiers = input.value.split(",").map((s) => s.trim()).filter(Boolean);
     const lowerTier = tier.toLowerCase();
     const existingIdx = tiers.findIndex((t) => t.toLowerCase() === lowerTier);
     if (existingIdx >= 0) {
@@ -2406,7 +2424,7 @@ document.addEventListener("DOMContentLoaded", function () {
       reconnect: reconnect,
     };
 
-    postJSON("/api/config/update", payload, function (err, res) {
+    postJSON("/api/config/update", payload, function (err) {
       if (err) {
         showAlert("error", "Failed to save configuration: " + err);
       } else {
@@ -2428,11 +2446,11 @@ document.addEventListener("DOMContentLoaded", function () {
           let data = null;
           try {
             data = text ? JSON.parse(text) : {};
-          } catch (e) {
+          } catch (_e) {
             data = { error: text || ("HTTP status " + res.status) };
           }
           if (!res.ok) {
-            callback((data && data.error) || ("HTTP status " + res.status));
+            callback((data?.error) || ("HTTP status " + res.status));
           } else {
             callback(null, data);
           }
@@ -2546,19 +2564,19 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // file size formatter helper
-  function formatFileSize(bytes) {
+  function _formatFileSize(bytes) {
     if (!bytes || bytes <= 0) return "0 B";
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    return parseFloat((bytes / (k ** i)).toFixed(1)) + " " + sizes[i];
   }
 
   // timestamp formatter helper
   function formatDate(isoStr) {
     if (!isoStr || isoStr.startsWith("0001")) return "-";
     const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return isoStr;
+    if (Number.isNaN(d.getTime())) return isoStr;
     return d.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
@@ -2772,7 +2790,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const query = document.getElementById("input-seen-search")?.value.trim().toLowerCase() || "";
     const filtered = query
-      ? users.filter((u) => (u.username && u.username.toLowerCase().includes(query)) || (u.room && u.room.toLowerCase().includes(query)))
+      ? users.filter((u) => (u.username?.toLowerCase().includes(query)) || (u.room?.toLowerCase().includes(query)))
       : users;
 
     if (filtered.length === 0) {
@@ -3075,7 +3093,7 @@ document.addEventListener("DOMContentLoaded", function () {
             } else {
               content = JSON.stringify(parsed, null, 2);
             }
-          } catch (e) {}
+          } catch (_e) {}
         }
         if (!content || content.trim() === "" || content.trim() === "null" || content.trim() === "[]") {
           content = "(Empty log file)";
