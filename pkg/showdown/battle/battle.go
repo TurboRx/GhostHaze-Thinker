@@ -380,13 +380,14 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			effect := strings.ToLower(parts[2])
 			isOpp := b.isOpponentIdent(parts[1])
 			hazard := ""
-			if strings.Contains(effect, "stealth rock") {
+			switch {
+			case strings.Contains(effect, "stealth rock"):
 				hazard = "stealthrock"
-			} else if strings.Contains(effect, "toxic spikes") {
+			case strings.Contains(effect, "toxic spikes"):
 				hazard = "toxicspikes"
-			} else if strings.Contains(effect, "spikes") {
+			case strings.Contains(effect, "spikes"):
 				hazard = "spikes"
-			} else if strings.Contains(effect, "sticky web") {
+			case strings.Contains(effect, "sticky web"):
 				hazard = "stickyweb"
 			}
 			if hazard != "" {
@@ -410,13 +411,14 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			effect := strings.ToLower(parts[2])
 			isOpp := b.isOpponentIdent(parts[1])
 			hazard := ""
-			if strings.Contains(effect, "stealth rock") {
+			switch {
+			case strings.Contains(effect, "stealth rock"):
 				hazard = "stealthrock"
-			} else if strings.Contains(effect, "toxic spikes") {
+			case strings.Contains(effect, "toxic spikes"):
 				hazard = "toxicspikes"
-			} else if strings.Contains(effect, "spikes") {
+			case strings.Contains(effect, "spikes"):
 				hazard = "spikes"
-			} else if strings.Contains(effect, "sticky web") {
+			case strings.Contains(effect, "sticky web"):
 				hazard = "stickyweb"
 			}
 			if hazard != "" {
@@ -425,10 +427,8 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 					if b.OpponentHazardLayers != nil {
 						delete(b.OpponentHazardLayers, hazard)
 					}
-				} else {
-					if b.MyHazards != nil {
-						delete(b.MyHazards, hazard)
-					}
+				} else if b.MyHazards != nil {
+					delete(b.MyHazards, hazard)
 				}
 			}
 		}
@@ -448,13 +448,14 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		// e.g. |-fieldstart|move: electric terrain
 		if len(parts) >= 2 {
 			f := cleanID(parts[1])
-			if strings.Contains(f, "electric") {
+			switch {
+			case strings.Contains(f, "electric"):
 				b.Terrain = "electricterrain"
-			} else if strings.Contains(f, "grassy") {
+			case strings.Contains(f, "grassy"):
 				b.Terrain = "grassyterrain"
-			} else if strings.Contains(f, "psychic") {
+			case strings.Contains(f, "psychic"):
 				b.Terrain = "psychicterrain"
-			} else if strings.Contains(f, "misty") {
+			case strings.Contains(f, "misty"):
 				b.Terrain = "mistyterrain"
 			}
 		}
@@ -718,9 +719,9 @@ func parseHPPercent(condition string) float64 {
 	slash := strings.Split(parts[0], "/")
 	if len(slash) == 2 {
 		cur, err1 := strconv.ParseFloat(slash[0], 64)
-		max, err2 := strconv.ParseFloat(slash[1], 64)
-		if err1 == nil && err2 == nil && max > 0 {
-			return cur / max
+		maxHP, err2 := strconv.ParseFloat(slash[1], 64)
+		if err1 == nil && err2 == nil && maxHP > 0 {
+			return cur / maxHP
 		}
 	}
 	return 1.0

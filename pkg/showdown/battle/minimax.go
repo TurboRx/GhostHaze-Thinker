@@ -191,7 +191,7 @@ func (e *MinimaxEngine) decideForcedSwitch(b *Battle, req BattleRequest) BattleD
 // decidesimultaneousturn builds the payoff matrix and selects the maximin action.
 func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) BattleDecision {
 	state := buildSimulatedState(b, req)
-	ourActions := generateOurActions(b, req, state)
+	ourActions := generateOurActions(req, state)
 	if len(ourActions) == 0 {
 		return e.decideForcedSwitch(b, req)
 	}
@@ -401,7 +401,7 @@ func (p SimulatedPokemon) Types() []string {
 }
 
 // generateouractions produces candidate move and switch options.
-func generateOurActions(b *Battle, req BattleRequest, state *SimulatedState) []SimAction {
+func generateOurActions(req BattleRequest, state *SimulatedState) []SimAction {
 	var actions []SimAction
 
 	// active moves
@@ -574,9 +574,7 @@ func simulateTurn(initial *SimulatedState, ourAct, oppAct SimAction) *SimulatedS
 	oppSwitched := oppAct.Type == actionSwitch
 
 	if ourSwitched && ourAct.SwitchIndex < len(s.OurBench) {
-		incoming := s.OurBench[ourAct.SwitchIndex]
-		s.OurBench[ourAct.SwitchIndex] = s.OurActive
-		s.OurActive = incoming
+		s.OurBench[ourAct.SwitchIndex], s.OurActive = s.OurActive, s.OurBench[ourAct.SwitchIndex]
 		s.OurActive.Boosts = make(map[string]int)
 		s.OurActive.Volatiles = make(map[string]bool)
 		s.ConsecutiveProtects = 0
@@ -584,9 +582,7 @@ func simulateTurn(initial *SimulatedState, ourAct, oppAct SimAction) *SimulatedS
 	}
 
 	if oppSwitched && oppAct.SwitchIndex < len(s.OppBench) {
-		incoming := s.OppBench[oppAct.SwitchIndex]
-		s.OppBench[oppAct.SwitchIndex] = s.OppActive
-		s.OppActive = incoming
+		s.OppBench[oppAct.SwitchIndex], s.OppActive = s.OppActive, s.OppBench[oppAct.SwitchIndex]
 		s.OppActive.Boosts = make(map[string]int)
 		s.OppActive.Volatiles = make(map[string]bool)
 		applyEntryHazards(&s.OppActive, s.OppHazards)
@@ -629,19 +625,18 @@ func simulateTurn(initial *SimulatedState, ourAct, oppAct SimAction) *SimulatedS
 	ourSpe := calculatePokemonSpeed(s.OurActive, s.Weather, s.Terrain)
 	oppSpe := calculatePokemonSpeed(s.OppActive, s.Weather, s.Terrain)
 
-	ourFirst := false
-	if ourPrio > oppPrio {
+	var ourFirst bool
+	switch {
+	case ourPrio > oppPrio:
 		ourFirst = true
-	} else if ourPrio < oppPrio {
+	case ourPrio < oppPrio:
 		ourFirst = false
-	} else {
-		if s.OppActive.ConfirmedFaster {
-			ourFirst = false
-		} else if s.OppActive.ConfirmedSlower {
-			ourFirst = true
-		} else {
-			ourFirst = ourSpe >= oppSpe
-		}
+	case s.OppActive.ConfirmedFaster:
+		ourFirst = false
+	case s.OppActive.ConfirmedSlower:
+		ourFirst = true
+	default:
+		ourFirst = ourSpe >= oppSpe
 	}
 
 	if ourFirst {
@@ -966,6 +961,45 @@ func applyMonEndOfTurn(p *SimulatedPokemon, weather, terrain string) {
 		}
 	}
 
+	// weather chip
+	wClean := strings.ToLower(weather)
+	itemClean := cleanID(p.Item)
+	abilityClean := cleanID(p.Ability)
+	if strings.Contains(wClean, "sand") {
+		// sandstorm damages non-rock, non-ground, non-steel pokemon without sand immunities
+		types := p.Types()
+		immune := false
+		for _, t := range types {
+			tClean := strings.ToLower(t)
+			if tClean == "rock" || tClean == "ground" || tClean == "steel" {
+				immune = true
+				break
+			}
+		}
+		if abilityClean == "magicguard" || abilityClean == "overcoat" || abilityClean == "sandforce" || abilityClean == "sandrush" || abilityClean == "sandveil" {
+			immune = true
+		}
+		if !immune && itemClean != "safetygoggles" {
+			p.HPPercent -= 0.0625
+		}
+	} else if strings.Contains(wClean, "hail") {
+		// hail damages non-ice pokemon without hail immunities
+		types := p.Types()
+		immune := false
+		for _, t := range types {
+			if strings.ToLower(t) == "ice" {
+				immune = true
+				break
+			}
+		}
+		if abilityClean == "magicguard" || abilityClean == "overcoat" || abilityClean == "icebody" || abilityClean == "snowcloak" {
+			immune = true
+		}
+		if !immune && itemClean != "safetygoggles" {
+			p.HPPercent -= 0.0625
+		}
+	}
+
 	if p.HPPercent <= 0.001 {
 		p.HPPercent = 0.0
 		p.Fainted = true
@@ -1075,9 +1109,7 @@ func evaluate2PlyLookahead(s *SimulatedState) float64 {
 		for _, oppAct := range oppActs {
 			simResult2 := simulateTurn(s, ourAct, oppAct)
 			var score2 float64
-			if simResult2.OurActive.Fainted || simResult2.OppActive.Fainted {
-				score2 = EvaluateBattleState(simResult2)
-			} else if shouldExtendToTurn3(ourAct, oppAct, simResult2) {
+			if !simResult2.OurActive.Fainted && !simResult2.OppActive.Fainted && shouldExtendToTurn3(ourAct, oppAct, simResult2) {
 				score2 = evaluate3PlyQuiescence(simResult2)
 			} else {
 				score2 = EvaluateBattleState(simResult2)
@@ -1198,7 +1230,14 @@ func generateTurn2OppActions(s *SimulatedState) []SimAction {
 func shouldExtendToTurn3(ourAct, oppAct SimAction, s *SimulatedState) bool {
 	// tactical setup moves (swords dance, dragon dance, calm mind, nasty plot, quiver dance)
 	// require 3-ply resolution to properly evaluate whether stat boosts convert into decisive knockouts
-	return ourAct.MoveData.IsSetup || oppAct.MoveData.IsSetup
+	if ourAct.MoveData.IsSetup || oppAct.MoveData.IsSetup {
+		return true
+	}
+	// resolve low-hp exchanges where either active pokemon is near lethal threshold
+	if s != nil && (s.OurActive.HPPercent < 0.25 || s.OppActive.HPPercent < 0.25) {
+		return true
+	}
+	return false
 }
 
 // evaluate3plyquiescence evaluates a 3rd ply along critical tactical lines (setups and lethal exchanges).

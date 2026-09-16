@@ -515,3 +515,78 @@ func TestMinimaxEngine_TeraEconomyPreservation(t *testing.T) {
 	}
 }
 
+func TestMinimaxEngine_WeatherEndOfTurnChip(t *testing.T) {
+	// electric mon takes sandstorm chip
+	pElectric := SimulatedPokemon{
+		Species:   "Pikachu",
+		HPPercent: 1.0,
+	}
+	applyMonEndOfTurn(&pElectric, "sandstorm", "")
+	if pElectric.HPPercent >= 1.0 {
+		t.Fatalf("expected pikachu to take sandstorm chip, got %f", pElectric.HPPercent)
+	}
+
+	// steel mon is immune to sandstorm chip
+	pSteel := SimulatedPokemon{
+		Species:   "Corviknight",
+		HPPercent: 1.0,
+	}
+	applyMonEndOfTurn(&pSteel, "sandstorm", "")
+	if pSteel.HPPercent != 1.0 {
+		t.Fatalf("expected corviknight to resist sandstorm, got %f", pSteel.HPPercent)
+	}
+
+	// safety goggles protects against sandstorm
+	pGoggles := SimulatedPokemon{
+		Species:   "Pikachu",
+		Item:      "safetygoggles",
+		HPPercent: 1.0,
+	}
+	applyMonEndOfTurn(&pGoggles, "sandstorm", "")
+	if pGoggles.HPPercent != 1.0 {
+		t.Fatalf("expected safety goggles to protect from sandstorm, got %f", pGoggles.HPPercent)
+	}
+
+	// ice mon is immune to hail chip
+	pIce := SimulatedPokemon{
+		Species:   "Weavile",
+		HPPercent: 1.0,
+	}
+	applyMonEndOfTurn(&pIce, "hail", "")
+	if pIce.HPPercent != 1.0 {
+		t.Fatalf("expected weavile to resist hail, got %f", pIce.HPPercent)
+	}
+
+	// fire mon takes hail chip
+	pFire := SimulatedPokemon{
+		Species:   "Charizard",
+		HPPercent: 1.0,
+	}
+	applyMonEndOfTurn(&pFire, "hail", "")
+	if pFire.HPPercent >= 1.0 {
+		t.Fatalf("expected charizard to take hail chip, got %f", pFire.HPPercent)
+	}
+}
+
+func TestMinimaxEngine_LowHPQuiescenceExtension(t *testing.T) {
+	normalMove := SimAction{Type: actionMove, MoveData: GetMoveData("tackle")}
+
+	// healthy pokemon without setup should not extend to turn 3
+	stateHealthy := &SimulatedState{
+		OurActive: SimulatedPokemon{Species: "Garchomp", HPPercent: 0.8},
+		OppActive: SimulatedPokemon{Species: "Dragonite", HPPercent: 0.7},
+	}
+	if shouldExtendToTurn3(normalMove, normalMove, stateHealthy) {
+		t.Fatalf("expected healthy state without setups to not extend to turn 3")
+	}
+
+	// low hp pokemon should extend to turn 3 to resolve tactical endgame
+	stateLow := &SimulatedState{
+		OurActive: SimulatedPokemon{Species: "Garchomp", HPPercent: 0.20},
+		OppActive: SimulatedPokemon{Species: "Dragonite", HPPercent: 0.70},
+	}
+	if !shouldExtendToTurn3(normalMove, normalMove, stateLow) {
+		t.Fatalf("expected low hp ourActive (<0.25) to trigger 3-ply quiescence extension")
+	}
+}
+

@@ -257,11 +257,12 @@ func CalculateDamageWithWeatherAndTerrain(level int, basePower int, atk int, def
 	}
 
 	terrainClean := strings.ToLower(terrain)
-	if strings.Contains(terrainClean, "electric") {
+	switch {
+	case strings.Contains(terrainClean, "electric"):
 		if attackerGrounded && moveTypeClean == "electric" {
 			dmg *= 1.3
 		}
-	} else if strings.Contains(terrainClean, "grassy") {
+	case strings.Contains(terrainClean, "grassy"):
 		if attackerGrounded && moveTypeClean == "grass" {
 			dmg *= 1.3
 		}
@@ -269,11 +270,11 @@ func CalculateDamageWithWeatherAndTerrain(level int, basePower int, atk int, def
 		if defenderGrounded && (cleanM == "earthquake" || cleanM == "bulldoze" || cleanM == "magnitude") {
 			dmg *= 0.5
 		}
-	} else if strings.Contains(terrainClean, "psychic") {
+	case strings.Contains(terrainClean, "psychic"):
 		if attackerGrounded && moveTypeClean == "psychic" {
 			dmg *= 1.3
 		}
-	} else if strings.Contains(terrainClean, "misty") {
+	case strings.Contains(terrainClean, "misty"):
 		if defenderGrounded && moveTypeClean == "dragon" {
 			dmg *= 0.5
 		}

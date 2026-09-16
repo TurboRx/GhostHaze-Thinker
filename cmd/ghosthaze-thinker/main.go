@@ -287,7 +287,7 @@ func formatDHMS(d time.Duration) string {
 	}
 	sec := totalSec % 60
 	totalMin := totalSec / 60
-	min := totalMin % 60
+	mins := totalMin % 60
 	totalHours := totalMin / 60
 	hours := totalHours % 24
 	days := totalHours / 24
@@ -307,11 +307,11 @@ func formatDHMS(d time.Duration) string {
 			parts = append(parts, fmt.Sprintf("%d hours", hours))
 		}
 	}
-	if min > 0 {
-		if min == 1 {
+	if mins > 0 {
+		if mins == 1 {
 			parts = append(parts, "1 minute")
 		} else {
-			parts = append(parts, fmt.Sprintf("%d minutes", min))
+			parts = append(parts, fmt.Sprintf("%d minutes", mins))
 		}
 	}
 	if sec > 0 || len(parts) == 0 {

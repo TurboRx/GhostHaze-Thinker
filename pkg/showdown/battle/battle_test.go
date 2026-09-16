@@ -929,7 +929,7 @@ func TestMinimaxEngine_TrappedPreventsSwitch(t *testing.T) {
 	}
 
 	state := buildSimulatedState(b, req)
-	actions := generateOurActions(b, req, state)
+	actions := generateOurActions(req, state)
 
 	for _, act := range actions {
 		if act.Type == actionSwitch {

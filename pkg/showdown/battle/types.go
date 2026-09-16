@@ -89,9 +89,9 @@ func (p RequestPokemon) HPPercent() float64 {
 	slash := strings.Split(parts[0], "/")
 	if len(slash) == 2 {
 		cur, err1 := strconv.ParseFloat(slash[0], 64)
-		max, err2 := strconv.ParseFloat(slash[1], 64)
-		if err1 == nil && err2 == nil && max > 0 {
-			return cur / max
+		maxHP, err2 := strconv.ParseFloat(slash[1], 64)
+		if err1 == nil && err2 == nil && maxHP > 0 {
+			return cur / maxHP
 		}
 	}
 	return 1.0

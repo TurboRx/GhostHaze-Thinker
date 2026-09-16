@@ -198,13 +198,14 @@ func EvaluateBattleState(s *SimulatedState) float64 {
 	// 9. active speed advantage
 	ourSpe := calculatePokemonSpeed(s.OurActive, s.Weather, s.Terrain)
 	oppSpe := calculatePokemonSpeed(s.OppActive, s.Weather, s.Terrain)
-	if s.OppActive.ConfirmedFaster {
+	switch {
+	case s.OppActive.ConfirmedFaster:
 		score -= 18.0
-	} else if s.OppActive.ConfirmedSlower {
+	case s.OppActive.ConfirmedSlower:
 		score += 18.0
-	} else if ourSpe > oppSpe {
+	case ourSpe > oppSpe:
 		score += 15.0
-	} else if oppSpe > ourSpe {
+	case oppSpe > ourSpe:
 		score -= 15.0
 	}
 
@@ -293,7 +294,7 @@ func calculatePokemonSpeed(p SimulatedPokemon, weather, terrain string) int {
 
 	// paralysis halves speed
 	if p.Status == "par" {
-		spe = spe / 2
+		spe /= 2
 	}
 
 	// choice scarf boosts speed by 1.5x
@@ -305,13 +306,14 @@ func calculatePokemonSpeed(p SimulatedPokemon, weather, terrain string) int {
 	// weather ability boosts
 	abilityClean := cleanID(p.Ability)
 	weatherClean := strings.ToLower(weather)
-	if strings.Contains(weatherClean, "rain") && abilityClean == "swiftswim" {
+	switch {
+	case strings.Contains(weatherClean, "rain") && abilityClean == "swiftswim":
 		spe *= 2
-	} else if strings.Contains(weatherClean, "sun") && abilityClean == "chlorophyll" {
+	case strings.Contains(weatherClean, "sun") && abilityClean == "chlorophyll":
 		spe *= 2
-	} else if strings.Contains(weatherClean, "sand") && abilityClean == "sandrush" {
+	case strings.Contains(weatherClean, "sand") && abilityClean == "sandrush":
 		spe *= 2
-	} else if (strings.Contains(weatherClean, "snow") || strings.Contains(weatherClean, "hail")) && abilityClean == "slushrush" {
+	case (strings.Contains(weatherClean, "snow") || strings.Contains(weatherClean, "hail")) && abilityClean == "slushrush":
 		spe *= 2
 	}
 

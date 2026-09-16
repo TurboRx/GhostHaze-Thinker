@@ -92,7 +92,7 @@ func GetShowdownServerWithEndpoint(targetURL string, client *http.Client, endpoi
 
 	// append default domain suffix if bare server id was passed
 	if !strings.Contains(clean, ".") && !strings.Contains(clean, ":") && clean != "localhost" {
-		clean = clean + ".psim.us"
+		clean += ".psim.us"
 	}
 
 	if client == nil {

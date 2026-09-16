@@ -680,13 +680,14 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	var connectedAtMs int64
 	var uptimeSec int64
 	var contimeStr string
-	if !connectedAt.IsZero() && s.client.IsConnected() {
+	switch {
+	case !connectedAt.IsZero() && s.client.IsConnected():
 		connectedAtMs = connectedAt.UnixMilli()
 		uptimeSec = int64(time.Since(connectedAt).Seconds())
 		contimeStr = formatDuration(time.Since(connectedAt))
-	} else if s.client.IsStopped() {
+	case s.client.IsStopped():
 		contimeStr = "Stopped"
-	} else {
+	default:
 		contimeStr = "Disconnected"
 	}
 	serverUptimeSec := int64(time.Since(s.startTime).Seconds())
