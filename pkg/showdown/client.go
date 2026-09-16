@@ -68,6 +68,7 @@ type Client struct {
 	ladder             *LadderController
 	seen               *SeenStore
 	abuseMonitor       *AbuseMonitor
+	tournament         *TournamentManager
 	statusMessage      string
 	antiAFK            bool
 	antiAFKStopCh      chan struct{}
@@ -119,6 +120,7 @@ func NewClient(cfg Config) *Client {
 		ladder:             NewLadderController(),
 		seen:               NewSeenStore("data/seen.json"),
 		abuseMonitor:       NewAbuseMonitor(4, 10*time.Second, 30*time.Second),
+		tournament:         NewTournamentManager(cfg.AutoTournaments, cfg.TournamentFormats),
 		incomingChallenges: make(map[string]string),
 	}
 	c.initBuiltinCommands()
@@ -1329,14 +1331,28 @@ func (c *Client) processMessage(msg RawMessage) {
 		}
 
 	case "updatesearch":
-		if len(msg.Parts) > 0 && c.ladder != nil {
+		if len(msg.Parts) > 0 {
 			var us struct {
-				Searching []string `json:"searching"`
+				Searching []string          `json:"searching"`
+				Games     map[string]string `json:"games"`
 			}
 			rawJSON := strings.Join(msg.Parts, "|")
 			if err := json.Unmarshal([]byte(rawJSON), &us); err == nil {
-				c.ladder.OnSearchUpdate(len(us.Searching) > 0)
+				if c.ladder != nil {
+					c.ladder.OnSearchUpdate(len(us.Searching) > 0)
+				}
+				// auto-rejoin active battles reported by showdown games map after reconnection
+				for room := range us.Games {
+					if strings.HasPrefix(room, "battle-") {
+						_ = c.JoinRoom(room)
+					}
+				}
 			}
+		}
+
+	case "tournament", "tournaments":
+		if c.tournament != nil && msg.Room != "" {
+			c.tournament.HandleMessage(c, msg.Room, msg.Parts)
 		}
 
 	case "updatechallenges":
@@ -1496,6 +1512,12 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 		// enable timer to prevent stalling
 		_ = c.SendToRoom(room, "/timer on")
 	} else {
+		// if rejoining an in-progress battle after disconnect, showdown sends |init|battle
+		// reinitialize the battle instance so historical event stream rebuilds state cleanly
+		if msg.Type == "init" && len(msg.Parts) > 0 && msg.Parts[0] == "battle" {
+			b = battle.NewBattle(room, c.battleEngine)
+			c.battles[roomID] = b
+		}
 		c.battleMu.Unlock()
 	}
 
@@ -1916,6 +1938,20 @@ func (c *Client) onPostLogin() {
 			_ = c.JoinRoom(room)
 		}
 	}
+
+	// rejoin any active, unended battles after reconnection
+	c.battleMu.RLock()
+	var activeBattles []string
+	for _, b := range c.battles {
+		if !b.IsEnded() {
+			activeBattles = append(activeBattles, b.Room)
+		}
+	}
+	c.battleMu.RUnlock()
+
+	for _, battleRoom := range activeBattles {
+		_ = c.JoinRoom(battleRoom)
+	}
 }
 
 // initbuiltincommands registers standard utility and dex commands
@@ -2007,8 +2043,64 @@ func (c *Client) initBuiltinCommands() {
 		_ = c.Reply(room, user, fmt.Sprintf("Status message updated to: %s", args))
 	})
 
+	c.HandleCommand("tourjoin", func(room, user, args string) {
+		targetRoom := room
+		if strings.TrimSpace(args) != "" {
+			targetRoom = strings.TrimSpace(args)
+		}
+		if targetRoom == "" {
+			_ = c.Reply(room, user, "Usage: .tourjoin [chatroom]")
+			return
+		}
+		if err := c.JoinTournament(targetRoom); err != nil {
+			_ = c.Reply(room, user, fmt.Sprintf("Failed to join tournament: %v", err))
+		} else {
+			_ = c.Reply(room, user, fmt.Sprintf("Joined tournament in %s!", targetRoom))
+		}
+	})
+
+	c.HandleCommand("tourleave", func(room, user, args string) {
+		targetRoom := room
+		if strings.TrimSpace(args) != "" {
+			targetRoom = strings.TrimSpace(args)
+		}
+		if targetRoom == "" {
+			_ = c.Reply(room, user, "Usage: .tourleave [chatroom]")
+			return
+		}
+		if err := c.LeaveTournament(targetRoom); err != nil {
+			_ = c.Reply(room, user, fmt.Sprintf("Failed to leave tournament: %v", err))
+		} else {
+			_ = c.Reply(room, user, fmt.Sprintf("Left tournament in %s.", targetRoom))
+		}
+	})
+
+	c.HandleCommand("tourstatus", func(room, user, args string) {
+		targetRoom := room
+		if strings.TrimSpace(args) != "" {
+			targetRoom = strings.TrimSpace(args)
+		}
+		if targetRoom == "" {
+			_ = c.Reply(room, user, "Usage: .tourstatus [chatroom]")
+			return
+		}
+		if tour, ok := c.GetTournament(targetRoom); ok && tour != nil {
+			statusStr := "Signups"
+			if tour.IsStarted {
+				statusStr = "In Progress"
+			}
+			joinedStr := "No"
+			if tour.IsJoined {
+				joinedStr = "Yes"
+			}
+			_ = c.Reply(room, user, fmt.Sprintf("Tournament in %s: Format: %s | Status: %s | Joined: %s", targetRoom, tour.Format, statusStr, joinedStr))
+		} else {
+			_ = c.Reply(room, user, fmt.Sprintf("No active tournament tracked in %s.", targetRoom))
+		}
+	})
+
 	c.HandleCommand("help", func(room, user, args string) {
-		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch")
+		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch, .tourjoin, .tourleave, .tourstatus")
 	})
 
 	// register default command aliases
@@ -2321,3 +2413,69 @@ func (c *Client) Login(username, password string) error {
 	c.Reconnect()
 	return nil
 }
+
+// tournamentmanager returns the active tournament manager instance.
+func (c *Client) TournamentManager() *TournamentManager {
+	return c.tournament
+}
+
+// jointournament enters an active tournament in the specified chatroom.
+func (c *Client) JoinTournament(room string) error {
+	if c.tournament == nil {
+		return errors.New("tournament manager not initialized")
+	}
+	return c.tournament.Join(c, room)
+}
+
+// leavetournament exits an active tournament in the specified chatroom.
+func (c *Client) LeaveTournament(room string) error {
+	if c.tournament == nil {
+		return errors.New("tournament manager not initialized")
+	}
+	return c.tournament.Leave(c, room)
+}
+
+// gettournament returns details of an active tournament in a chatroom if present.
+func (c *Client) GetTournament(room string) (*Tournament, bool) {
+	if c.tournament == nil {
+		return nil, false
+	}
+	return c.tournament.Get(room)
+}
+
+// getalltournaments returns all tracked tournaments across chatrooms.
+func (c *Client) GetAllTournaments() []*Tournament {
+	if c.tournament == nil {
+		return nil
+	}
+	return c.tournament.GetAll()
+}
+
+// setautojointournaments toggles automatic entry into detected tournaments.
+func (c *Client) SetAutoJoinTournaments(enable bool) {
+	if c.tournament != nil {
+		c.tournament.SetAutoJoin(enable)
+	}
+	c.stateMu.Lock()
+	c.config.AutoTournaments = enable
+	c.stateMu.Unlock()
+}
+
+// settournamentformats updates allowed tournament formats.
+func (c *Client) SetTournamentFormats(formats []string) {
+	if c.tournament != nil {
+		c.tournament.SetAllowedFormats(formats)
+	}
+	c.stateMu.Lock()
+	c.config.TournamentFormats = formats
+	c.stateMu.Unlock()
+}
+
+// istournamentformatallowed checks if a format is permitted for tournament play.
+func (c *Client) IsTournamentFormatAllowed(format string) bool {
+	if c.tournament == nil {
+		return false
+	}
+	return c.tournament.IsFormatAllowed(format)
+}
+

@@ -86,6 +86,18 @@ func Load() (*Config, error) {
 	cfg.BattleLoseMsg = os.Getenv("PS_BATTLE_LOSE_MSG")
 	cfg.BattleStartMsg = os.Getenv("PS_BATTLE_START_MSG")
 
+	if autoTourRaw := os.Getenv("PS_AUTO_TOURNAMENTS"); autoTourRaw != "" {
+		cfg.AutoTournaments = autoTourRaw == "true" || autoTourRaw == "1"
+	}
+	if tourFormatsRaw := os.Getenv("PS_TOURNAMENT_FORMATS"); tourFormatsRaw != "" {
+		for _, f := range strings.Split(tourFormatsRaw, ",") {
+			trimmed := strings.TrimSpace(f)
+			if trimmed != "" {
+				cfg.TournamentFormats = append(cfg.TournamentFormats, trimmed)
+			}
+		}
+	}
+
 	// if a web url was supplied or auto-discovery was requested, resolve server parameters
 	autoDiscover := os.Getenv("PS_DISCOVER_SERVER") == "true" || os.Getenv("PS_DISCOVER_SERVER") == "1"
 	if strings.HasPrefix(cfg.ServerURL, "http://") || strings.HasPrefix(cfg.ServerURL, "https://") || autoDiscover {
@@ -232,6 +244,12 @@ func SaveEnvFile(filename string, cfg *showdown.Config) error {
 	}
 	fmt.Fprintf(&sb, "PS_BATTLE_FORMATS=%s\n", strings.Join(cfg.BattleFormats, ","))
 	fmt.Fprintf(&sb, "PS_BATTLE_TEAM=%s\n", cfg.BattleTeam)
+	autoTourStr := "false"
+	if cfg.AutoTournaments {
+		autoTourStr = "true"
+	}
+	fmt.Fprintf(&sb, "PS_AUTO_TOURNAMENTS=%s\n", autoTourStr)
+	fmt.Fprintf(&sb, "PS_TOURNAMENT_FORMATS=%s\n", strings.Join(cfg.TournamentFormats, ","))
 	pass := os.Getenv("WEB_ADMIN_PASSWORD")
 	if pass == "" {
 		pass = "admin"

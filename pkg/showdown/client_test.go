@@ -1127,3 +1127,111 @@ func TestStatusCommand(t *testing.T) {
 		t.Errorf("expected status message 'Challenging users', got %q", client.StatusMessage())
 	}
 }
+
+func TestBattleReconnection_ResumeActiveBattles(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	sentChan := make(chan string, 20)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			sentChan <- string(msg)
+		}
+	}))
+	defer s.Close()
+
+	client := NewClient(Config{
+		Username:   "GhostHaze Thinker",
+		ServerID:   "dummytest",
+		ServerHost: "testserver.psim.us",
+	})
+	client.username = "GhostHaze Thinker"
+
+	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
+	wsConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer wsConn.Close()
+	client.wsConn = wsConn
+	client.connected = true
+
+	// simulate an active unended battle
+	battleRoom := "battle-gen9randombattle-888"
+	client.handleRawPayload(">" + battleRoom + "\n|init|battle\n|player|p1|GhostHaze Thinker\n|player|p2|RivalUser")
+
+	if _, ok := client.Battle(battleRoom); !ok {
+		t.Fatalf("expected battle %s to be tracked", battleRoom)
+	}
+
+	// 1. test onpostlogin rejoining existing unended battles
+	client.onPostLogin()
+
+	rejoined := false
+	deadline := time.After(500 * time.Millisecond)
+rejoinLoop:
+	for !rejoined {
+		select {
+		case <-deadline:
+			break rejoinLoop
+		case msg := <-sentChan:
+			if msg == "|/join "+battleRoom {
+				rejoined = true
+			}
+		}
+	}
+	if !rejoined {
+		t.Fatalf("expected client to rejoin active battle via onpostlogin, got messages: %v", sentChan)
+	}
+
+	// 2. test updatesearch discovering another ongoing battle
+	client.handleRawPayload(`|updatesearch|{"searching":[],"games":{"battle-gen9randombattle-999":"[Gen 9] Random Battle"}}`)
+
+	discovered := false
+	deadline2 := time.After(500 * time.Millisecond)
+discoverLoop:
+	for !discovered {
+		select {
+		case <-deadline2:
+			break discoverLoop
+		case msg := <-sentChan:
+			if msg == "|/join battle-gen9randombattle-999" {
+				discovered = true
+			}
+		}
+	}
+	if !discovered {
+		t.Fatalf("expected client to rejoin discovered battle from updatesearch games map")
+	}
+
+	// 3. simulate showdown replaying backlog into battle-gen9randombattle-888 followed by request
+	client.handleRawPayload(">" + battleRoom + "\n|init|battle\n|player|p1|GhostHaze Thinker\n|player|p2|RivalUser\n|turn|1\n|move|p1a: pikachu|thunderbolt|p2a: squirtle\n|turn|2\n|request|{\"active\":[{\"moves\":[{\"move\":\"Thunderbolt\",\"id\":\"thunderbolt\",\"pp\":24,\"maxpp\":24,\"target\":\"normal\",\"disabled\":false}]}],\"side\":{\"name\":\"GhostHaze Thinker\",\"id\":\"p1\",\"pokemon\":[{\"ident\":\"p1: Pikachu\",\"details\":\"Pikachu, L80, M\",\"condition\":\"100/100\",\"active\":true,\"stats\":{\"atk\":100,\"def\":100,\"spa\":100,\"spd\":100,\"spe\":100},\"moves\":[\"thunderbolt\"],\"baseAbility\":\"static\",\"item\":\"lightball\",\"pokeball\":\"pokeball\",\"ability\":\"static\"}]},\"rqid\":2}")
+
+	choiceMade := false
+	deadline3 := time.After(500 * time.Millisecond)
+choiceLoop:
+	for !choiceMade {
+		select {
+		case <-deadline3:
+			break choiceLoop
+		case msg := <-sentChan:
+			if strings.HasPrefix(msg, battleRoom+"|/choose move ") {
+				choiceMade = true
+			}
+		}
+	}
+	if !choiceMade {
+		t.Fatalf("expected move choice sent for resumed battle")
+	}
+}
+

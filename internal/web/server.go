@@ -419,6 +419,10 @@ func (s *Server) buildMux() (http.Handler, error) {
 	mux.HandleFunc("/api/ladder/start", s.handleAPILadderStart)
 	mux.HandleFunc("/api/ladder/stop", s.handleAPILadderStop)
 
+	mux.HandleFunc("/api/tournaments", s.handleAPITournaments)
+	mux.HandleFunc("/api/tournaments/join", s.handleAPITournamentsJoin)
+	mux.HandleFunc("/api/tournaments/leave", s.handleAPITournamentsLeave)
+
 	// auth actions
 	mux.HandleFunc("/api/auth/change-password", s.handleAPIChangePassword)
 
@@ -719,6 +723,21 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		commandsCount = len(s.client.DynamicCommands().List())
 	}
 
+	tournaments := s.client.GetAllTournaments()
+	tournamentsData := make([]map[string]any, 0, len(tournaments))
+	for _, t := range tournaments {
+		if t != nil {
+			tournamentsData = append(tournamentsData, map[string]any{
+				"room":          t.Room,
+				"format":        t.Format,
+				"generator":     t.Generator,
+				"is_started":    t.IsStarted,
+				"is_joined":     t.IsJoined,
+				"current_match": t.CurrentMatch,
+			})
+		}
+	}
+
 	resp := map[string]any{
 		"connected":                 s.client.IsConnected(),
 		"stopped":                   s.client.IsStopped(),
@@ -741,6 +760,9 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"battle_lose_msg":           cfg.BattleLoseMsg,
 		"battle_formats":            s.client.BattleFormats(),
 		"battle_team":               s.client.BattleTeam(),
+		"auto_tournaments":          cfg.AutoTournaments,
+		"tournament_formats":        cfg.TournamentFormats,
+		"tournaments":               tournamentsData,
 		"status_message":            s.client.StatusMessage(),
 		"rooms":                     s.client.Rooms(),
 		"config_rooms":              cfg.Rooms,
@@ -1195,10 +1217,12 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		BattleStartMsg   string   `json:"battle_start_msg"`
 		BattleWinMsg     string   `json:"battle_win_msg"`
 		BattleLoseMsg    string   `json:"battle_lose_msg"`
-		BattleFormats    []string `json:"battle_formats"`
-		BattleTeam       string   `json:"battle_team"`
-		WebAdminPassword string   `json:"web_admin_password"`
-		Reconnect        bool     `json:"reconnect"`
+		BattleFormats     []string `json:"battle_formats"`
+		BattleTeam        string   `json:"battle_team"`
+		AutoTournaments   *bool    `json:"auto_tournaments"`
+		TournamentFormats []string `json:"tournament_formats"`
+		WebAdminPassword  string   `json:"web_admin_password"`
+		Reconnect         bool     `json:"reconnect"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
@@ -1250,6 +1274,14 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.BattleLoseMsg != "" {
 			cfg.BattleLoseMsg = req.BattleLoseMsg
+		}
+		if req.AutoTournaments != nil {
+			cfg.AutoTournaments = *req.AutoTournaments
+			s.client.SetAutoJoinTournaments(*req.AutoTournaments)
+		}
+		if req.TournamentFormats != nil {
+			cfg.TournamentFormats = req.TournamentFormats
+			s.client.SetTournamentFormats(req.TournamentFormats)
 		}
 		if req.BattleFormats != nil {
 			cfg.BattleFormats = req.BattleFormats
@@ -2118,6 +2150,72 @@ func (s *Server) handleAPILadderStop(w http.ResponseWriter, r *http.Request) {
 
 	s.AddLog("system", "Control Panel", "Stopped ranked ladder matchmaking")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ladder": s.client.Ladder().Status()})
+}
+
+// handleapitournaments returns all tracked tournaments
+func (s *Server) handleAPITournaments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg := s.client.ClientConfig()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tournaments":        s.client.GetAllTournaments(),
+		"auto_tournaments":   cfg.AutoTournaments,
+		"tournament_formats": cfg.TournamentFormats,
+	})
+}
+
+// handleapitournamentsjoin joins an active tournament in a room
+func (s *Server) handleAPITournamentsJoin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Room string `json:"room"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	room := strings.TrimSpace(req.Room)
+	if room == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "room name is empty"})
+		return
+	}
+	if err := s.client.JoinTournament(room); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.AddLog("tournament", "Control Panel", "Joined tournament in "+room)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "room": room})
+}
+
+// handleapitournamentsleave leaves an active tournament in a room
+func (s *Server) handleAPITournamentsLeave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Room string `json:"room"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	room := strings.TrimSpace(req.Room)
+	if room == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "room name is empty"})
+		return
+	}
+	if err := s.client.LeaveTournament(room); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.AddLog("tournament", "Control Panel", "Left tournament in "+room)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "room": room})
 }
 
 // handleapichangepassword updates the web panel admin password

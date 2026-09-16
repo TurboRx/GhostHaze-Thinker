@@ -40,8 +40,10 @@ type Config struct {
 	BattleStartMsg  string
 	BattleWinMsg    string
 	BattleLoseMsg   string
-	BattleFormats   []string
-	BattleTeam      string
+	BattleFormats     []string
+	BattleTeam        string
+	AutoTournaments   bool
+	TournamentFormats []string
 }
 
 func (c *Config) ApplyDefaults() {
