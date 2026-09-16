@@ -994,7 +994,14 @@ func evaluate2PlyLookahead(s *SimulatedState) float64 {
 
 		for _, oppAct := range oppActs {
 			simResult2 := simulateTurn(s, ourAct, oppAct)
-			score2 := EvaluateBattleState(simResult2)
+			var score2 float64
+			if simResult2.OurActive.Fainted || simResult2.OppActive.Fainted {
+				score2 = EvaluateBattleState(simResult2)
+			} else if shouldExtendToTurn3(ourAct, oppAct, simResult2) {
+				score2 = evaluate3PlyQuiescence(simResult2)
+			} else {
+				score2 = EvaluateBattleState(simResult2)
+			}
 
 			if score2 < worstScore2 {
 				worstScore2 = score2
@@ -1082,6 +1089,151 @@ func generateTurn2OppActions(s *SimulatedState) []SimAction {
 			}
 		}
 		return actions
+	}
+
+	// fallback attacks based on opponent types
+	oppTypes := s.OppActive.Types()
+	for _, t := range oppTypes {
+		switch t {
+		case "fire":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "flamethrower", MoveData: GetMoveData("flamethrower")})
+		case "water":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "surf", MoveData: GetMoveData("surf")})
+		case "electric":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "thunderbolt", MoveData: GetMoveData("thunderbolt")})
+		case "grass":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "energyball", MoveData: GetMoveData("energyball")})
+		default:
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")})
+		}
+		if len(actions) >= 2 {
+			break
+		}
+	}
+
+	return actions
+}
+
+// shouldextendtoturn3 determines if a simulated turn 2 state is tactically volatile.
+func shouldExtendToTurn3(ourAct, oppAct SimAction, s *SimulatedState) bool {
+	// tactical setup moves (swords dance, dragon dance, calm mind, nasty plot, quiver dance)
+	// require 3-ply resolution to properly evaluate whether stat boosts convert into decisive knockouts
+	return ourAct.MoveData.IsSetup || oppAct.MoveData.IsSetup
+}
+
+// evaluate3plyquiescence evaluates a 3rd ply along critical tactical lines (setups and lethal exchanges).
+func evaluate3PlyQuiescence(s *SimulatedState) float64 {
+	if s.OurActive.Fainted || s.OppActive.Fainted {
+		return EvaluateBattleState(s)
+	}
+
+	ourActs3 := generateTurn3OurActions(s)
+	if len(ourActs3) == 0 {
+		return EvaluateBattleState(s)
+	}
+
+	oppActs3 := generateTurn3OppActions(s)
+	if len(oppActs3) == 0 {
+		return EvaluateBattleState(s)
+	}
+
+	bestScore3 := -999999.0
+	for _, ourAct := range ourActs3 {
+		worstScore3 := 999999.0
+		totalScore3 := 0.0
+
+		for _, oppAct := range oppActs3 {
+			simResult3 := simulateTurn(s, ourAct, oppAct)
+			score3 := EvaluateBattleState(simResult3)
+
+			if score3 < worstScore3 {
+				worstScore3 = score3
+			}
+			totalScore3 += score3
+		}
+
+		avgScore3 := totalScore3 / float64(len(oppActs3))
+		compositeScore3 := (0.75 * worstScore3) + (0.25 * avgScore3)
+		if compositeScore3 > bestScore3 {
+			bestScore3 = compositeScore3
+		}
+	}
+
+	// 3-ply depth discount: compounding with turn 2 produces a 0.81 discount factor at depth 3
+	return bestScore3 * 0.90
+}
+
+// generateturn3ouractions selects candidate attacking moves for 3-ply tactical resolution.
+func generateTurn3OurActions(s *SimulatedState) []SimAction {
+	var actions []SimAction
+	if len(s.OurActive.Moves) == 0 {
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   "bodyslam",
+			MoveData: GetMoveData("bodyslam"),
+		})
+		return actions
+	}
+
+	for _, m := range s.OurActive.Moves {
+		mData := GetMoveData(m)
+		// skip non-damaging status and hazard moves at depth 3 quiescence
+		if mData.Category == CategoryStatus && !mData.IsHealing {
+			continue
+		}
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   cleanID(m),
+			MoveData: mData,
+		})
+		if len(actions) >= 2 {
+			break
+		}
+	}
+
+	if len(actions) == 0 {
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   s.OurActive.Moves[0],
+			MoveData: GetMoveData(s.OurActive.Moves[0]),
+		})
+	}
+
+	return actions
+}
+
+// generateturn3oppactions selects candidate opponent attacks for 3-ply tactical resolution.
+func generateTurn3OppActions(s *SimulatedState) []SimAction {
+	var actions []SimAction
+	if s.OppActive.LockedMove != "" {
+		clean := cleanID(s.OppActive.LockedMove)
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   clean,
+			MoveData: GetMoveData(clean),
+		})
+		return actions
+	}
+
+	if len(s.OppActive.Moves) > 0 {
+		for _, m := range s.OppActive.Moves {
+			clean := cleanID(m)
+			mData := GetMoveData(clean)
+			if mData.Category == CategoryStatus && !mData.IsHealing {
+				continue
+			}
+			actions = append(actions, SimAction{
+				Type:     actionMove,
+				MoveID:   clean,
+				MoveData: mData,
+			})
+			if len(actions) >= 2 {
+				break
+			}
+		}
+		if len(actions) > 0 {
+			return actions
+		}
 	}
 
 	// fallback attacks based on opponent types

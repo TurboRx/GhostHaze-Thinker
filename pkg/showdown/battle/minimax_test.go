@@ -295,3 +295,40 @@ func TestMinimaxEngine_SubMillisecondPerformance(t *testing.T) {
 		t.Fatalf("expected average decision time < 15ms under race instrumentation, got %v", avgDuration)
 	}
 }
+
+func TestMinimaxEngine_3PlyQuiescenceSetup(t *testing.T) {
+	engine := NewMinimaxEngine()
+	b := NewBattle("battle-3ply-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Garganacl",
+		Types:     []string{"rock"},
+		HPPercent: 0.85,
+		Moves:     []string{"recover"},
+	}
+
+	req := BattleRequest{
+		RQID: 15,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "swordsdance", Move: "Swords Dance", PP: 20},
+					{ID: "earthquake", Move: "Earthquake", PP: 10},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Garchomp, L80",
+					Condition: "250/250",
+				},
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	// swords dance (slot 1) should be chosen to break through recover via +2 sweep
+	if dec.Slot != 1 {
+		t.Fatalf("expected swords dance (slot 1) to break through recover, got slot %d", dec.Slot)
+	}
+}
