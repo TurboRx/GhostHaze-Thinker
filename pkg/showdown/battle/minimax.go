@@ -27,11 +27,25 @@ type SimAction struct {
 }
 
 // minimaxengine implements the battleengine interface using simultaneous turn simulation.
-type MinimaxEngine struct{}
+type MinimaxEngine struct {
+	antiPredictability bool
+}
 
 // newminimaxengine instantiates a new simultaneous minimax battle engine.
 func NewMinimaxEngine() *MinimaxEngine {
-	return &MinimaxEngine{}
+	return &MinimaxEngine{
+		antiPredictability: true,
+	}
+}
+
+// setantipredictability enables or disables mixed-strategy anti-predictability sampling.
+func (e *MinimaxEngine) SetAntiPredictability(enable bool) {
+	e.antiPredictability = enable
+}
+
+// isantipredictability returns whether anti-predictability is enabled.
+func (e *MinimaxEngine) IsAntiPredictability() bool {
+	return e.antiPredictability
 }
 
 // decide selects the optimal battle decision via game-theoretic minimax search.
@@ -68,9 +82,11 @@ func (e *MinimaxEngine) decideTeamPreview(b *Battle, req BattleRequest) BattleDe
 
 	bestLeadIndex := 0
 	bestScore := -99999.0
+	leadScores := make([]float64, len(pokemonList))
 
 	for i, poke := range pokemonList {
 		if poke.IsFainted() {
+			leadScores[i] = -99999.0
 			continue
 		}
 		pokeTypes := GetSpeciesTypes(poke.Species())
@@ -89,10 +105,37 @@ func (e *MinimaxEngine) decideTeamPreview(b *Battle, req BattleRequest) BattleDe
 		// factor in base speed tier of lead
 		baseSpe := GetSpeciesBaseStats(poke.Species())["spe"]
 		score += float64(baseSpe) * 0.1
+		leadScores[i] = score
 
 		if score > bestScore {
 			bestScore = score
 			bestLeadIndex = i
+		}
+	}
+
+	// anti-predictability sampling among close lead candidates (within 5 points)
+	if e.antiPredictability && len(pokemonList) > 1 && bestScore > -9999.0 {
+		var topLeads []int
+		var leadWeights []float64
+		totalWeight := 0.0
+		for i, s := range leadScores {
+			if s >= bestScore-5.0 && s > -9999.0 {
+				w := math.Exp((s - bestScore) / 3.0)
+				topLeads = append(topLeads, i)
+				leadWeights = append(leadWeights, w)
+				totalWeight += w
+			}
+		}
+		if len(topLeads) > 1 && totalWeight > 0 {
+			r := rand.Float64() * totalWeight
+			cum := 0.0
+			for idx, w := range leadWeights {
+				cum += w
+				if r <= cum {
+					bestLeadIndex = topLeads[idx]
+					break
+				}
+			}
 		}
 	}
 
@@ -267,7 +310,10 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 		}
 	}
 
-	selectedAction := selectMixedStrategy(scored, bestScore, bestAction)
+	selectedAction := bestAction
+	if e.antiPredictability {
+		selectedAction = selectMixedStrategy(scored, bestScore, bestAction)
+	}
 	return actionToDecision(selectedAction)
 }
 
@@ -1637,16 +1683,41 @@ type scoredAction struct {
 }
 
 // selectmixedstrategy chooses among top-scoring candidate actions using a game-theoretic probability distribution.
-// when a move is decisively superior (gap >= 1.5), it is selected deterministically.
-// when candidate actions are in a close standoff (gap < 1.5), it samples proportionally to remain unexploitable.
+// when an action is decisively superior, it is selected deterministically.
+// when candidate actions are in a close competitive standoff, it samples proportionally to remain unexploitable.
 func selectMixedStrategy(scored []scoredAction, bestScore float64, fallback SimAction) SimAction {
 	if len(scored) <= 1 {
 		return fallback
 	}
 
+	var margin float64
+	switch {
+	case bestScore >= 9000.0:
+		// in guaranteed terminal wins, preserve the fastest win depth (margin <= 5.0)
+		margin = 5.0
+	case bestScore <= -5000.0:
+		// in forced terminal loss, strictly choose the highest-resisting move deterministically
+		return fallback
+	case bestScore > 50.0:
+		// adaptive margin scaled to position advantage, bounded between 6.0 and 15.0 points
+		margin = bestScore * 0.05
+		if margin < 6.0 {
+			margin = 6.0
+		}
+		if margin > 15.0 {
+			margin = 15.0
+		}
+	default:
+		margin = 6.0
+	}
+
 	var contenders []scoredAction
 	for _, sa := range scored {
-		if sa.score >= bestScore-1.5 {
+		if sa.score >= bestScore-margin {
+			// safety guard: if best score is positive, never choose a negative or losing move
+			if bestScore > 0 && sa.score <= 0 {
+				continue
+			}
 			contenders = append(contenders, sa)
 		}
 	}
@@ -1655,7 +1726,12 @@ func selectMixedStrategy(scored []scoredAction, bestScore float64, fallback SimA
 		return fallback
 	}
 
-	temp := 1.0
+	// boltzmann softmax temperature scaled to competitive margin
+	temp := margin * 0.65
+	if temp < 1.0 {
+		temp = 1.0
+	}
+
 	var weights []float64
 	totalWeight := 0.0
 	for _, c := range contenders {

@@ -590,3 +590,180 @@ func TestMinimaxEngine_LowHPQuiescenceExtension(t *testing.T) {
 	}
 }
 
+func TestMinimaxEngine_AntiPredictabilityCloseMoves(t *testing.T) {
+	engine := NewMinimaxEngine()
+	engine.SetAntiPredictability(true)
+
+	b := NewBattle("battle-antipred-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Mew",
+		Types:     []string{"psychic"},
+		HPPercent: 1.0,
+	}
+	b.OpponentTeam = []OpponentBenchPoke{
+		{Species: "Dragonite"},
+		{Species: "Zapdos"},
+		{Species: "Tyranitar"},
+	}
+
+	req := BattleRequest{
+		RQID: 1,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "surf", Move: "Surf", PP: 15},
+					{ID: "energyball", Move: "Energy Ball", PP: 10},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{Details: "Charizard, L80", Condition: "250/250", Active: true},
+				{Details: "Blastoise, L80", Condition: "250/250"},
+				{Details: "Venusaur, L80", Condition: "250/250"},
+			},
+		},
+	}
+
+	chosenSlots := make(map[int]int)
+	for i := 0; i < 60; i++ {
+		dec := engine.Decide(b, req)
+		if dec.Type == DecisionMove {
+			chosenSlots[dec.Slot]++
+		}
+	}
+
+	// with anti-predictability on two close fire moves, both should be selected across runs
+	if len(chosenSlots) < 2 {
+		t.Fatalf("expected both close moves to be sampled across 60 trials, got: %v", chosenSlots)
+	}
+}
+
+func TestMinimaxEngine_AntiPredictabilityDecisiveMove(t *testing.T) {
+	engine := NewMinimaxEngine()
+	engine.SetAntiPredictability(true)
+
+	b := NewBattle("battle-decisive-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Heatran",
+		Types:     []string{"fire", "steel"},
+		HPPercent: 1.0,
+	}
+	b.OpponentTeam = []OpponentBenchPoke{
+		{Species: "Tyranitar"},
+		{Species: "Snorlax"},
+		{Species: "Blissey"},
+	}
+
+	req := BattleRequest{
+		RQID: 2,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "earthquake", Move: "Earthquake", PP: 10},
+					{ID: "flamethrower", Move: "Flamethrower", PP: 15},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{Details: "Garchomp, L80", Condition: "250/250", Active: true},
+				{Details: "Blastoise, L80", Condition: "250/250"},
+				{Details: "Venusaur, L80", Condition: "250/250"},
+			},
+		},
+	}
+
+	for i := 0; i < 40; i++ {
+		dec := engine.Decide(b, req)
+		if dec.Slot != 1 {
+			t.Fatalf("expected decisive 4x move (earthquake, slot 1) every time, got slot %d", dec.Slot)
+		}
+	}
+}
+
+func TestMinimaxEngine_AntiPredictabilityDisabled(t *testing.T) {
+	engine := NewMinimaxEngine()
+	engine.SetAntiPredictability(false)
+
+	if engine.IsAntiPredictability() {
+		t.Fatalf("expected anti-predictability to be false")
+	}
+
+	b := NewBattle("battle-disabled-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Mew",
+		Types:     []string{"psychic"},
+		HPPercent: 1.0,
+	}
+	b.OpponentTeam = []OpponentBenchPoke{
+		{Species: "Dragonite"},
+		{Species: "Zapdos"},
+		{Species: "Tyranitar"},
+	}
+
+	req := BattleRequest{
+		RQID: 3,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "surf", Move: "Surf", PP: 15},
+					{ID: "energyball", Move: "Energy Ball", PP: 10},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{Details: "Charizard, L80", Condition: "250/250", Active: true},
+				{Details: "Blastoise, L80", Condition: "250/250"},
+				{Details: "Venusaur, L80", Condition: "250/250"},
+			},
+		},
+	}
+
+	var firstSlot int
+	for i := 0; i < 30; i++ {
+		dec := engine.Decide(b, req)
+		if i == 0 {
+			firstSlot = dec.Slot
+		} else if dec.Slot != firstSlot {
+			t.Fatalf("expected deterministic decision with anti-predictability disabled, changed to %d on run %d", dec.Slot, i)
+		}
+	}
+}
+
+func TestMinimaxEngine_TeamPreviewAntiPredictability(t *testing.T) {
+	engine := NewMinimaxEngine()
+	engine.SetAntiPredictability(true)
+
+	b := NewBattle("battle-preview-test", engine)
+	b.OpponentTeam = []OpponentBenchPoke{
+		{Species: "Snorlax"},
+	}
+
+	req := BattleRequest{
+		TeamPreview: true,
+		RQID:        10,
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{Details: "Blastoise, L80"},
+				{Details: "Raichu, L80"},
+			},
+		},
+	}
+
+	leadCounts := make(map[string]int)
+	for i := 0; i < 60; i++ {
+		dec := engine.Decide(b, req)
+		if dec.Type == DecisionTeam && len(dec.TeamOrder) > 0 {
+			lead := string(dec.TeamOrder[0])
+			leadCounts[lead]++
+		}
+	}
+
+	// both neutral leads should be sampled across trials
+	if len(leadCounts) < 2 {
+		t.Fatalf("expected both close leads to be sampled across 60 trials, got: %v", leadCounts)
+	}
+}
+

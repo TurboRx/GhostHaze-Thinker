@@ -88,6 +88,15 @@ func NewBattle(room string, engine BattleEngine) *Battle {
 	}
 }
 
+// setantipredictability enables or disables anti-predictability on the battle engine.
+func (b *Battle) SetAntiPredictability(enable bool) {
+	if def, ok := b.Engine.(*DefaultEngine); ok && def != nil {
+		def.SetAntiPredictability(enable)
+	} else if mm, ok := b.Engine.(*MinimaxEngine); ok && mm != nil {
+		mm.SetAntiPredictability(enable)
+	}
+}
+
 func (b *Battle) OpponentHasHazard(hazard string) bool {
 	return b.OpponentHazards[hazard]
 }

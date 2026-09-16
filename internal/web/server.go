@@ -763,6 +763,7 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"auto_tournaments":          cfg.AutoTournaments,
 		"tournament_formats":        cfg.TournamentFormats,
 		"tournaments":               tournamentsData,
+		"anti_predictability":       s.client.IsAntiPredictability(),
 		"status_message":            s.client.StatusMessage(),
 		"rooms":                     s.client.Rooms(),
 		"config_rooms":              cfg.Rooms,
@@ -1221,6 +1222,7 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		BattleTeam        string   `json:"battle_team"`
 		AutoTournaments   *bool    `json:"auto_tournaments"`
 		TournamentFormats []string `json:"tournament_formats"`
+		AntiPredictability *bool   `json:"anti_predictability"`
 		WebAdminPassword  string   `json:"web_admin_password"`
 		Reconnect         bool     `json:"reconnect"`
 	}
@@ -1282,6 +1284,10 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if req.TournamentFormats != nil {
 			cfg.TournamentFormats = req.TournamentFormats
 			s.client.SetTournamentFormats(req.TournamentFormats)
+		}
+		if req.AntiPredictability != nil {
+			cfg.AntiPredictability = req.AntiPredictability
+			s.client.SetAntiPredictability(*req.AntiPredictability)
 		}
 		if req.BattleFormats != nil {
 			cfg.BattleFormats = req.BattleFormats

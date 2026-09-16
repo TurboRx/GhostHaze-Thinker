@@ -97,6 +97,10 @@ func Load() (*Config, error) {
 			}
 		}
 	}
+	if antiPredRaw := os.Getenv("PS_ANTI_PREDICTABILITY"); antiPredRaw != "" {
+		antiPred := antiPredRaw == "true" || antiPredRaw == "1"
+		cfg.AntiPredictability = &antiPred
+	}
 
 	// if a web url was supplied or auto-discovery was requested, resolve server parameters
 	autoDiscover := os.Getenv("PS_DISCOVER_SERVER") == "true" || os.Getenv("PS_DISCOVER_SERVER") == "1"
@@ -250,6 +254,11 @@ func SaveEnvFile(filename string, cfg *showdown.Config) error {
 	}
 	fmt.Fprintf(&sb, "PS_AUTO_TOURNAMENTS=%s\n", autoTourStr)
 	fmt.Fprintf(&sb, "PS_TOURNAMENT_FORMATS=%s\n", strings.Join(cfg.TournamentFormats, ","))
+	antiPredStr := "true"
+	if cfg.AntiPredictability != nil && !*cfg.AntiPredictability {
+		antiPredStr = "false"
+	}
+	fmt.Fprintf(&sb, "PS_ANTI_PREDICTABILITY=%s\n", antiPredStr)
 	pass := os.Getenv("WEB_ADMIN_PASSWORD")
 	if pass == "" {
 		pass = "admin"

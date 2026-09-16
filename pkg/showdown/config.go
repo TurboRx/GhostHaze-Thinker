@@ -44,6 +44,7 @@ type Config struct {
 	BattleTeam        string
 	AutoTournaments   bool
 	TournamentFormats []string
+	AntiPredictability *bool
 }
 
 func (c *Config) ApplyDefaults() {
@@ -122,6 +123,18 @@ func (c *Config) ApplyDefaults() {
 	if c.MaxBattles <= 0 {
 		c.MaxBattles = 1
 	}
+	if c.AntiPredictability == nil {
+		pred := true
+		c.AntiPredictability = &pred
+	}
+}
+
+// isantipredictability returns whether mixed-strategy anti-predictability is enabled
+func (c *Config) IsAntiPredictability() bool {
+	if c.AntiPredictability == nil {
+		return true
+	}
+	return *c.AntiPredictability
 }
 
 // shouldautoleavebattle returns whether finished battles should be automatically left

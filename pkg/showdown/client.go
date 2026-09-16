@@ -1503,6 +1503,7 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 	b, exists := c.battles[roomID]
 	if !exists {
 		b = battle.NewBattle(room, c.battleEngine)
+		b.SetAntiPredictability(c.IsAntiPredictability())
 		c.battles[roomID] = b
 		c.battleMu.Unlock()
 		if c.ladder != nil {
@@ -1516,6 +1517,7 @@ func (c *Client) handleBattleMessage(msg RawMessage) {
 		// reinitialize the battle instance so historical event stream rebuilds state cleanly
 		if msg.Type == "init" && len(msg.Parts) > 0 && msg.Parts[0] == "battle" {
 			b = battle.NewBattle(room, c.battleEngine)
+			b.SetAntiPredictability(c.IsAntiPredictability())
 			c.battles[roomID] = b
 		}
 		c.battleMu.Unlock()
@@ -2099,8 +2101,26 @@ func (c *Client) initBuiltinCommands() {
 		}
 	})
 
+	c.HandleCommand("antipred", func(room, user, args string) {
+		arg := strings.ToLower(strings.TrimSpace(args))
+		switch arg {
+		case "on", "true", "1":
+			c.SetAntiPredictability(true)
+			_ = c.Reply(room, user, "Anti-predictability mixed-strategy sampling enabled.")
+		case "off", "false", "0":
+			c.SetAntiPredictability(false)
+			_ = c.Reply(room, user, "Anti-predictability disabled (strictly deterministic).")
+		default:
+			state := "enabled"
+			if !c.IsAntiPredictability() {
+				state = "disabled"
+			}
+			_ = c.Reply(room, user, fmt.Sprintf("Anti-predictability is currently %s. Use .antipred on/off to toggle.", state))
+		}
+	})
+
 	c.HandleCommand("help", func(room, user, args string) {
-		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch, .tourjoin, .tourleave, .tourstatus")
+		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch, .tourjoin, .tourleave, .tourstatus, .antipred [on|off]")
 	})
 
 	// register default command aliases
@@ -2477,5 +2497,25 @@ func (c *Client) IsTournamentFormatAllowed(format string) bool {
 		return false
 	}
 	return c.tournament.IsFormatAllowed(format)
+}
+
+// setantipredictability enables or disables anti-predictability across all active battles and config.
+func (c *Client) SetAntiPredictability(enable bool) {
+	c.stateMu.Lock()
+	c.config.AntiPredictability = &enable
+	c.stateMu.Unlock()
+
+	c.battleMu.RLock()
+	for _, b := range c.battles {
+		b.SetAntiPredictability(enable)
+	}
+	c.battleMu.RUnlock()
+}
+
+// isantipredictability returns whether anti-predictability is enabled.
+func (c *Client) IsAntiPredictability() bool {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return c.config.IsAntiPredictability()
 }
 
