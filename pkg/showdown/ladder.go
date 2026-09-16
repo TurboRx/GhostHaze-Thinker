@@ -101,7 +101,10 @@ func (l *LadderController) Start(client LadderClient, format string, maxBattles 
 		CurrentBattle: "",
 		StartedAt:     time.Now(),
 	}
+	stopCh := l.stopCh
 	l.mu.Unlock()
+
+	go l.watchdog(client, stopCh)
 
 	return l.dispatchSearch(client, initialFormat)
 }
@@ -210,4 +213,36 @@ func (l *LadderController) OnBattleEnd(client LadderClient, battleID string, out
 			}
 		}
 	}()
+}
+
+// watchdog periodically ensures search remains active if bot is idle and below max battles
+func (l *LadderController) watchdog(client LadderClient, stopCh chan struct{}) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			l.mu.Lock()
+			if !l.status.Active {
+				l.mu.Unlock()
+				return
+			}
+			shouldSearch := !l.status.Searching && l.status.CurrentBattle == "" && (l.status.MaxBattles == 0 || l.status.BattlesPlayed < l.status.MaxBattles)
+			format := l.status.CurrentFormat
+			if format == "" && len(l.formats) > 0 {
+				format = l.formats[0]
+			}
+			if shouldSearch {
+				l.status.Searching = true
+			}
+			l.mu.Unlock()
+
+			if shouldSearch && client != nil && !client.IsGuest() {
+				_ = l.dispatchSearch(client, format)
+			}
+		}
+	}
 }
