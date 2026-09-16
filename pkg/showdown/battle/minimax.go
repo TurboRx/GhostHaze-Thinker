@@ -198,7 +198,13 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 
 		for _, oppAct := range oppActions {
 			simResult := simulateTurn(state, ourAct, oppAct)
-			score := EvaluateBattleState(simResult)
+			var score float64
+			if simResult.OurActive.Fainted || simResult.OppActive.Fainted {
+				score = EvaluateBattleState(simResult)
+			} else {
+				// 2-ply lookahead: evaluate optimal follow-up turn from this board state
+				score = evaluate2PlyLookahead(simResult)
+			}
 
 			if score < worstScore {
 				worstScore = score
@@ -227,6 +233,7 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 		ConsecutiveProtects: b.ConsecutiveProtects,
 		OurHazards:          make(map[string]int),
 		OppHazards:          make(map[string]int),
+		Turn:                b.Turn,
 	}
 
 	for k, v := range b.MyHazards {
@@ -245,6 +252,14 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 	// our active pokemon
 	if len(req.Side.Pokemon) > 0 {
 		active := req.Side.Pokemon[0]
+		var ourActiveMoves []string
+		if len(req.Active) > 0 {
+			for _, m := range req.Active[0].Moves {
+				if !m.IsDisabled() && m.PP > 0 {
+					ourActiveMoves = append(ourActiveMoves, cleanID(m.ID))
+				}
+			}
+		}
 		s.OurActive = SimulatedPokemon{
 			Species:   active.Species(),
 			HPPercent: active.HPPercent(),
@@ -254,6 +269,7 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 			Fainted:   active.IsFainted(),
 			Boosts:    make(map[string]int),
 			Volatiles: make(map[string]bool),
+			Moves:     ourActiveMoves,
 		}
 		for k, v := range b.MyBoosts {
 			s.OurActive.Boosts[k] = v
@@ -278,14 +294,16 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 
 	// opponent active pokemon
 	s.OppActive = SimulatedPokemon{
-		Species:   b.OpponentActive.Species,
-		HPPercent: b.OpponentActive.HPPercent,
-		Status:    b.OpponentActive.Status,
-		Item:      b.OpponentActive.Item,
-		Ability:   b.OpponentActive.Ability,
-		Fainted:   b.OpponentActive.HPPercent <= 0.001,
-		Boosts:    make(map[string]int),
-		Volatiles: make(map[string]bool),
+		Species:    b.OpponentActive.Species,
+		HPPercent:  b.OpponentActive.HPPercent,
+		Status:     b.OpponentActive.Status,
+		Item:       b.OpponentActive.Item,
+		Ability:    b.OpponentActive.Ability,
+		Fainted:    b.OpponentActive.HPPercent <= 0.001,
+		Boosts:     make(map[string]int),
+		Volatiles:  make(map[string]bool),
+		LockedMove: b.OpponentActive.LockedMove,
+		Moves:      b.OpponentActive.Moves,
 	}
 	if s.OppActive.HPPercent == 0 && !s.OppActive.Fainted {
 		s.OppActive.HPPercent = 1.0
@@ -371,41 +389,52 @@ func generateOurActions(b *Battle, req BattleRequest, state *SimulatedState) []S
 // generateopponentactions predicts opponent actions from revealed moves and random sets.
 func generateOpponentActions(b *Battle, state *SimulatedState) []SimAction {
 	var actions []SimAction
-	seenMoves := make(map[string]bool)
 
-	// 1. revealed moves
-	for _, m := range b.OpponentActive.Moves {
-		clean := cleanID(m)
-		if !seenMoves[clean] {
-			seenMoves[clean] = true
-			actions = append(actions, SimAction{
-				Type:     actionMove,
-				MoveID:   clean,
-				MoveData: GetMoveData(clean),
-			})
+	// 1. check if opponent is choice locked into a single move
+	if state.OppActive.LockedMove != "" {
+		clean := cleanID(state.OppActive.LockedMove)
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   clean,
+			MoveData: GetMoveData(clean),
+		})
+	} else {
+		seenMoves := make(map[string]bool)
+
+		// revealed moves
+		for _, m := range b.OpponentActive.Moves {
+			clean := cleanID(m)
+			if !seenMoves[clean] {
+				seenMoves[clean] = true
+				actions = append(actions, SimAction{
+					Type:     actionMove,
+					MoveID:   clean,
+					MoveData: GetMoveData(clean),
+				})
+			}
 		}
-	}
 
-	// 2. deduce likely moves from official random battle sets if needed
-	if len(actions) < 4 && state.OppActive.Species != "" {
-		if randData, found := GetGenRandomBattleSet(b.Generation(), state.OppActive.Species); found {
-			for _, set := range randData.Sets {
-				for _, m := range set.Movepool {
-					clean := cleanID(m)
-					if !seenMoves[clean] {
-						seenMoves[clean] = true
-						actions = append(actions, SimAction{
-							Type:     actionMove,
-							MoveID:   clean,
-							MoveData: GetMoveData(clean),
-						})
-						if len(actions) >= 4 {
-							break
+		// deduce likely moves from official random battle sets if needed
+		if len(actions) < 4 && state.OppActive.Species != "" {
+			if randData, found := GetGenRandomBattleSet(b.Generation(), state.OppActive.Species); found {
+				for _, set := range randData.Sets {
+					for _, m := range set.Movepool {
+						clean := cleanID(m)
+						if !seenMoves[clean] {
+							seenMoves[clean] = true
+							actions = append(actions, SimAction{
+								Type:     actionMove,
+								MoveID:   clean,
+								MoveData: GetMoveData(clean),
+							})
+							if len(actions) >= 4 {
+								break
+							}
 						}
 					}
-				}
-				if len(actions) >= 4 {
-					break
+					if len(actions) >= 4 {
+						break
+					}
 				}
 			}
 		}
@@ -873,6 +902,7 @@ func cloneState(orig *SimulatedState) *SimulatedState {
 		ConsecutiveProtects: orig.ConsecutiveProtects,
 		OurHazards:          make(map[string]int),
 		OppHazards:          make(map[string]int),
+		Turn:                orig.Turn,
 	}
 
 	for k, v := range orig.OurHazards {
@@ -898,13 +928,25 @@ func cloneState(orig *SimulatedState) *SimulatedState {
 // clonepokemon duplicates a pokemon's mutable attributes.
 func clonePokemon(p SimulatedPokemon) SimulatedPokemon {
 	cp := p
-	cp.Boosts = make(map[string]int)
-	for k, v := range p.Boosts {
-		cp.Boosts[k] = v
+	if len(p.Boosts) > 0 {
+		cp.Boosts = make(map[string]int, len(p.Boosts))
+		for k, v := range p.Boosts {
+			cp.Boosts[k] = v
+		}
+	} else {
+		cp.Boosts = nil
 	}
-	cp.Volatiles = make(map[string]bool)
-	for k, v := range p.Volatiles {
-		cp.Volatiles[k] = v
+	if len(p.Volatiles) > 0 {
+		cp.Volatiles = make(map[string]bool, len(p.Volatiles))
+		for k, v := range p.Volatiles {
+			cp.Volatiles[k] = v
+		}
+	} else {
+		cp.Volatiles = nil
+	}
+	if len(p.Moves) > 0 {
+		cp.Moves = make([]string, len(p.Moves))
+		copy(cp.Moves, p.Moves)
 	}
 	return cp
 }
@@ -926,4 +968,141 @@ func actionToDecision(act SimAction) BattleDecision {
 	default:
 		return BattleDecision{Type: DecisionPass}
 	}
+}
+
+// evaluate2plylookahead evaluates follow-up turn options to score multi-turn setups and 2hkos.
+func evaluate2PlyLookahead(s *SimulatedState) float64 {
+	// if either side has fainted or is in terminal state, return board evaluation directly
+	if s.OurActive.Fainted || s.OppActive.Fainted {
+		return EvaluateBattleState(s)
+	}
+
+	ourActs := generateTurn2OurActions(s)
+	if len(ourActs) == 0 {
+		return EvaluateBattleState(s)
+	}
+
+	oppActs := generateTurn2OppActions(s)
+	if len(oppActs) == 0 {
+		return EvaluateBattleState(s)
+	}
+
+	bestScore2 := -999999.0
+	for _, ourAct := range ourActs {
+		worstScore2 := 999999.0
+		totalScore2 := 0.0
+
+		for _, oppAct := range oppActs {
+			simResult2 := simulateTurn(s, ourAct, oppAct)
+			score2 := EvaluateBattleState(simResult2)
+
+			if score2 < worstScore2 {
+				worstScore2 = score2
+			}
+			totalScore2 += score2
+		}
+
+		avgScore2 := totalScore2 / float64(len(oppActs))
+		compositeScore2 := (0.75 * worstScore2) + (0.25 * avgScore2)
+		if compositeScore2 > bestScore2 {
+			bestScore2 = compositeScore2
+		}
+	}
+
+	// apply depth discount so immediate turn 1 kos are strictly preferred over delayed turn 2 kos
+	return bestScore2 * 0.90
+}
+
+// generateturn2ouractions selects the strongest candidate follow-up moves for turn 2.
+func generateTurn2OurActions(s *SimulatedState) []SimAction {
+	var actions []SimAction
+	if len(s.OurActive.Moves) == 0 {
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   "bodyslam",
+			MoveData: GetMoveData("bodyslam"),
+		})
+		return actions
+	}
+
+	for _, m := range s.OurActive.Moves {
+		mData := GetMoveData(m)
+		// skip hazard moves on turn 2 if already placed
+		if mData.IsHazard && s.OppHazards[cleanID(m)] > 0 {
+			continue
+		}
+		// skip repeat setup if already boosted >= 2
+		if mData.IsSetup && (s.OurActive.Boosts["atk"] >= 2 || s.OurActive.Boosts["spa"] >= 2) {
+			continue
+		}
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   cleanID(m),
+			MoveData: mData,
+		})
+		if len(actions) >= 3 {
+			break
+		}
+	}
+
+	if len(actions) == 0 {
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   s.OurActive.Moves[0],
+			MoveData: GetMoveData(s.OurActive.Moves[0]),
+		})
+	}
+
+	return actions
+}
+
+// generateturn2oppactions selects the opponent's candidate follow-up moves for turn 2.
+func generateTurn2OppActions(s *SimulatedState) []SimAction {
+	var actions []SimAction
+	if s.OppActive.LockedMove != "" {
+		clean := cleanID(s.OppActive.LockedMove)
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   clean,
+			MoveData: GetMoveData(clean),
+		})
+		return actions
+	}
+
+	if len(s.OppActive.Moves) > 0 {
+		for _, m := range s.OppActive.Moves {
+			clean := cleanID(m)
+			actions = append(actions, SimAction{
+				Type:     actionMove,
+				MoveID:   clean,
+				MoveData: GetMoveData(clean),
+			})
+			if len(actions) >= 2 {
+				break
+			}
+		}
+		return actions
+	}
+
+	// fallback attacks based on opponent types
+	oppTypes := s.OppActive.Types()
+	for _, t := range oppTypes {
+		switch t {
+		case "fire":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "flamethrower", MoveData: GetMoveData("flamethrower")})
+		case "water":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "surf", MoveData: GetMoveData("surf")})
+		case "electric":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "thunderbolt", MoveData: GetMoveData("thunderbolt")})
+		case "grass":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "energyball", MoveData: GetMoveData("energyball")})
+		default:
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")})
+		}
+		if len(actions) >= 2 {
+			break
+		}
+	}
+
+	return actions
 }

@@ -10,15 +10,16 @@ import (
 )
 
 type OpponentActivePoke struct {
-	Ident     string
-	Species   string
-	Types     []string
-	HPPercent float64
-	Status    string
-	Boosts    map[string]int
-	Ability   string
-	Item      string
-	Moves     []string
+	Ident      string
+	Species    string
+	Types      []string
+	HPPercent  float64
+	Status     string
+	Boosts     map[string]int
+	Ability    string
+	Item       string
+	Moves      []string
+	LockedMove string
 }
 
 type OpponentBenchPoke struct {
@@ -435,6 +436,11 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 				if !exists {
 					b.OpponentActive.Moves = append(b.OpponentActive.Moves, moveID)
 				}
+				// lock opponent into move if holding a choice item
+				itemClean := cleanID(b.OpponentActive.Item)
+				if itemClean == "choicescarf" || itemClean == "choiceband" || itemClean == "choicespecs" {
+					b.OpponentActive.LockedMove = moveID
+				}
 			} else {
 				// our move
 				b.LastMoveUsed = moveID
@@ -455,7 +461,11 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 	case "-item":
 		// e.g. |-item|p2a: garchomp|leftovers
 		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
-			b.OpponentActive.Item = cleanID(parts[2])
+			itemClean := cleanID(parts[2])
+			b.OpponentActive.Item = itemClean
+			if (itemClean == "choicescarf" || itemClean == "choiceband" || itemClean == "choicespecs") && len(b.OpponentActive.Moves) > 0 {
+				b.OpponentActive.LockedMove = b.OpponentActive.Moves[len(b.OpponentActive.Moves)-1]
+			}
 		}
 
 	case "faint":

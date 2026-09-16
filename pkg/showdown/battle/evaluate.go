@@ -6,14 +6,16 @@ import (
 
 // simulatedpokemon holds the minimal battle state needed for turn evaluation.
 type SimulatedPokemon struct {
-	Species   string
-	HPPercent float64
-	Status    string
-	Boosts    map[string]int
-	Item      string
-	Ability   string
-	Volatiles map[string]bool
-	Fainted   bool
+	Species    string
+	HPPercent  float64
+	Status     string
+	Boosts     map[string]int
+	Item       string
+	Ability    string
+	Volatiles  map[string]bool
+	Fainted    bool
+	LockedMove string
+	Moves      []string
 }
 
 // simulatedstate represents the complete board state during minimax search.
@@ -27,6 +29,7 @@ type SimulatedState struct {
 	OurHazards          map[string]int
 	OppHazards          map[string]int
 	ConsecutiveProtects int
+	Turn                int
 }
 
 // evaluatebattlestate scores a simulated battle state from our perspective.
@@ -74,15 +77,25 @@ func EvaluateBattleState(s *SimulatedState) float64 {
 		score -= s.OppActive.HPPercent * 120.0
 	}
 
-	// 4. bench pokemon hp evaluation
+	// 4. bench pokemon hp evaluation with sweeper preservation
 	for _, p := range s.OurBench {
 		if !p.Fainted {
-			score += p.HPPercent * 80.0
+			weight := 80.0
+			baseStats := GetSpeciesBaseStats(p.Species)
+			if (baseStats["atk"] >= 115 || baseStats["spa"] >= 115) && baseStats["spe"] >= 80 {
+				weight += 20.0 // strategic premium on preserving our primary sweeper
+			}
+			score += p.HPPercent * weight
 		}
 	}
 	for _, p := range s.OppBench {
 		if !p.Fainted {
-			score -= p.HPPercent * 80.0
+			weight := 80.0
+			baseStats := GetSpeciesBaseStats(p.Species)
+			if (baseStats["atk"] >= 115 || baseStats["spa"] >= 115) && baseStats["spe"] >= 80 {
+				weight += 20.0
+			}
+			score -= p.HPPercent * weight
 		}
 	}
 
@@ -145,32 +158,37 @@ func EvaluateBattleState(s *SimulatedState) float64 {
 		ourBenchCount = 5.0
 	}
 
+	earlyHazardWeight := 0.0
+	if s.Turn > 0 && s.Turn <= 3 {
+		earlyHazardWeight = 45.0 // opening tempo weight for setting hazards on early turns
+	}
+
 	if s.OurHazards != nil {
 		if s.OurHazards["stealthrock"] > 0 && ourBenchCount > 0 {
-			score -= 35.0 + (ourBenchCount * 20.0)
+			score -= 65.0 + earlyHazardWeight + (ourBenchCount * 28.0)
 		}
 		if layers := s.OurHazards["spikes"]; layers > 0 && ourBenchCount > 0 {
-			score -= float64(layers) * (15.0 + (ourBenchCount * 10.0))
+			score -= float64(layers) * (22.0 + (ourBenchCount * 14.0))
 		}
 		if layers := s.OurHazards["toxicspikes"]; layers > 0 && ourBenchCount > 0 {
-			score -= float64(layers) * (18.0 + (ourBenchCount * 10.0))
+			score -= float64(layers) * (24.0 + (ourBenchCount * 14.0))
 		}
 		if s.OurHazards["stickyweb"] > 0 && ourBenchCount > 0 {
-			score -= 25.0 + (ourBenchCount * 15.0)
+			score -= 40.0 + earlyHazardWeight + (ourBenchCount * 20.0)
 		}
 	}
 	if s.OppHazards != nil {
 		if s.OppHazards["stealthrock"] > 0 && oppBenchCount > 0 {
-			score += 35.0 + (oppBenchCount * 20.0)
+			score += 65.0 + earlyHazardWeight + (oppBenchCount * 28.0)
 		}
 		if layers := s.OppHazards["spikes"]; layers > 0 && oppBenchCount > 0 {
-			score += float64(layers) * (15.0 + (oppBenchCount * 10.0))
+			score += float64(layers) * (22.0 + (oppBenchCount * 14.0))
 		}
 		if layers := s.OppHazards["toxicspikes"]; layers > 0 && oppBenchCount > 0 {
-			score += float64(layers) * (18.0 + (oppBenchCount * 10.0))
+			score += float64(layers) * (24.0 + (oppBenchCount * 14.0))
 		}
 		if s.OppHazards["stickyweb"] > 0 && oppBenchCount > 0 {
-			score += 25.0 + (oppBenchCount * 15.0)
+			score += 40.0 + earlyHazardWeight + (oppBenchCount * 20.0)
 		}
 	}
 
