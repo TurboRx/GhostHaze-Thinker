@@ -189,6 +189,34 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 		oppActions = generateFallbackOpponentActions(state)
 	}
 
+	// count surviving pokemon to trigger deep terminal solver in endgame (<= 2 alive per side)
+	ourAlive := 0
+	if !state.OurActive.Fainted && state.OurActive.HPPercent > 0.001 {
+		ourAlive++
+	}
+	for _, p := range state.OurBench {
+		if !p.Fainted && p.HPPercent > 0.001 {
+			ourAlive++
+		}
+	}
+	oppAlive := 0
+	if !state.OppActive.Fainted && state.OppActive.HPPercent > 0.001 {
+		oppAlive++
+	}
+	for _, p := range state.OppBench {
+		if !p.Fainted && p.HPPercent > 0.001 {
+			oppAlive++
+		}
+	}
+
+	if ourAlive <= 2 && oppAlive <= 2 {
+		maxDepth := 4
+		if ourAlive == 1 && oppAlive == 1 {
+			maxDepth = 6 // 1v1 terminal depth
+		}
+		return e.decideEndgameTerminal(state, ourActions, oppActions, maxDepth)
+	}
+
 	bestScore := -999999.0
 	bestAction := ourActions[0]
 
@@ -302,8 +330,10 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 		Fainted:    b.OpponentActive.HPPercent <= 0.001,
 		Boosts:     make(map[string]int),
 		Volatiles:  make(map[string]bool),
-		LockedMove: b.OpponentActive.LockedMove,
-		Moves:      b.OpponentActive.Moves,
+		LockedMove:      b.OpponentActive.LockedMove,
+		Moves:           b.OpponentActive.Moves,
+		ConfirmedFaster: b.OpponentActive.ConfirmedFaster,
+		ConfirmedSlower: b.OpponentActive.ConfirmedSlower,
 	}
 	if s.OppActive.HPPercent == 0 && !s.OppActive.Fainted {
 		s.OppActive.HPPercent = 1.0
@@ -561,7 +591,13 @@ func simulateTurn(initial *SimulatedState, ourAct, oppAct SimAction) *SimulatedS
 	} else if ourPrio < oppPrio {
 		ourFirst = false
 	} else {
-		ourFirst = ourSpe >= oppSpe
+		if s.OppActive.ConfirmedFaster {
+			ourFirst = false
+		} else if s.OppActive.ConfirmedSlower {
+			ourFirst = true
+		} else {
+			ourFirst = ourSpe >= oppSpe
+		}
 	}
 
 	if ourFirst {
@@ -1234,6 +1270,255 @@ func generateTurn3OppActions(s *SimulatedState) []SimAction {
 		if len(actions) > 0 {
 			return actions
 		}
+	}
+
+	// fallback attacks based on opponent types
+	oppTypes := s.OppActive.Types()
+	for _, t := range oppTypes {
+		switch t {
+		case "fire":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "flamethrower", MoveData: GetMoveData("flamethrower")})
+		case "water":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "surf", MoveData: GetMoveData("surf")})
+		case "electric":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "thunderbolt", MoveData: GetMoveData("thunderbolt")})
+		case "grass":
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "energyball", MoveData: GetMoveData("energyball")})
+		default:
+			actions = append(actions, SimAction{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")})
+		}
+		if len(actions) >= 2 {
+			break
+		}
+	}
+
+	return actions
+}
+
+// decideendgameterminal solves endgame positions (<= 2 pokemon per side) up to 6 plies deep.
+func (e *MinimaxEngine) decideEndgameTerminal(state *SimulatedState, ourActions, oppActions []SimAction, maxDepth int) BattleDecision {
+	bestScore := -999999.0
+	bestAction := ourActions[0]
+
+	for _, ourAct := range ourActions {
+		worstScore := 999999.0
+		totalScore := 0.0
+
+		for _, oppAct := range oppActions {
+			simResult := simulateTurn(state, ourAct, oppAct)
+			score := searchEndgame(simResult, 2, maxDepth)
+
+			if score < worstScore {
+				worstScore = score
+			}
+			totalScore += score
+		}
+
+		avgScore := totalScore / float64(len(oppActions))
+		compositeScore := (0.80 * worstScore) + (0.20 * avgScore)
+
+		if compositeScore > bestScore {
+			bestScore = compositeScore
+			bestAction = ourAct
+		}
+	}
+
+	return actionToDecision(bestAction)
+}
+
+// searchendgame performs deep recursive minimax search to find forced terminal win/loss lines.
+func searchEndgame(s *SimulatedState, depth int, maxDepth int) float64 {
+	ourAlive := 0
+	if !s.OurActive.Fainted && s.OurActive.HPPercent > 0.001 {
+		ourAlive++
+	}
+	for _, p := range s.OurBench {
+		if !p.Fainted && p.HPPercent > 0.001 {
+			ourAlive++
+		}
+	}
+
+	oppAlive := 0
+	if !s.OppActive.Fainted && s.OppActive.HPPercent > 0.001 {
+		oppAlive++
+	}
+	for _, p := range s.OppBench {
+		if !p.Fainted && p.HPPercent > 0.001 {
+			oppAlive++
+		}
+	}
+
+	if ourAlive == 0 {
+		// definitive loss: prefer lines that delay loss as long as possible
+		return -10000.0 - (s.OppActive.HPPercent * 100.0) + float64(depth)*50.0
+	}
+	if oppAlive == 0 {
+		// definitive victory: strictly prefer faster knockouts
+		return 10000.0 + (s.OurActive.HPPercent * 100.0) - float64(depth)*50.0
+	}
+
+	if depth >= maxDepth {
+		discount := 1.0
+		for i := 1; i < depth; i++ {
+			discount *= 0.90
+		}
+		return EvaluateBattleState(s) * discount
+	}
+
+	ourActs := generateEndgameOurActions(s)
+	if len(ourActs) == 0 {
+		discount := 1.0
+		for i := 1; i < depth; i++ {
+			discount *= 0.90
+		}
+		return EvaluateBattleState(s) * discount
+	}
+
+	oppActs := generateEndgameOppActions(s)
+	if len(oppActs) == 0 {
+		discount := 1.0
+		for i := 1; i < depth; i++ {
+			discount *= 0.90
+		}
+		return EvaluateBattleState(s) * discount
+	}
+
+	bestScore := -999999.0
+	for _, ourAct := range ourActs {
+		worstScore := 999999.0
+		totalScore := 0.0
+
+		for _, oppAct := range oppActs {
+			simResult := simulateTurn(s, ourAct, oppAct)
+			score := searchEndgame(simResult, depth+1, maxDepth)
+
+			if score < worstScore {
+				worstScore = score
+			}
+			totalScore += score
+		}
+
+		avgScore := totalScore / float64(len(oppActs))
+		compositeScore := (0.80 * worstScore) + (0.20 * avgScore)
+		if compositeScore > bestScore {
+			bestScore = compositeScore
+		}
+	}
+
+	return bestScore
+}
+
+// generateendgameouractions selects candidate actions for endgame recursive search.
+func generateEndgameOurActions(s *SimulatedState) []SimAction {
+	var actions []SimAction
+
+	// if active pokemon fainted, only viable actions are switching in a surviving bench pokemon
+	if s.OurActive.Fainted {
+		for i, p := range s.OurBench {
+			if !p.Fainted && p.HPPercent > 0.001 {
+				actions = append(actions, SimAction{
+					Type:          actionSwitch,
+					SwitchSlot:    i + 2,
+					SwitchSpecies: p.Species,
+					SwitchIndex:   i,
+				})
+			}
+		}
+		return actions
+	}
+
+	// candidate moves for active pokemon
+	if len(s.OurActive.Moves) == 0 {
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   "bodyslam",
+			MoveData: GetMoveData("bodyslam"),
+		})
+		return actions
+	}
+
+	for _, m := range s.OurActive.Moves {
+		mData := GetMoveData(m)
+		// skip repeated entry hazard placement in endgame
+		if mData.IsHazard && s.OppHazards[cleanID(m)] > 0 {
+			continue
+		}
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   cleanID(m),
+			MoveData: mData,
+		})
+		if len(actions) >= 3 {
+			break
+		}
+	}
+
+	// voluntary switch in 2v1 / 2v2 endgame if bench pokemon is healthy
+	for i, benchPoke := range s.OurBench {
+		if !benchPoke.Fainted && benchPoke.HPPercent > 0.40 {
+			actions = append(actions, SimAction{
+				Type:          actionSwitch,
+				SwitchSlot:    i + 2,
+				SwitchSpecies: benchPoke.Species,
+				SwitchIndex:   i,
+			})
+			break
+		}
+	}
+
+	if len(actions) == 0 {
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   s.OurActive.Moves[0],
+			MoveData: GetMoveData(s.OurActive.Moves[0]),
+		})
+	}
+
+	return actions
+}
+
+// generateendgameoppactions selects candidate opponent actions for endgame recursive search.
+func generateEndgameOppActions(s *SimulatedState) []SimAction {
+	var actions []SimAction
+
+	// if opponent active fainted, switch in surviving bench pokemon
+	if s.OppActive.Fainted {
+		for i, p := range s.OppBench {
+			if !p.Fainted && p.HPPercent > 0.001 {
+				actions = append(actions, SimAction{
+					Type:          actionSwitch,
+					SwitchSpecies: p.Species,
+					SwitchIndex:   i,
+				})
+			}
+		}
+		return actions
+	}
+
+	// locked into choice item move
+	if s.OppActive.LockedMove != "" {
+		clean := cleanID(s.OppActive.LockedMove)
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   clean,
+			MoveData: GetMoveData(clean),
+		})
+		return actions
+	}
+
+	if len(s.OppActive.Moves) > 0 {
+		for _, m := range s.OppActive.Moves {
+			clean := cleanID(m)
+			actions = append(actions, SimAction{
+				Type:     actionMove,
+				MoveID:   clean,
+				MoveData: GetMoveData(clean),
+			})
+			if len(actions) >= 3 {
+				break
+			}
+		}
+		return actions
 	}
 
 	// fallback attacks based on opponent types

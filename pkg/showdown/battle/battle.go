@@ -17,9 +17,11 @@ type OpponentActivePoke struct {
 	Status     string
 	Boosts     map[string]int
 	Ability    string
-	Item       string
-	Moves      []string
-	LockedMove string
+	Item            string
+	Moves           []string
+	LockedMove      string
+	ConfirmedFaster bool
+	ConfirmedSlower bool
 }
 
 type OpponentBenchPoke struct {
@@ -58,6 +60,7 @@ type Battle struct {
 	Engine               BattleEngine
 	LastActivity         time.Time
 	TimerActive          bool
+	FirstMoverThisTurn   string
 }
 
 func NewBattle(room string, engine BattleEngine) *Battle {
@@ -144,6 +147,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		if len(parts) > 1 {
 			if turnNum, err := strconv.Atoi(parts[1]); err == nil {
 				b.Turn = turnNum
+				b.FirstMoverThisTurn = ""
 			}
 		}
 
@@ -425,6 +429,19 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		// e.g. |move|p2a: garchomp|earthquake|p1a: blastoise
 		if len(parts) >= 3 {
 			moveID := cleanID(parts[2])
+			mData := GetMoveData(moveID)
+			// deduce speed tier relationship when first neutral priority attack executes
+			if b.FirstMoverThisTurn == "" && mData.Priority == 0 {
+				b.FirstMoverThisTurn = parts[1]
+				if b.isOpponentIdent(parts[1]) {
+					b.OpponentActive.ConfirmedFaster = true
+					b.OpponentActive.ConfirmedSlower = false
+				} else {
+					b.OpponentActive.ConfirmedFaster = false
+					b.OpponentActive.ConfirmedSlower = true
+				}
+			}
+
 			if b.isOpponentIdent(parts[1]) {
 				exists := false
 				for _, m := range b.OpponentActive.Moves {

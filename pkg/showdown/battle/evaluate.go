@@ -10,12 +10,14 @@ type SimulatedPokemon struct {
 	HPPercent  float64
 	Status     string
 	Boosts     map[string]int
-	Item       string
-	Ability    string
-	Volatiles  map[string]bool
-	Fainted    bool
-	LockedMove string
-	Moves      []string
+	Item            string
+	Ability         string
+	Volatiles       map[string]bool
+	Fainted         bool
+	LockedMove      string
+	Moves           []string
+	ConfirmedFaster bool
+	ConfirmedSlower bool
 }
 
 // simulatedstate represents the complete board state during minimax search.
@@ -195,7 +197,11 @@ func EvaluateBattleState(s *SimulatedState) float64 {
 	// 9. active speed advantage
 	ourSpe := calculatePokemonSpeed(s.OurActive, s.Weather, s.Terrain)
 	oppSpe := calculatePokemonSpeed(s.OppActive, s.Weather, s.Terrain)
-	if ourSpe > oppSpe {
+	if s.OppActive.ConfirmedFaster {
+		score -= 18.0
+	} else if s.OppActive.ConfirmedSlower {
+		score += 18.0
+	} else if ourSpe > oppSpe {
 		score += 15.0
 	} else if oppSpe > ourSpe {
 		score -= 15.0

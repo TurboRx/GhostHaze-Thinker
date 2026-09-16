@@ -332,3 +332,105 @@ func TestMinimaxEngine_3PlyQuiescenceSetup(t *testing.T) {
 		t.Fatalf("expected swords dance (slot 1) to break through recover, got slot %d", dec.Slot)
 	}
 }
+
+func TestMinimaxEngine_EndgameTerminalSolver(t *testing.T) {
+	engine := NewMinimaxEngine()
+	b := NewBattle("battle-endgame-test", engine)
+	// 1v1 endgame: faster opponent with lethal attack vs our priority finisher
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Garchomp",
+		Types:     []string{"dragon", "ground"},
+		HPPercent: 0.20,
+		Moves:     []string{"outrage"},
+	}
+
+	req := BattleRequest{
+		RQID: 22,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "outrage", Move: "Outrage", PP: 10},
+					{ID: "extremespeed", Move: "Extreme Speed", PP: 5},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Dragonite, L80",
+					Condition: "20/250", // 8% hp, faints to garchomp outrage
+				},
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	// outrage would deal massive damage but garchomp outspeeds and kos dragonite first.
+	// extreme speed has +2 priority, preventing the knockout and winning the endgame.
+	if dec.Slot != 2 {
+		t.Fatalf("expected extreme speed (slot 2) in endgame, got slot %d", dec.Slot)
+	}
+}
+
+func TestMinimaxEngine_ConfirmedSpeedTier(t *testing.T) {
+	b := NewBattle("battle-speed-test", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	// simulate turn 1 where opponent moved first with neutral priority move
+	b.HandleLine([]string{"turn", "1"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"move", "p2a: Garchomp", "Earthquake", "p1a: Dragonite"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"move", "p1a: Dragonite", "Dragon Claw", "p2a: Garchomp"}, "GhostHaze Thinker")
+
+	if !b.OpponentActive.ConfirmedFaster {
+		t.Fatalf("expected opponent to be confirmed faster after moving first with earthquake")
+	}
+
+	// simulate opponent switch: confirmed faster should reset
+	b.HandleLine([]string{"switch", "p2a: Blissey", "Blissey, L80, F", "100/100"}, "GhostHaze Thinker")
+	if b.OpponentActive.ConfirmedFaster {
+		t.Fatalf("expected confirmed faster to reset on switch")
+	}
+}
+
+func TestMinimaxEngine_EndgameMultiTurnSwitchImmunity(t *testing.T) {
+	engine := NewMinimaxEngine()
+	b := NewBattle("battle-endgame-switch-test", engine)
+	// opponent is locked into earthquake
+	b.OpponentActive = OpponentActivePoke{
+		Species:    "Garchomp",
+		Types:      []string{"dragon", "ground"},
+		HPPercent:  0.40,
+		LockedMove: "earthquake",
+		Moves:      []string{"earthquake"},
+	}
+
+	req := BattleRequest{
+		RQID: 25,
+		Active: []RequestActive{
+			{
+				Moves: []RequestMove{
+					{ID: "flashcannon", Move: "Flash Cannon", PP: 10},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Heatran, L80",
+					Condition: "250/250", // 4x weak to earthquake, faints in 1 hit
+				},
+				{
+					Details:   "Corviknight, L80",
+					Condition: "250/250", // flying type, 100% immune to ground earthquake
+				},
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	// heatran faints to 4x earthquake; switching to immune corviknight forces a win
+	if dec.Type != DecisionSwitch || dec.Slot != 2 {
+		t.Fatalf("expected switch to corviknight (slot 2), got decision %+v", dec)
+	}
+}
