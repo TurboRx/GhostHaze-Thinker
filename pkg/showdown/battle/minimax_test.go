@@ -767,3 +767,135 @@ func TestMinimaxEngine_TeamPreviewAntiPredictability(t *testing.T) {
 	}
 }
 
+func TestIdentifyWinConditionAndSackFodder(t *testing.T) {
+	state := &SimulatedState{
+		OurActive: SimulatedPokemon{
+			Species:   "Blissey",
+			HPPercent: 0.15,
+			Moves:     []string{"softboiled", "seismictoss"},
+		},
+		OurBench: []SimulatedPokemon{
+			{
+				Species:   "Iron Valiant",
+				HPPercent: 1.0,
+				Item:      "boosterenergy",
+				Moves:     []string{"moonblast", "closecombat", "swordsdance"},
+			},
+		},
+		OppActive: SimulatedPokemon{
+			Species:   "Tyranitar",
+			HPPercent: 1.0,
+		},
+		OppBench: []SimulatedPokemon{
+			{
+				Species:   "Dragonite",
+				HPPercent: 1.0,
+			},
+		},
+	}
+
+	winCon, sackFodder := IdentifyWinConditionAndSackFodder(state)
+	if winCon != "Iron Valiant" {
+		t.Fatalf("expected Iron Valiant to be identified as win condition, got %s", winCon)
+	}
+	if !sackFodder["Blissey"] {
+		t.Fatalf("expected low hp blissey to be marked as sack fodder")
+	}
+}
+
+func TestDecideForcedSwitch_WinConditionRevenge(t *testing.T) {
+	engine := NewMinimaxEngine()
+	engine.SetAntiPredictability(false)
+
+	b := NewBattle("battle-forced-switch-wincon", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Tyranitar",
+		Types:     []string{"rock", "dark"},
+		HPPercent: 0.50,
+	}
+
+	req := BattleRequest{
+		ForceSwitch: []bool{true},
+		RQID:        1,
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Pikachu, L80",
+					Condition: "0 fnt",
+					Active:    true,
+				},
+				{
+					Details:   "Toxapex, L80",
+					Condition: "250/250",
+					Active:    false,
+					Moves:     []string{"recover", "toxic"},
+				},
+				{
+					Details:   "Iron Valiant, L80",
+					Condition: "250/250",
+					Active:    false,
+					Moves:     []string{"closecombat", "moonblast"},
+				},
+			},
+		},
+	}
+
+	dec := engine.decideForcedSwitch(b, req)
+	if dec.Type != DecisionSwitch {
+		t.Fatalf("expected decision switch, got %v", dec.Type)
+	}
+	// slot 3 is iron valiant (outspeeds and ko's tyranitar)
+	if dec.Slot != 3 {
+		t.Fatalf("expected slot 3 (Iron Valiant) for revenge kill, got slot %d", dec.Slot)
+	}
+}
+
+func TestDecideForcedSwitch_ProtectsWinConditionFromLethalThreat(t *testing.T) {
+	engine := NewMinimaxEngine()
+	engine.SetAntiPredictability(false)
+
+	b := NewBattle("battle-forced-switch-protect", engine)
+	// opponent active is a faster lethal poison/ghost threat that outspeeds and threatens iron valiant
+	b.OpponentActive = OpponentActivePoke{
+		Species:         "Gengar",
+		Types:           []string{"ghost", "poison"},
+		HPPercent:       1.0,
+		ConfirmedFaster: true,
+	}
+
+	req := BattleRequest{
+		ForceSwitch: []bool{true},
+		RQID:        2,
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Pikachu, L80",
+					Condition: "0 fnt",
+					Active:    true,
+				},
+				{
+					Details:   "Blissey, L80",
+					Condition: "250/250",
+					Active:    false,
+					Moves:     []string{"softboiled", "shadowball"},
+				},
+				{
+					Details:   "Iron Valiant, L80",
+					Condition: "250/250",
+					Active:    false,
+					Moves:     []string{"closecombat", "moonblast"},
+				},
+			},
+		},
+	}
+
+	dec := engine.decideForcedSwitch(b, req)
+	if dec.Type != DecisionSwitch {
+		t.Fatalf("expected decision switch, got %v", dec.Type)
+	}
+	// slot 2 is blissey (sponge); slot 3 is iron valiant (fragile wincon that would die)
+	if dec.Slot == 3 {
+		t.Fatalf("expected engine to protect win condition against faster lethal threat, but sent slot 3")
+	}
+}
+

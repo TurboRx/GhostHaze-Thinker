@@ -33,6 +33,8 @@ type SimulatedState struct {
 	OppHazards          map[string]int
 	ConsecutiveProtects int
 	Turn                int
+	WinConSpecies       string
+	SackFodder          map[string]bool
 }
 
 // evaluatebattlestate scores a simulated battle state from our perspective.
@@ -72,21 +74,41 @@ func EvaluateBattleState(s *SimulatedState) float64 {
 	// 2. pokemon count differential (+35 per alive advantage)
 	score += float64(ourAlive-oppAlive) * 35.0
 
-	// 3. active pokemon hp evaluation
+	winConSpecies := s.WinConSpecies
+	sackFodder := s.SackFodder
+	if winConSpecies == "" && sackFodder == nil {
+		winConSpecies, sackFodder = IdentifyWinConditionAndSackFodder(s)
+	}
+
+	// 3. active pokemon hp evaluation with win condition preservation
 	if !s.OurActive.Fainted {
-		score += s.OurActive.HPPercent * 120.0
+		weight := 120.0
+		switch {
+		case s.OurActive.Species != "" && strings.EqualFold(s.OurActive.Species, winConSpecies):
+			weight = 160.0 // strategic premium on preserving active win condition
+		case sackFodder[s.OurActive.Species]:
+			weight = 65.0 // low preservation priority for sack fodder
+		}
+		score += s.OurActive.HPPercent * weight
 	}
 	if !s.OppActive.Fainted {
 		score -= s.OppActive.HPPercent * 120.0
 	}
 
-	// 4. bench pokemon hp evaluation with sweeper preservation
+	// 4. bench pokemon hp evaluation with sweeper preservation and sack fodder discount
 	for _, p := range s.OurBench {
 		if !p.Fainted {
 			weight := 80.0
-			baseStats := GetSpeciesBaseStats(p.Species)
-			if (baseStats["atk"] >= 115 || baseStats["spa"] >= 115) && baseStats["spe"] >= 80 {
-				weight += 20.0 // strategic premium on preserving our primary sweeper
+			switch {
+			case p.Species != "" && strings.EqualFold(p.Species, winConSpecies):
+				weight = 125.0 // high preservation premium for bench win condition
+			case sackFodder[p.Species]:
+				weight = 35.0 // heavy discount for sacrifice fodder
+			default:
+				baseStats := GetSpeciesBaseStats(p.Species)
+				if (baseStats["atk"] >= 115 || baseStats["spa"] >= 115) && baseStats["spe"] >= 80 {
+					weight += 15.0
+				}
 			}
 			score += p.HPPercent * weight
 		}
@@ -323,4 +345,144 @@ func calculatePokemonSpeed(p SimulatedPokemon, weather, terrain string) int {
 	}
 
 	return spe
+}
+
+// identifywinconditionandsackfodder determines our primary sweeper and candidate sacrifice pokemon.
+func IdentifyWinConditionAndSackFodder(s *SimulatedState) (string, map[string]bool) {
+	sackFodder := make(map[string]bool)
+	if s == nil {
+		return "", sackFodder
+	}
+
+	// collect all remaining opponent threats
+	var oppRemaining []SimulatedPokemon
+	if !s.OppActive.Fainted && s.OppActive.HPPercent > 0.001 && s.OppActive.Species != "" {
+		oppRemaining = append(oppRemaining, s.OppActive)
+	}
+	for _, op := range s.OppBench {
+		if !op.Fainted && op.HPPercent > 0.001 && op.Species != "" {
+			oppRemaining = append(oppRemaining, op)
+		}
+	}
+
+	if len(oppRemaining) == 0 {
+		return "", sackFodder
+	}
+
+	// collect all our surviving candidates
+	var ourCandidates []SimulatedPokemon
+	if !s.OurActive.Fainted && s.OurActive.HPPercent > 0.001 && s.OurActive.Species != "" {
+		ourCandidates = append(ourCandidates, s.OurActive)
+	}
+	for _, p := range s.OurBench {
+		if !p.Fainted && p.HPPercent > 0.001 && p.Species != "" {
+			ourCandidates = append(ourCandidates, p)
+		}
+	}
+
+	bestWinScore := -999.0
+	bestWinSpecies := ""
+	scores := make(map[string]float64)
+
+	for _, p := range ourCandidates {
+		baseStats := GetSpeciesBaseStats(p.Species)
+		atk := float64(baseStats["atk"])
+		spa := float64(baseStats["spa"])
+		spe := float64(baseStats["spe"])
+		bestOffense := atk
+		if spa > bestOffense {
+			bestOffense = spa
+		}
+
+		// base sweeper score from stats
+		score := (bestOffense * 0.45) + (spe * 0.40)
+
+		// check setup moves
+		hasSetup := false
+		for _, m := range p.Moves {
+			mClean := cleanID(m)
+			switch mClean {
+			case "swordsdance", "dragondance", "nastyplot", "quiverdance", "calmmind", "bulkup", "agility", "autotomize", "rockpolish", "tidyup", "shiftgear", "shellsmash", "victorydance":
+				hasSetup = true
+			}
+		}
+		if hasSetup {
+			score += 35.0
+		}
+
+		// check offensive sweeping items
+		itemClean := cleanID(p.Item)
+		switch itemClean {
+		case "boosterenergy", "lifeorb", "choicescarf", "choiceband", "choicespecs":
+			score += 20.0
+		}
+
+		// evaluate matchup against each remaining opponent
+		pTypes := p.Types()
+		for _, opp := range oppRemaining {
+			oppTypes := opp.Types()
+			oppStats := GetSpeciesBaseStats(opp.Species)
+			oppSpe := float64(oppStats["spe"])
+
+			maxEff := 0.0
+			for _, m := range p.Moves {
+				mData := GetMoveData(m)
+				if mData.Category != "status" && mData.BasePower > 0 {
+					eff := GetMultipleEffectiveness(mData.Type, oppTypes...)
+					if eff > maxEff {
+						maxEff = eff
+					}
+				}
+			}
+			if len(p.Moves) == 0 || maxEff == 0.0 {
+				for _, pt := range pTypes {
+					eff := GetMultipleEffectiveness(pt, oppTypes...)
+					if eff > maxEff {
+						maxEff = eff
+					}
+				}
+			}
+
+			switch {
+			case maxEff >= 2.0:
+				score += 25.0
+			case maxEff >= 1.0:
+				score += 10.0
+			case maxEff <= 0.5:
+				score -= 20.0
+			}
+
+			if spe > oppSpe {
+				score += 12.0
+			} else {
+				score -= 10.0
+			}
+		}
+
+		// scale by remaining health: injured pokemon cannot reliably sweep
+		score *= p.HPPercent
+		scores[p.Species] = score
+
+		if score > bestWinScore {
+			bestWinScore = score
+			bestWinSpecies = p.Species
+		}
+	}
+
+	winConSpecies := ""
+	if bestWinScore >= 75.0 {
+		winConSpecies = bestWinSpecies
+	}
+
+	// identify sack fodder: low hp or minimal impact against remaining opponent team
+	for _, p := range ourCandidates {
+		if p.Species == winConSpecies {
+			continue
+		}
+		if p.HPPercent <= 0.25 || scores[p.Species] <= 35.0 {
+			sackFodder[p.Species] = true
+		}
+	}
+
+	return winConSpecies, sackFodder
 }

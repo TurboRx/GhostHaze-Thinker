@@ -938,4 +938,57 @@ func TestMinimaxEngine_TrappedPreventsSwitch(t *testing.T) {
 	}
 }
 
+func TestItemAndChoiceDeductions(t *testing.T) {
+	b := NewBattle("battle-gen9ou-deduction", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
 
+	// 1. test leftovers deduction
+	b.HandleLine([]string{"-heal", "p2a: Ting-Lu", "80/100", "[from] item: Leftovers"}, "botuser")
+	if b.OpponentActive.Item != "leftovers" {
+		t.Fatalf("expected opponent item to be leftovers, got %s", b.OpponentActive.Item)
+	}
+
+	// 2. test life orb damage deduction
+	b.HandleLine([]string{"-damage", "p2a: Greninja", "60/100", "[from] item: Life Orb"}, "botuser")
+	if b.OpponentActive.Item != "lifeorb" {
+		t.Fatalf("expected opponent item to be lifeorb, got %s", b.OpponentActive.Item)
+	}
+
+	// 3. test rocky helmet deduction via [of] clause
+	b.OpponentActive.Species = "Toxapex"
+	b.HandleLine([]string{"-damage", "p1a: Urshifu", "84/100", "[from] item: Rocky Helmet", "[of] p2a: Toxapex"}, "botuser")
+	if b.OpponentActive.Item != "rockyhelmet" {
+		t.Fatalf("expected opponent item to be rockyhelmet, got %s", b.OpponentActive.Item)
+	}
+
+	// 4. test booster energy deduction via [fromitem] activate
+	b.OpponentActive.Species = "Iron Valiant"
+	b.HandleLine([]string{"-activate", "p2a: Iron Valiant", "ability: Quark Drive", "[fromitem]"}, "botuser")
+	if b.OpponentActive.Item != "boosterenergy" {
+		t.Fatalf("expected opponent item to be boosterenergy, got %s", b.OpponentActive.Item)
+	}
+
+	// 5. test choice scarf lock on move and release on switch
+	b.OpponentActive.Species = "Landorus-Therian"
+	b.OpponentActive.Item = "choicescarf"
+	b.HandleLine([]string{"move", "p2a: Landorus-Therian", "Earthquake", "p1a: Heatran"}, "botuser")
+	if b.OpponentActive.LockedMove != "earthquake" {
+		t.Fatalf("expected opponent locked move to be earthquake, got %s", b.OpponentActive.LockedMove)
+	}
+
+	// switch out landorus -> locked move should be cleared
+	b.HandleLine([]string{"switch", "p2a: Rotom-Wash", "Rotom-Wash, L80", "100/100"}, "botuser")
+	if b.OpponentActive.LockedMove != "" {
+		t.Fatalf("expected locked move to clear on switch, got %s", b.OpponentActive.LockedMove)
+	}
+
+	// 6. test heavy-duty boots deduction with stealth rock
+	b.OpponentHazardLayers["stealthrock"] = 1
+	b.HandleLine([]string{"switch", "p2a: Dragonite", "Dragonite, L80, M", "100/100"}, "botuser")
+	// advance turn without any hazard damage to dragonite
+	b.HandleLine([]string{"turn", "5"}, "botuser")
+	if b.OpponentActive.Item != "heavydutyboots" {
+		t.Fatalf("expected heavy-duty boots deduced for dragonite, got %s", b.OpponentActive.Item)
+	}
+}

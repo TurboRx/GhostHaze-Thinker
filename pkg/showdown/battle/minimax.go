@@ -161,6 +161,7 @@ func (e *MinimaxEngine) decideForcedSwitch(b *Battle, req BattleRequest) BattleD
 	}
 
 	state := buildSimulatedState(b, req)
+	winConSpecies, sackFodder := IdentifyWinConditionAndSackFodder(state)
 	oppTypes := state.OppActive.Types()
 	bestSlot := -1
 	bestScore := -99999.0
@@ -205,7 +206,34 @@ func (e *MinimaxEngine) decideForcedSwitch(b *Battle, req BattleRequest) BattleD
 			}
 		}
 
-		total := (defScore * 120.0) + offScore + (hpRatio * 80.0) - hazardPenalty
+		// calculate speed matchup against active opponent
+		simBench := SimulatedPokemon{
+			Species:   poke.Species(),
+			HPPercent: poke.HPPercent(),
+			Status:    poke.Status(),
+			Item:      poke.Item,
+			Ability:   poke.Ability,
+			Moves:     poke.Moves,
+		}
+		ourSpe := calculatePokemonSpeed(simBench, state.Weather, state.Terrain)
+		oppSpe := calculatePokemonSpeed(state.OppActive, state.Weather, state.Terrain)
+
+		winConAdjustment := 0.0
+		if strings.EqualFold(poke.Species(), winConSpecies) {
+			// revenge kill sweep opportunity: outspeeds and threatens opponent
+			if ourSpe > oppSpe && offScore >= 120.0 {
+				winConAdjustment += 85.0 // take tempo and revenge kill safely
+			} else if oppSpe >= ourSpe && defMult >= 2.0 {
+				winConAdjustment -= 140.0 // do not suicide our win condition into a faster super-effective threat
+			}
+		} else if sackFodder[poke.Species()] {
+			// if opponent active is faster and threatens heavy damage, prioritize sacrificing fodder
+			if oppSpe >= ourSpe && defMult >= 1.0 {
+				winConAdjustment += 55.0 // sacrifice fodder to absorb blow and protect sweepers
+			}
+		}
+
+		total := (defScore * 120.0) + offScore + (hpRatio * 80.0) - hazardPenalty + winConAdjustment
 		if total > bestScore {
 			bestScore = total
 			bestSlot = i + 1
@@ -434,6 +462,10 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 			})
 		}
 	}
+
+	winCon, sack := IdentifyWinConditionAndSackFodder(s)
+	s.WinConSpecies = winCon
+	s.SackFodder = sack
 
 	return s
 }
@@ -1063,6 +1095,8 @@ func cloneState(orig *SimulatedState) *SimulatedState {
 		OurHazards:          make(map[string]int),
 		OppHazards:          make(map[string]int),
 		Turn:                orig.Turn,
+		WinConSpecies:       orig.WinConSpecies,
+		SackFodder:          orig.SackFodder,
 	}
 
 	for k, v := range orig.OurHazards {

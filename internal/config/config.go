@@ -101,6 +101,19 @@ func Load() (*Config, error) {
 		antiPred := antiPredRaw == "true" || antiPredRaw == "1"
 		cfg.AntiPredictability = &antiPred
 	}
+	if ladderAutoRaw := os.Getenv("PS_LADDER_AUTOSTART"); ladderAutoRaw != "" {
+		cfg.LadderAutoStart = ladderAutoRaw == "true" || ladderAutoRaw == "1"
+	} else if ladderAutoRaw := os.Getenv("PS_LADDER_ENABLED"); ladderAutoRaw != "" {
+		cfg.LadderAutoStart = ladderAutoRaw == "true" || ladderAutoRaw == "1"
+	}
+	if ladderFormatRaw := os.Getenv("PS_LADDER_FORMAT"); ladderFormatRaw != "" {
+		cfg.LadderFormat = strings.TrimSpace(ladderFormatRaw)
+	}
+	if ladderMaxRaw := os.Getenv("PS_LADDER_MAX_BATTLES"); ladderMaxRaw != "" {
+		if m, err := strconv.Atoi(ladderMaxRaw); err == nil && m >= 0 {
+			cfg.LadderMaxBattles = m
+		}
+	}
 
 	// if a web url was supplied or auto-discovery was requested, resolve server parameters
 	autoDiscover := os.Getenv("PS_DISCOVER_SERVER") == "true" || os.Getenv("PS_DISCOVER_SERVER") == "1"
@@ -259,6 +272,17 @@ func SaveEnvFile(filename string, cfg *showdown.Config) error {
 		antiPredStr = "false"
 	}
 	fmt.Fprintf(&sb, "PS_ANTI_PREDICTABILITY=%s\n", antiPredStr)
+	ladderAutoStr := "false"
+	if cfg.LadderAutoStart {
+		ladderAutoStr = "true"
+	}
+	fmt.Fprintf(&sb, "PS_LADDER_AUTOSTART=%s\n", ladderAutoStr)
+	ladderFormat := cfg.LadderFormat
+	if ladderFormat == "" {
+		ladderFormat = "gen9randombattle"
+	}
+	fmt.Fprintf(&sb, "PS_LADDER_FORMAT=%s\n", ladderFormat)
+	fmt.Fprintf(&sb, "PS_LADDER_MAX_BATTLES=%d\n", cfg.LadderMaxBattles)
 	pass := os.Getenv("WEB_ADMIN_PASSWORD")
 	if pass == "" {
 		pass = "admin"

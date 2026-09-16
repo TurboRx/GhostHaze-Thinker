@@ -61,9 +61,11 @@ type Battle struct {
 	LastRQID              int
 	Engine                BattleEngine
 	LastActivity          time.Time
-	TimerActive           bool
-	FirstMoverThisTurn    string
-	MyActiveTerastallized string
+	TimerActive                bool
+	FirstMoverThisTurn         string
+	MyActiveTerastallized      string
+	OpponentSwitchedThisTurn   bool
+	OpponentSwitchHazardDamage bool
 }
 
 func NewBattle(room string, engine BattleEngine) *Battle {
@@ -162,6 +164,18 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 				b.FirstMoverThisTurn = ""
 			}
 		}
+		// deduce heavy-duty boots if opponent switched in with active stealth rock and took no damage
+		if b.OpponentSwitchedThisTurn {
+			hasRocks := b.OpponentHazardLayers["stealthrock"] > 0 || b.OpponentHazards["stealthrock"]
+			if hasRocks && b.OpponentActive.Species != "" && b.OpponentActive.Item == "" {
+				if cleanID(b.OpponentActive.Ability) != "magicguard" && !b.OpponentSwitchHazardDamage {
+					b.OpponentActive.Item = "heavydutyboots"
+					b.updateOpponentBenchItem(b.OpponentActive.Species, "heavydutyboots")
+				}
+			}
+			b.OpponentSwitchedThisTurn = false
+			b.OpponentSwitchHazardDamage = false
+		}
 
 	case "poke":
 		// team preview poke broadcast e.g. |poke|p2|garchomp, l80, m|item
@@ -182,6 +196,8 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			ident := parts[1]
 			isOpp := b.isOpponentIdent(ident)
 			if isOpp {
+				b.OpponentSwitchedThisTurn = true
+				b.OpponentSwitchHazardDamage = false
 				// persist outgoing active pokemon's revealed data into bench list
 				if b.OpponentActive.Species != "" {
 					persisted := false
@@ -252,29 +268,56 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 	case "-damage", "-heal":
 		// e.g. |-damage|p2a: garchomp|45/100|[from] item: life orb
 		// e.g. |-heal|p2a: garchomp|51/100|[from] item: leftovers
+		// e.g. |-damage|p1a: urshifu|84/100|[from] item: rocky helmet|[of] p2a: toxapex
 		if len(parts) >= 3 {
 			ident := parts[1]
 			if b.isOpponentIdent(ident) {
 				condition := parts[2]
 				b.OpponentActive.HPPercent = parseHPPercent(condition)
 				b.OpponentActive.Status = parseStatus(condition)
-				// extract item if revealed via [from] item: ...
-				for i := 3; i < len(parts); i++ {
-					lowerPart := strings.ToLower(parts[i])
-					if strings.HasPrefix(lowerPart, "[from] item:") {
-						itemName := strings.TrimSpace(strings.TrimPrefix(lowerPart, "[from] item:"))
-						b.OpponentActive.Item = cleanID(itemName)
+			}
+			// extract item if revealed via [from] item: ...
+			for i := 3; i < len(parts); i++ {
+				lowerPart := strings.ToLower(parts[i])
+				if strings.HasPrefix(lowerPart, "[from] item:") {
+					itemName := strings.TrimSpace(strings.TrimPrefix(lowerPart, "[from] item:"))
+					itemClean := cleanID(itemName)
+					holderIsOpponent := b.isOpponentIdent(ident)
+					for j := 3; j < len(parts); j++ {
+						if strings.HasPrefix(strings.ToLower(parts[j]), "[of] ") {
+							ofIdent := strings.TrimSpace(strings.TrimPrefix(parts[j], "[of] "))
+							holderIsOpponent = b.isOpponentIdent(ofIdent)
+						}
 					}
+					if holderIsOpponent {
+						b.OpponentActive.Item = itemClean
+						b.updateOpponentBenchItem(b.OpponentActive.Species, itemClean)
+						if (itemClean == "choicescarf" || itemClean == "choiceband" || itemClean == "choicespecs") && len(b.OpponentActive.Moves) > 0 {
+							b.OpponentActive.LockedMove = b.OpponentActive.Moves[len(b.OpponentActive.Moves)-1]
+						}
+					}
+				}
+				if strings.Contains(lowerPart, "stealth rock") && b.isOpponentIdent(ident) {
+					b.OpponentSwitchHazardDamage = true
 				}
 			}
 		}
 
 	case "-status":
 		// e.g. |-status|p2a: garchomp|brn
+		// e.g. |-status|p2a: gliscor|tox|[from] item: toxic orb
 		if len(parts) >= 3 {
 			ident := parts[1]
 			if b.isOpponentIdent(ident) {
 				b.OpponentActive.Status = parts[2]
+				for i := 3; i < len(parts); i++ {
+					lower := strings.ToLower(parts[i])
+					if strings.HasPrefix(lower, "[from] item:") {
+						it := cleanID(strings.TrimPrefix(lower, "[from] item:"))
+						b.OpponentActive.Item = it
+						b.updateOpponentBenchItem(b.OpponentActive.Species, it)
+					}
+				}
 			}
 		}
 
@@ -548,7 +591,9 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 	case "-ability":
 		// e.g. |-ability|p2a: rotom|levitate
 		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
-			b.OpponentActive.Ability = cleanID(parts[2])
+			ab := cleanID(parts[2])
+			b.OpponentActive.Ability = ab
+			b.updateOpponentBenchAbility(b.OpponentActive.Species, ab)
 		}
 
 	case "-item":
@@ -557,9 +602,11 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			if len(parts) >= 4 && strings.Contains(strings.ToLower(parts[3]), "knock off") {
 				b.OpponentActive.Item = ""
 				b.OpponentActive.LockedMove = ""
+				b.updateOpponentBenchItem(b.OpponentActive.Species, "")
 			} else {
 				itemClean := cleanID(parts[2])
 				b.OpponentActive.Item = itemClean
+				b.updateOpponentBenchItem(b.OpponentActive.Species, itemClean)
 				if (itemClean == "choicescarf" || itemClean == "choiceband" || itemClean == "choicespecs") && len(b.OpponentActive.Moves) > 0 {
 					b.OpponentActive.LockedMove = b.OpponentActive.Moves[len(b.OpponentActive.Moves)-1]
 				}
@@ -571,14 +618,35 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
 			b.OpponentActive.Item = ""
 			b.OpponentActive.LockedMove = ""
+			b.updateOpponentBenchItem(b.OpponentActive.Species, "")
 		}
 
 	case "-activate":
 		// e.g. |-activate|p1a: rotom|move: trick|[of] p2a: blissey
+		// e.g. |-activate|p2a: iron valiant|ability: quark drive|[fromitem]
 		if len(parts) >= 3 {
+			ident := parts[1]
 			effect := strings.ToLower(parts[2])
 			if strings.Contains(effect, "trick") || strings.Contains(effect, "switcheroo") {
 				b.OpponentActive.LockedMove = ""
+			}
+			if b.isOpponentIdent(ident) {
+				if strings.HasPrefix(effect, "ability:") {
+					ab := cleanID(strings.TrimPrefix(effect, "ability:"))
+					b.OpponentActive.Ability = ab
+					b.updateOpponentBenchAbility(b.OpponentActive.Species, ab)
+				} else if strings.HasPrefix(effect, "item:") {
+					it := cleanID(strings.TrimPrefix(effect, "item:"))
+					b.OpponentActive.Item = it
+					b.updateOpponentBenchItem(b.OpponentActive.Species, it)
+				}
+				for _, p := range parts[2:] {
+					lowerP := strings.ToLower(p)
+					if strings.Contains(lowerP, "[fromitem]") || strings.Contains(lowerP, "booster energy") {
+						b.OpponentActive.Item = "boosterenergy"
+						b.updateOpponentBenchItem(b.OpponentActive.Species, "boosterenergy")
+					}
+				}
 			}
 		}
 
@@ -815,6 +883,40 @@ func (b *Battle) SetEnded(ended bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.Ended = ended
+}
+
+// updateopponentbenchitem records revealed or deduced item for an opponent species
+func (b *Battle) updateOpponentBenchItem(species, item string) {
+	if species == "" {
+		return
+	}
+	for i := range b.OpponentTeam {
+		if strings.EqualFold(b.OpponentTeam[i].Species, species) {
+			b.OpponentTeam[i].Item = item
+			return
+		}
+	}
+	b.OpponentTeam = append(b.OpponentTeam, OpponentBenchPoke{
+		Species: species,
+		Item:    item,
+	})
+}
+
+// updateopponentbenchability records revealed or deduced ability for an opponent species
+func (b *Battle) updateOpponentBenchAbility(species, ability string) {
+	if species == "" {
+		return
+	}
+	for i := range b.OpponentTeam {
+		if strings.EqualFold(b.OpponentTeam[i].Species, species) {
+			b.OpponentTeam[i].Ability = ability
+			return
+		}
+	}
+	b.OpponentTeam = append(b.OpponentTeam, OpponentBenchPoke{
+		Species: species,
+		Ability: ability,
+	})
 }
 
 

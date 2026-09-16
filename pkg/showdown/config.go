@@ -45,6 +45,9 @@ type Config struct {
 	AutoTournaments   bool
 	TournamentFormats []string
 	AntiPredictability *bool
+	LadderAutoStart   bool
+	LadderFormat      string
+	LadderMaxBattles  int
 }
 
 func (c *Config) ApplyDefaults() {
@@ -126,6 +129,12 @@ func (c *Config) ApplyDefaults() {
 	if c.AntiPredictability == nil {
 		pred := true
 		c.AntiPredictability = &pred
+	}
+	if c.LadderFormat == "" {
+		c.LadderFormat = "gen9randombattle"
+	}
+	if c.LadderMaxBattles < 0 {
+		c.LadderMaxBattles = 0
 	}
 }
 

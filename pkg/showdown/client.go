@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1954,6 +1955,18 @@ func (c *Client) onPostLogin() {
 	for _, battleRoom := range activeBattles {
 		_ = c.JoinRoom(battleRoom)
 	}
+
+	// autostart ladder matchmaking if configured
+	if c.config.LadderAutoStart && c.ladder != nil && !c.IsGuest() {
+		st := c.ladder.Status()
+		if !st.Active {
+			format := c.config.LadderFormat
+			if format == "" {
+				format = "gen9randombattle"
+			}
+			_ = c.ladder.Start(c, format, c.config.LadderMaxBattles)
+		}
+	}
 }
 
 // initbuiltincommands registers standard utility and dex commands
@@ -2119,8 +2132,75 @@ func (c *Client) initBuiltinCommands() {
 		}
 	})
 
+	c.HandleCommand("ladder", func(room, user, args string) {
+		parts := strings.Fields(args)
+		if len(parts) == 0 {
+			if c.ladder == nil {
+				_ = c.Reply(room, user, "Ladder controller is not initialized.")
+				return
+			}
+			st := c.ladder.Status()
+			if !st.Active {
+				_ = c.Reply(room, user, "Laddering is currently inactive. Use .ladder start [format] [maxBattles]")
+				return
+			}
+			_ = c.Reply(room, user, fmt.Sprintf("Ladder active | Format: %s | Matches: %d/%d | W/L/T: %d/%d/%d | Searching: %t", st.Format, st.BattlesPlayed, st.MaxBattles, st.Wins, st.Losses, st.Ties, st.Searching))
+			return
+		}
+
+		sub := strings.ToLower(parts[0])
+		switch sub {
+		case "status":
+			if c.ladder == nil {
+				_ = c.Reply(room, user, "Ladder controller is not initialized.")
+				return
+			}
+			st := c.ladder.Status()
+			if !st.Active {
+				_ = c.Reply(room, user, "Laddering is currently inactive.")
+				return
+			}
+			_ = c.Reply(room, user, fmt.Sprintf("Ladder active | Format: %s | Matches: %d/%d | W/L/T: %d/%d/%d | Searching: %t", st.Format, st.BattlesPlayed, st.MaxBattles, st.Wins, st.Losses, st.Ties, st.Searching))
+
+		case "start":
+			if c.ladder == nil {
+				_ = c.Reply(room, user, "Ladder controller is not initialized.")
+				return
+			}
+			format := "gen9randombattle"
+			if len(parts) > 1 {
+				format = parts[1]
+			}
+			maxBattles := 0
+			if len(parts) > 2 {
+				if m, err := strconv.Atoi(parts[2]); err == nil && m > 0 {
+					maxBattles = m
+				}
+			}
+			if err := c.ladder.Start(c, format, maxBattles); err != nil {
+				_ = c.Reply(room, user, fmt.Sprintf("Failed to start laddering: %v", err))
+			} else {
+				_ = c.Reply(room, user, fmt.Sprintf("Started laddering in %s (max %d battles)", format, maxBattles))
+			}
+
+		case "stop":
+			if c.ladder == nil {
+				_ = c.Reply(room, user, "Ladder controller is not initialized.")
+				return
+			}
+			if err := c.ladder.Stop(c); err != nil {
+				_ = c.Reply(room, user, fmt.Sprintf("Failed to stop laddering: %v", err))
+			} else {
+				_ = c.Reply(room, user, "Stopped laddering.")
+			}
+
+		default:
+			_ = c.Reply(room, user, "Usage: .ladder [start|stop|status] [format] [maxBattles]")
+		}
+	})
+
 	c.HandleCommand("help", func(room, user, args string) {
-		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch, .tourjoin, .tourleave, .tourstatus, .antipred [on|off]")
+		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch, .tourjoin, .tourleave, .tourstatus, .antipred [on|off], .ladder [start|stop|status]")
 	})
 
 	// register default command aliases

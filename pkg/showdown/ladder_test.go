@@ -1,9 +1,13 @@
 package showdown
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type mockLadderClient struct {
@@ -120,5 +124,69 @@ func TestLadderController(t *testing.T) {
 		t.Errorf("expected rotated format gen9ubers, got %s", statusMulti.CurrentFormat)
 	}
 	_ = ladderMulti.Stop(client)
+}
+
+func TestClientLadderCommand(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer s.Close()
+
+	cfg := Config{
+		Username: "tester",
+	}
+	client := NewClient(cfg)
+	client.initBuiltinCommands()
+
+	wsURL := "ws" + strings.TrimPrefix(s.URL, "http")
+	wsConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer wsConn.Close()
+
+	client.wsConn = wsConn
+	client.connected = true
+	client.stateMu.Lock()
+	client.loggedIn = true
+	client.stateMu.Unlock()
+
+	// 1. check status when inactive
+	client.routeCommand("lobby", "+user1", ".ladder status")
+	time.Sleep(30 * time.Millisecond)
+
+	// 2. start ladder
+	client.routeCommand("lobby", "+user1", ".ladder start gen9randombattle 5")
+	time.Sleep(50 * time.Millisecond)
+	st := client.Ladder().Status()
+	if !st.Active || st.Format != "gen9randombattle" || st.MaxBattles != 5 {
+		t.Fatalf("expected ladder to be active in gen9randombattle for 5 battles, got %+v", st)
+	}
+
+	// 3. check status command when active
+	client.routeCommand("lobby", "+user1", ".ladder status")
+	time.Sleep(30 * time.Millisecond)
+
+	// 4. stop ladder
+	client.routeCommand("lobby", "+user1", ".ladder stop")
+	time.Sleep(50 * time.Millisecond)
+	st = client.Ladder().Status()
+	if st.Active {
+		t.Fatalf("expected ladder to be inactive after stop command")
+	}
 }
 

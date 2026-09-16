@@ -764,6 +764,9 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"tournament_formats":        cfg.TournamentFormats,
 		"tournaments":               tournamentsData,
 		"anti_predictability":       s.client.IsAntiPredictability(),
+		"ladder_autostart":          cfg.LadderAutoStart,
+		"ladder_format":             cfg.LadderFormat,
+		"ladder_max_battles":        cfg.LadderMaxBattles,
 		"status_message":            s.client.StatusMessage(),
 		"rooms":                     s.client.Rooms(),
 		"config_rooms":              cfg.Rooms,
@@ -1223,6 +1226,9 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		AutoTournaments   *bool    `json:"auto_tournaments"`
 		TournamentFormats []string `json:"tournament_formats"`
 		AntiPredictability *bool   `json:"anti_predictability"`
+		LadderAutoStart   *bool    `json:"ladder_autostart"`
+		LadderFormat      string   `json:"ladder_format"`
+		LadderMaxBattles  *int     `json:"ladder_max_battles"`
 		WebAdminPassword  string   `json:"web_admin_password"`
 		Reconnect         bool     `json:"reconnect"`
 	}
@@ -1288,6 +1294,15 @@ func (s *Server) handleAPIConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if req.AntiPredictability != nil {
 			cfg.AntiPredictability = req.AntiPredictability
 			s.client.SetAntiPredictability(*req.AntiPredictability)
+		}
+		if req.LadderAutoStart != nil {
+			cfg.LadderAutoStart = *req.LadderAutoStart
+		}
+		if req.LadderFormat != "" {
+			cfg.LadderFormat = req.LadderFormat
+		}
+		if req.LadderMaxBattles != nil && *req.LadderMaxBattles >= 0 {
+			cfg.LadderMaxBattles = *req.LadderMaxBattles
 		}
 		if req.BattleFormats != nil {
 			cfg.BattleFormats = req.BattleFormats
