@@ -119,10 +119,10 @@ func (e *MinimaxEngine) decideForcedSwitch(b *Battle, req BattleRequest) BattleD
 
 	state := buildSimulatedState(b, req)
 	oppTypes := state.OppActive.Types()
-	bestSlot := 2
+	bestSlot := -1
 	bestScore := -99999.0
 
-	for i := 1; i < len(pokemonList); i++ {
+	for i := 0; i < len(pokemonList); i++ {
 		poke := pokemonList[i]
 		if poke.IsFainted() || poke.Active {
 			continue
@@ -167,6 +167,19 @@ func (e *MinimaxEngine) decideForcedSwitch(b *Battle, req BattleRequest) BattleD
 			bestScore = total
 			bestSlot = i + 1
 		}
+	}
+
+	if bestSlot <= 0 {
+		for i := 0; i < len(pokemonList); i++ {
+			if !pokemonList[i].IsFainted() && !pokemonList[i].Active {
+				bestSlot = i + 1
+				break
+			}
+		}
+	}
+
+	if bestSlot <= 0 {
+		return BattleDecision{Type: DecisionPass}
 	}
 
 	return BattleDecision{
@@ -282,9 +295,17 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 		}
 	}
 
-	// our active pokemon
+	// our active and bench pokemon
 	if len(req.Side.Pokemon) > 0 {
-		active := req.Side.Pokemon[0]
+		activeIdx := 0
+		for i, p := range req.Side.Pokemon {
+			if p.Active {
+				activeIdx = i
+				break
+			}
+		}
+
+		active := req.Side.Pokemon[activeIdx]
 		var ourActiveMoves []string
 		if len(req.Active) > 0 {
 			for _, m := range req.Active[0].Moves {
@@ -294,6 +315,7 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 			}
 		}
 		s.OurActive = SimulatedPokemon{
+			Slot:      activeIdx + 1,
 			Species:   active.Species(),
 			HPPercent: active.HPPercent(),
 			Status:    active.Status(),
@@ -312,9 +334,12 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 		}
 
 		// bench pokemon
-		for i := 1; i < len(req.Side.Pokemon); i++ {
-			p := req.Side.Pokemon[i]
+		for i, p := range req.Side.Pokemon {
+			if i == activeIdx {
+				continue
+			}
 			s.OurBench = append(s.OurBench, SimulatedPokemon{
+				Slot:      i + 1,
 				Species:   p.Species(),
 				HPPercent: p.HPPercent(),
 				Status:    p.Status(),
@@ -327,14 +352,14 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 
 	// opponent active pokemon
 	s.OppActive = SimulatedPokemon{
-		Species:    b.OpponentActive.Species,
-		HPPercent:  b.OpponentActive.HPPercent,
-		Status:     b.OpponentActive.Status,
-		Item:       b.OpponentActive.Item,
-		Ability:    b.OpponentActive.Ability,
-		Fainted:    b.OpponentActive.HPPercent <= 0.001,
-		Boosts:     make(map[string]int),
-		Volatiles:  make(map[string]bool),
+		Species:         b.OpponentActive.Species,
+		HPPercent:       b.OpponentActive.HPPercent,
+		Status:          b.OpponentActive.Status,
+		Item:            b.OpponentActive.Item,
+		Ability:         b.OpponentActive.Ability,
+		Fainted:         b.OpponentActive.HPPercent <= 0.001,
+		Boosts:          make(map[string]int),
+		Volatiles:       make(map[string]bool),
 		LockedMove:      b.OpponentActive.LockedMove,
 		Moves:           b.OpponentActive.Moves,
 		ConfirmedFaster: b.OpponentActive.ConfirmedFaster,
@@ -356,6 +381,7 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 			s.OppBench = append(s.OppBench, SimulatedPokemon{
 				Species:   p.Species,
 				HPPercent: 1.0,
+				Status:    p.Status,
 				Fainted:   p.Fainted,
 				Ability:   p.Ability,
 				Item:      p.Item,
@@ -406,16 +432,28 @@ func generateOurActions(b *Battle, req BattleRequest, state *SimulatedState) []S
 		}
 	}
 
-	// voluntary switches
-	for i, benchPoke := range state.OurBench {
-		if !benchPoke.Fainted && benchPoke.HPPercent > 0.05 {
-			actions = append(actions, SimAction{
-				Type:          actionSwitch,
-				SwitchSlot:    i + 2, // showdown bench slot is 1-indexed starting at 2
-				SwitchSpecies: benchPoke.Species,
-				SwitchIndex:   i,
-			})
+	// voluntary switches (only if active pokemon is not trapped)
+	isTrapped := len(req.Active) > 0 && (req.Active[0].Trapped || req.Active[0].MaybeTrapped)
+	if !isTrapped {
+		for i, benchPoke := range state.OurBench {
+			if !benchPoke.Fainted && benchPoke.HPPercent > 0.05 {
+				actions = append(actions, SimAction{
+					Type:          actionSwitch,
+					SwitchSlot:    benchPoke.Slot,
+					SwitchSpecies: benchPoke.Species,
+					SwitchIndex:   i,
+				})
+			}
 		}
+	}
+
+	if len(actions) == 0 {
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveSlot: 1,
+			MoveID:   "struggle",
+			MoveData: GetMoveData("struggle"),
+		})
 	}
 
 	return actions
@@ -1464,7 +1502,7 @@ func generateEndgameOurActions(s *SimulatedState) []SimAction {
 		if !benchPoke.Fainted && benchPoke.HPPercent > 0.40 {
 			actions = append(actions, SimAction{
 				Type:          actionSwitch,
-				SwitchSlot:    i + 2,
+				SwitchSlot:    benchPoke.Slot,
 				SwitchSpecies: benchPoke.Species,
 				SwitchIndex:   i,
 			})
@@ -1473,10 +1511,14 @@ func generateEndgameOurActions(s *SimulatedState) []SimAction {
 	}
 
 	if len(actions) == 0 {
+		moveID := "struggle"
+		if len(s.OurActive.Moves) > 0 {
+			moveID = s.OurActive.Moves[0]
+		}
 		actions = append(actions, SimAction{
 			Type:     actionMove,
-			MoveID:   s.OurActive.Moves[0],
-			MoveData: GetMoveData(s.OurActive.Moves[0]),
+			MoveID:   moveID,
+			MoveData: GetMoveData(moveID),
 		})
 	}
 

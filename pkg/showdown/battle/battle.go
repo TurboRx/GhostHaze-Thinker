@@ -10,18 +10,19 @@ import (
 )
 
 type OpponentActivePoke struct {
-	Ident      string
-	Species    string
-	Types      []string
-	HPPercent  float64
-	Status     string
-	Boosts     map[string]int
-	Ability    string
+	Ident           string
+	Species         string
+	Types           []string
+	HPPercent       float64
+	Status          string
+	Boosts          map[string]int
+	Ability         string
 	Item            string
 	Moves           []string
 	LockedMove      string
 	ConfirmedFaster bool
 	ConfirmedSlower bool
+	Terastallized   string
 }
 
 type OpponentBenchPoke struct {
@@ -30,37 +31,39 @@ type OpponentBenchPoke struct {
 	Moves   []string
 	Ability string
 	Item    string
+	Status  string
 }
 
 type Battle struct {
 	mu sync.RWMutex
 
-	Room                 string
-	MyPlayerID           string
-	OpponentID           string
-	OpponentName         string
-	Gametype             string
-	Tier                 string
-	Turn                 int
-	OpponentActive       OpponentActivePoke
-	OpponentTeam         []OpponentBenchPoke
-	OpponentHazards      map[string]bool
-	OpponentHazardLayers map[string]int
-	MyHazards            map[string]int
-	MyBoosts             map[string]int
-	MyVolatiles          map[string]bool
-	OpponentVolatiles    map[string]bool
-	Weather              string
-	Terrain              string
-	ConsecutiveProtects  int
-	LastMoveUsed         string
-	Ended                bool
-	Winner               string
-	LastRQID             int
-	Engine               BattleEngine
-	LastActivity         time.Time
-	TimerActive          bool
-	FirstMoverThisTurn   string
+	Room                  string
+	MyPlayerID            string
+	OpponentID            string
+	OpponentName          string
+	Gametype              string
+	Tier                  string
+	Turn                  int
+	OpponentActive        OpponentActivePoke
+	OpponentTeam          []OpponentBenchPoke
+	OpponentHazards       map[string]bool
+	OpponentHazardLayers  map[string]int
+	MyHazards             map[string]int
+	MyBoosts              map[string]int
+	MyVolatiles           map[string]bool
+	OpponentVolatiles     map[string]bool
+	Weather               string
+	Terrain               string
+	ConsecutiveProtects   int
+	LastMoveUsed          string
+	Ended                 bool
+	Winner                string
+	LastRQID              int
+	Engine                BattleEngine
+	LastActivity          time.Time
+	TimerActive           bool
+	FirstMoverThisTurn    string
+	MyActiveTerastallized string
 }
 
 func NewBattle(room string, engine BattleEngine) *Battle {
@@ -163,8 +166,9 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			}
 		}
 
-	case "switch", "drag":
+	case "switch", "drag", "replace":
 		// e.g. |switch|p2a: garchomp|garchomp, l80, m|100/100
+		// e.g. |replace|p2a: zoroark|zoroark, l80, m|100/100
 		if len(parts) >= 4 {
 			ident := parts[1]
 			isOpp := b.isOpponentIdent(ident)
@@ -177,6 +181,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 							b.OpponentTeam[i].Moves = b.OpponentActive.Moves
 							b.OpponentTeam[i].Ability = b.OpponentActive.Ability
 							b.OpponentTeam[i].Item = b.OpponentActive.Item
+							b.OpponentTeam[i].Status = b.OpponentActive.Status
 							persisted = true
 							break
 						}
@@ -187,6 +192,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 							Moves:   b.OpponentActive.Moves,
 							Ability: b.OpponentActive.Ability,
 							Item:    b.OpponentActive.Item,
+							Status:  b.OpponentActive.Status,
 						})
 					}
 				}
@@ -207,6 +213,9 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 						rememberedMoves = p.Moves
 						rememberedAbility = p.Ability
 						rememberedItem = p.Item
+						if status == "" && p.Status != "" {
+							status = p.Status
+						}
 						break
 					}
 				}
@@ -232,13 +241,22 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "-damage", "-heal":
-		// e.g. |-damage|p2a: garchomp|45/100
+		// e.g. |-damage|p2a: garchomp|45/100|[from] item: life orb
+		// e.g. |-heal|p2a: garchomp|51/100|[from] item: leftovers
 		if len(parts) >= 3 {
 			ident := parts[1]
 			if b.isOpponentIdent(ident) {
 				condition := parts[2]
 				b.OpponentActive.HPPercent = parseHPPercent(condition)
 				b.OpponentActive.Status = parseStatus(condition)
+				// extract item if revealed via [from] item: ...
+				for i := 3; i < len(parts); i++ {
+					lowerPart := strings.ToLower(parts[i])
+					if strings.HasPrefix(lowerPart, "[from] item:") {
+						itemName := strings.TrimSpace(strings.TrimPrefix(lowerPart, "[from] item:"))
+						b.OpponentActive.Item = cleanID(itemName)
+					}
+				}
 			}
 		}
 
@@ -256,6 +274,17 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			ident := parts[1]
 			if b.isOpponentIdent(ident) {
 				b.OpponentActive.Status = ""
+			}
+		}
+
+	case "-cureteam":
+		// e.g. |-cureteam|p2a: blissey|[from] move: heal bell
+		if len(parts) >= 2 {
+			if b.isOpponentIdent(parts[1]) {
+				b.OpponentActive.Status = ""
+				for i := range b.OpponentTeam {
+					b.OpponentTeam[i].Status = ""
+				}
 			}
 		}
 
@@ -295,6 +324,25 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			}
 		}
 
+	case "-setboost":
+		// e.g. |-setboost|p2a: azumarill|atk|6
+		if len(parts) >= 4 {
+			stat := parts[2]
+			if amount, err := strconv.Atoi(parts[3]); err == nil {
+				if b.isOpponentIdent(parts[1]) {
+					if b.OpponentActive.Boosts == nil {
+						b.OpponentActive.Boosts = make(map[string]int)
+					}
+					b.OpponentActive.Boosts[stat] = amount
+				} else {
+					if b.MyBoosts == nil {
+						b.MyBoosts = make(map[string]int)
+					}
+					b.MyBoosts[stat] = amount
+				}
+			}
+		}
+
 	case "-clearboost":
 		if len(parts) >= 2 {
 			if b.isOpponentIdent(parts[1]) {
@@ -307,6 +355,24 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 	case "-clearallboost":
 		b.OpponentActive.Boosts = make(map[string]int)
 		b.MyBoosts = make(map[string]int)
+
+	case "-clearnegativeboost":
+		// e.g. |-clearnegativeboost|p2a: landorus|[from] item: white herb
+		if len(parts) >= 2 {
+			if b.isOpponentIdent(parts[1]) {
+				for k, v := range b.OpponentActive.Boosts {
+					if v < 0 {
+						delete(b.OpponentActive.Boosts, k)
+					}
+				}
+			} else {
+				for k, v := range b.MyBoosts {
+					if v < 0 {
+						delete(b.MyBoosts, k)
+					}
+				}
+			}
+		}
 
 	case "-sidestart":
 		// e.g. |-sidestart|p2: username|move: stealth rock
@@ -506,16 +572,50 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 			}
 		}
 
+	case "-terastallize":
+		// e.g. |-terastallize|p2a: dragonite|normal
+		if len(parts) >= 3 {
+			ident := parts[1]
+			teraType := strings.ToLower(cleanID(parts[2]))
+			if b.isOpponentIdent(ident) {
+				b.OpponentActive.Types = []string{teraType}
+				b.OpponentActive.Terastallized = teraType
+			} else {
+				b.MyActiveTerastallized = teraType
+			}
+		}
+
+	case "-formechange":
+		// e.g. |-formechange|p2a: palafin|palafin-hero
+		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
+			newSpecies, _, _ := ParsePokemonDetails(parts[2])
+			if newSpecies != "" {
+				b.OpponentActive.Species = newSpecies
+				b.OpponentActive.Types = GetSpeciesTypes(newSpecies)
+			}
+		}
+
 	case "faint":
 		if len(parts) >= 2 {
 			ident := parts[1]
 			if b.isOpponentIdent(ident) {
 				b.OpponentActive.HPPercent = 0.0
+				found := false
 				for i := range b.OpponentTeam {
 					if strings.EqualFold(b.OpponentTeam[i].Species, b.OpponentActive.Species) {
 						b.OpponentTeam[i].Fainted = true
+						found = true
 						break
 					}
+				}
+				if !found && b.OpponentActive.Species != "" {
+					b.OpponentTeam = append(b.OpponentTeam, OpponentBenchPoke{
+						Species: b.OpponentActive.Species,
+						Fainted: true,
+						Moves:   b.OpponentActive.Moves,
+						Ability: b.OpponentActive.Ability,
+						Item:    b.OpponentActive.Item,
+					})
 				}
 			}
 		}
@@ -585,8 +685,8 @@ func (b *Battle) formatDecision(dec BattleDecision, rqid int) string {
 
 	case DecisionSwitch:
 		slot := dec.Slot
-		if slot <= 0 {
-			slot = 1
+		if slot <= 1 {
+			slot = 2
 		}
 		return fmt.Sprintf("/choose switch %d|%d", slot, rqid)
 
@@ -629,7 +729,11 @@ func parseHPPercent(condition string) float64 {
 func parseStatus(condition string) string {
 	parts := strings.Split(condition, " ")
 	if len(parts) > 1 {
-		return parts[1]
+		status := parts[1]
+		if status == "fnt" {
+			return ""
+		}
+		return status
 	}
 	return ""
 }

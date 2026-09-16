@@ -791,3 +791,151 @@ func TestRevealedDataTrackingAndAbilityAvoidance(t *testing.T) {
 	}
 }
 
+func TestBattle_ReplaceZoroarkIllusion(t *testing.T) {
+	b := NewBattle("battle-replace-test", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	// initial appearance is hydreigon
+	b.HandleLine([]string{"switch", "p2a: Hydreigon", "Hydreigon, L80, M", "100/100"}, "GhostHaze Thinker")
+	if b.OpponentActive.Species != "Hydreigon" {
+		t.Fatalf("expected initial species hydreigon, got %s", b.OpponentActive.Species)
+	}
+
+	// illusion breaks via replace protocol message
+	b.HandleLine([]string{"replace", "p2a: Zoroark", "Zoroark, L80, M", "60/100"}, "GhostHaze Thinker")
+	if b.OpponentActive.Species != "Zoroark" {
+		t.Fatalf("expected species zoroark after replace, got %s", b.OpponentActive.Species)
+	}
+	if b.OpponentActive.HPPercent < 0.59 || b.OpponentActive.HPPercent > 0.61 {
+		t.Fatalf("expected 60%% hp after replace, got %f", b.OpponentActive.HPPercent)
+	}
+}
+
+func TestBattle_TerastallizeAndFormeChange(t *testing.T) {
+	b := NewBattle("battle-tera-forme-test", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	b.HandleLine([]string{"switch", "p2a: Dragonite", "Dragonite, L80, M", "100/100"}, "GhostHaze Thinker")
+
+	// opponent terastallizes into normal
+	b.HandleLine([]string{"-terastallize", "p2a: Dragonite", "Normal"}, "GhostHaze Thinker")
+	if b.OpponentActive.Terastallized != "normal" {
+		t.Fatalf("expected terastallized normal, got %s", b.OpponentActive.Terastallized)
+	}
+	if len(b.OpponentActive.Types) != 1 || b.OpponentActive.Types[0] != "normal" {
+		t.Fatalf("expected typing to be [normal], got %v", b.OpponentActive.Types)
+	}
+
+	// forme change e.g. palafin-hero
+	b.HandleLine([]string{"-formechange", "p2a: Palafin", "Palafin-Hero"}, "GhostHaze Thinker")
+	if b.OpponentActive.Species != "Palafin-Hero" {
+		t.Fatalf("expected palafin-hero after forme change, got %s", b.OpponentActive.Species)
+	}
+}
+
+func TestBattle_ItemExtractionFromDamageAndHeal(t *testing.T) {
+	b := NewBattle("battle-item-test", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	b.HandleLine([]string{"switch", "p2a: Garchomp", "Garchomp, L80", "100/100"}, "GhostHaze Thinker")
+
+	// life orb recoil
+	b.HandleLine([]string{"-damage", "p2a: Garchomp", "90/100", "[from] item: Life Orb"}, "GhostHaze Thinker")
+	if b.OpponentActive.Item != "lifeorb" {
+		t.Fatalf("expected revealed item lifeorb, got %s", b.OpponentActive.Item)
+	}
+
+	// leftovers heal
+	b.OpponentActive.Item = ""
+	b.HandleLine([]string{"-heal", "p2a: Garchomp", "96/100", "[from] item: Leftovers"}, "GhostHaze Thinker")
+	if b.OpponentActive.Item != "leftovers" {
+		t.Fatalf("expected revealed item leftovers, got %s", b.OpponentActive.Item)
+	}
+}
+
+func TestBattle_SetBoostAndCureTeam(t *testing.T) {
+	b := NewBattle("battle-boost-test", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	b.HandleLine([]string{"switch", "p2a: Azumarill", "Azumarill, L80", "100/100"}, "GhostHaze Thinker")
+
+	// belly drum sets atk to +6
+	b.HandleLine([]string{"-setboost", "p2a: Azumarill", "atk", "6"}, "GhostHaze Thinker")
+	if b.OpponentActive.Boosts["atk"] != 6 {
+		t.Fatalf("expected +6 atk boost after belly drum, got %d", b.OpponentActive.Boosts["atk"])
+	}
+
+	// white herb clearing negative boosts
+	b.OpponentActive.Boosts["def"] = -1
+	b.HandleLine([]string{"-clearnegativeboost", "p2a: Azumarill", "[from] item: White Herb"}, "GhostHaze Thinker")
+	if _, exists := b.OpponentActive.Boosts["def"]; exists {
+		t.Fatalf("expected negative def boost to be cleared by white herb")
+	}
+	if b.OpponentActive.Boosts["atk"] != 6 {
+		t.Fatalf("expected positive atk boost to remain after white herb")
+	}
+
+	// cure team
+	b.OpponentActive.Status = "psn"
+	b.OpponentTeam = []OpponentBenchPoke{
+		{Species: "Blissey", Status: "brn"},
+	}
+	b.HandleLine([]string{"-cureteam", "p2a: Azumarill", "[from] move: Heal Bell"}, "GhostHaze Thinker")
+	if b.OpponentActive.Status != "" {
+		t.Fatalf("expected active status cleared by heal bell, got %s", b.OpponentActive.Status)
+	}
+	if b.OpponentTeam[0].Status != "" {
+		t.Fatalf("expected bench status cleared by heal bell, got %s", b.OpponentTeam[0].Status)
+	}
+}
+
+func TestMinimaxEngine_TrappedPreventsSwitch(t *testing.T) {
+	engine := NewMinimaxEngine()
+	b := NewBattle("battle-trapped-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Gothitelle",
+		Types:     []string{"psychic"},
+		HPPercent: 1.0,
+	}
+
+	req := BattleRequest{
+		RQID: 10,
+		Active: []RequestActive{
+			{
+				Trapped: true, // trapped by shadow tag
+				Moves: []RequestMove{
+					{ID: "surf", Move: "Surf", PP: 15},
+				},
+			},
+		},
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details:   "Blastoise, L80",
+					Condition: "250/250",
+					Active:    true,
+				},
+				{
+					Details:   "Corviknight, L80",
+					Condition: "250/250",
+					Active:    false,
+				},
+			},
+		},
+	}
+
+	state := buildSimulatedState(b, req)
+	actions := generateOurActions(b, req, state)
+
+	for _, act := range actions {
+		if act.Type == actionSwitch {
+			t.Fatalf("expected no switch actions when trapped, found switch to slot %d", act.SwitchSlot)
+		}
+	}
+}
+
+

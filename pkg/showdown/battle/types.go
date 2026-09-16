@@ -21,6 +21,8 @@ type RequestActive struct {
 	CanUltraBurst   bool          `json:"canUltraBurst"`
 	CanDynamax      bool          `json:"canDynamax"`
 	CanTerastallize string        `json:"canTerastallize"`
+	Trapped         bool          `json:"trapped"`
+	MaybeTrapped    bool          `json:"maybeTrapped"`
 }
 
 type RequestMove struct {

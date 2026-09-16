@@ -6,6 +6,7 @@ import (
 
 // simulatedpokemon holds the minimal battle state needed for turn evaluation.
 type SimulatedPokemon struct {
+	Slot       int
 	Species    string
 	HPPercent  float64
 	Status     string
