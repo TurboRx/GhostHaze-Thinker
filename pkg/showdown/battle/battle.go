@@ -478,10 +478,31 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 	case "-item":
 		// e.g. |-item|p2a: garchomp|leftovers
 		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
-			itemClean := cleanID(parts[2])
-			b.OpponentActive.Item = itemClean
-			if (itemClean == "choicescarf" || itemClean == "choiceband" || itemClean == "choicespecs") && len(b.OpponentActive.Moves) > 0 {
-				b.OpponentActive.LockedMove = b.OpponentActive.Moves[len(b.OpponentActive.Moves)-1]
+			if len(parts) >= 4 && strings.Contains(strings.ToLower(parts[3]), "knock off") {
+				b.OpponentActive.Item = ""
+				b.OpponentActive.LockedMove = ""
+			} else {
+				itemClean := cleanID(parts[2])
+				b.OpponentActive.Item = itemClean
+				if (itemClean == "choicescarf" || itemClean == "choiceband" || itemClean == "choicespecs") && len(b.OpponentActive.Moves) > 0 {
+					b.OpponentActive.LockedMove = b.OpponentActive.Moves[len(b.OpponentActive.Moves)-1]
+				}
+			}
+		}
+
+	case "-enditem":
+		// e.g. |-enditem|p2a: garchomp|choice band|[from] move: knock off
+		if len(parts) >= 3 && b.isOpponentIdent(parts[1]) {
+			b.OpponentActive.Item = ""
+			b.OpponentActive.LockedMove = ""
+		}
+
+	case "-activate":
+		// e.g. |-activate|p1a: rotom|move: trick|[of] p2a: blissey
+		if len(parts) >= 3 {
+			effect := strings.ToLower(parts[2])
+			if strings.Contains(effect, "trick") || strings.Contains(effect, "switcheroo") {
+				b.OpponentActive.LockedMove = ""
 			}
 		}
 

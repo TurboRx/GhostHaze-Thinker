@@ -1,6 +1,8 @@
 package battle
 
 import (
+	"math"
+	"math/rand/v2"
 	"strings"
 )
 
@@ -217,6 +219,7 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 		return e.decideEndgameTerminal(state, ourActions, oppActions, maxDepth)
 	}
 
+	var scored []scoredAction
 	bestScore := -999999.0
 	bestAction := ourActions[0]
 
@@ -230,8 +233,8 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 			if simResult.OurActive.Fainted || simResult.OppActive.Fainted {
 				score = EvaluateBattleState(simResult)
 			} else {
-				// 2-ply lookahead: evaluate optimal follow-up turn from this board state
-				score = evaluate2PlyLookahead(simResult)
+				// combine immediate turn 1 board state payoff with 2-ply lookahead
+				score = (0.20 * EvaluateBattleState(simResult)) + (0.80 * evaluate2PlyLookahead(simResult))
 			}
 
 			if score < worstScore {
@@ -244,13 +247,15 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 		// maximin score with weighted average expectation
 		compositeScore := (0.75 * worstScore) + (0.25 * avgScore)
 
+		scored = append(scored, scoredAction{action: ourAct, score: compositeScore})
 		if compositeScore > bestScore {
 			bestScore = compositeScore
 			bestAction = ourAct
 		}
 	}
 
-	return actionToDecision(bestAction)
+	selectedAction := selectMixedStrategy(scored, bestScore, bestAction)
+	return actionToDecision(selectedAction)
 }
 
 // buildsimulatedstate constructs a snapshot of the current battle state.
@@ -388,8 +393,8 @@ func generateOurActions(b *Battle, req BattleRequest, state *SimulatedState) []S
 				MoveData: mData,
 			})
 
-			// terastallize option if available
-			if activeReq.CanTerastallize != "" {
+			// terastallize option if available and strategically justified
+			if activeReq.CanTerastallize != "" && shouldConsiderTerastallize(activeReq, mData, state) {
 				actions = append(actions, SimAction{
 					Type:         actionMove,
 					MoveSlot:     i + 1,
@@ -524,6 +529,7 @@ func generateFallbackOpponentActions(state *SimulatedState) []SimAction {
 // simulateturn executes one simultaneous turn and returns the resulting board state.
 func simulateTurn(initial *SimulatedState, ourAct, oppAct SimAction) *SimulatedState {
 	s := cloneState(initial)
+	s.Turn = initial.Turn + 1
 
 	// handle switches first (priority +6)
 	ourSwitched := ourAct.Type == actionSwitch
@@ -1542,4 +1548,107 @@ func generateEndgameOppActions(s *SimulatedState) []SimAction {
 	}
 
 	return actions
+}
+
+type scoredAction struct {
+	action SimAction
+	score  float64
+}
+
+// selectmixedstrategy chooses among top-scoring candidate actions using a game-theoretic probability distribution.
+// when a move is decisively superior (gap >= 1.5), it is selected deterministically.
+// when candidate actions are in a close standoff (gap < 1.5), it samples proportionally to remain unexploitable.
+func selectMixedStrategy(scored []scoredAction, bestScore float64, fallback SimAction) SimAction {
+	if len(scored) <= 1 {
+		return fallback
+	}
+
+	var contenders []scoredAction
+	for _, sa := range scored {
+		if sa.score >= bestScore-1.5 {
+			contenders = append(contenders, sa)
+		}
+	}
+
+	if len(contenders) <= 1 {
+		return fallback
+	}
+
+	temp := 1.0
+	var weights []float64
+	totalWeight := 0.0
+	for _, c := range contenders {
+		w := math.Exp((c.score - bestScore) / temp)
+		weights = append(weights, w)
+		totalWeight += w
+	}
+
+	if totalWeight <= 0 {
+		return fallback
+	}
+
+	r := rand.Float64() * totalWeight
+	cum := 0.0
+	for i, w := range weights {
+		cum += w
+		if r <= cum {
+			return contenders[i].action
+		}
+	}
+
+	return fallback
+}
+
+// shouldconsiderterastallize implements resource economy to prevent burning a one-time tera prematurely.
+func shouldConsiderTerastallize(activeReq RequestActive, mData MoveData, state *SimulatedState) bool {
+	// 1. never burn tera on non-setup status moves (e.g. thunder wave, toxic, hazards)
+	if mData.Category == CategoryStatus && !mData.IsSetup {
+		return false
+	}
+
+	// count opponent alive pokemon
+	oppAlive := 0
+	if !state.OppActive.Fainted && state.OppActive.HPPercent > 0.001 {
+		oppAlive++
+	}
+	for _, p := range state.OppBench {
+		if !p.Fainted && p.HPPercent > 0.001 {
+			oppAlive++
+		}
+	}
+
+	// 2. low hp restriction: do not waste one-time tera on a dying pokemon (< 35% hp)
+	// unless it is an endgame turn where securing a knockout wins the entire match
+	if state.OurActive.HPPercent < 0.35 {
+		return oppAlive <= 1
+	}
+
+	// 3. offensive synergy: move type matches tera type (2.0x stab boost)
+	teraType := cleanID(activeReq.CanTerastallize)
+	if strings.EqualFold(mData.Type, teraType) {
+		return true
+	}
+
+	// 4. stat-boosted sweeper timing: pokemon has offensive boosts and is sweeping
+	if state.OurActive.Boosts != nil && (state.OurActive.Boosts["atk"] >= 1 || state.OurActive.Boosts["spa"] >= 1) {
+		return true
+	}
+
+	// 5. designated primary sweeper preservation
+	baseStats := GetSpeciesBaseStats(state.OurActive.Species)
+	if (baseStats["atk"] >= 115 || baseStats["spa"] >= 115) && baseStats["spe"] >= 80 {
+		return true
+	}
+
+	// 6. defensive flip: if opponent's active has super-effective coverage against our current typing
+	for _, oppMove := range state.OppActive.Moves {
+		oppMData := GetMoveData(oppMove)
+		currentEff := GetMultipleEffectiveness(oppMData.Type, state.OurActive.Types()...)
+		teraEff := GetMultipleEffectiveness(oppMData.Type, teraType)
+		if currentEff >= 2.0 && teraEff <= 1.0 {
+			return true // defensive tera sheds fatal weakness into resistance/neutral
+		}
+	}
+
+	return false
 }

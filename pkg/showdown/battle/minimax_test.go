@@ -434,3 +434,84 @@ func TestMinimaxEngine_EndgameMultiTurnSwitchImmunity(t *testing.T) {
 		t.Fatalf("expected switch to corviknight (slot 2), got decision %+v", dec)
 	}
 }
+
+func TestBattle_KnockOffBreaksChoiceLock(t *testing.T) {
+	engine := NewMinimaxEngine()
+	b := NewBattle("battle-knock-off-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:    "Tyranitar",
+		Types:      []string{"rock", "dark"},
+		HPPercent:  0.80,
+		Item:       "choiceband",
+		LockedMove: "stoneedge",
+		Moves:      []string{"stoneedge", "crunch"},
+	}
+
+	// simulate knock off removing the choice band item via -enditem
+	b.HandleLine([]string{"-enditem", "p2a: Tyranitar", "Choice Band", "[from] move: Knock Off"}, "GhostHaze Thinker")
+	if b.OpponentActive.Item != "" {
+		t.Fatalf("expected opponent item to be cleared after knock off, got %s", b.OpponentActive.Item)
+	}
+	if b.OpponentActive.LockedMove != "" {
+		t.Fatalf("expected opponent locked move to be cleared after knock off, got %s", b.OpponentActive.LockedMove)
+	}
+
+	// re-lock item and test trick / switcheroo via -activate
+	b.OpponentActive.Item = "choicescarf"
+	b.OpponentActive.LockedMove = "stoneedge"
+	b.HandleLine([]string{"-activate", "p1a: Rotom", "move: Trick", "[of] p2a: Tyranitar"}, "GhostHaze Thinker")
+	if b.OpponentActive.LockedMove != "" {
+		t.Fatalf("expected locked move to be cleared after trick, got %s", b.OpponentActive.LockedMove)
+	}
+}
+
+func TestMinimaxEngine_TeraEconomyPreservation(t *testing.T) {
+	// low hp non-endgame pokemon should not waste tera
+	stateDying := &SimulatedState{
+		OurActive: SimulatedPokemon{
+			Species:   "Garchomp",
+			HPPercent: 0.15,
+		},
+		OppActive: SimulatedPokemon{
+			Species:   "Dragonite",
+			HPPercent: 1.0,
+		},
+		OppBench: []SimulatedPokemon{
+			{Species: "Toxapex", HPPercent: 1.0},
+			{Species: "Corviknight", HPPercent: 1.0},
+		},
+	}
+	activeReq := RequestActive{
+		CanTerastallize: "Ground",
+	}
+	mDataEarthquake := GetMoveData("earthquake")
+
+	if shouldConsiderTerastallize(activeReq, mDataEarthquake, stateDying) {
+		t.Fatalf("expected dying pokemon (15%% hp) to preserve tera when opponent has bench alive")
+	}
+
+	// healthy sweeper matching tera type should consider tera
+	stateHealthy := &SimulatedState{
+		OurActive: SimulatedPokemon{
+			Species:   "Garchomp",
+			HPPercent: 1.0,
+		},
+		OppActive: SimulatedPokemon{
+			Species:   "Dragonite",
+			HPPercent: 1.0,
+		},
+		OppBench: []SimulatedPokemon{
+			{Species: "Toxapex", HPPercent: 1.0},
+		},
+	}
+	if !shouldConsiderTerastallize(activeReq, mDataEarthquake, stateHealthy) {
+		t.Fatalf("expected healthy ground sweeper with earthquake to consider tera ground")
+	}
+
+	// status move without setup should not burn tera
+	mDataToxic := GetMoveData("toxic")
+	if shouldConsiderTerastallize(activeReq, mDataToxic, stateHealthy) {
+		t.Fatalf("expected status move toxic to not burn tera")
+	}
+}
+
