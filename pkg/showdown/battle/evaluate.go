@@ -31,6 +31,8 @@ type SimulatedState struct {
 	Terrain             string
 	OurHazards          map[string]int
 	OppHazards          map[string]int
+	OurScreens          map[string]bool
+	OppScreens          map[string]bool
 	ConsecutiveProtects int
 	Turn                int
 	WinConSpecies       string
@@ -218,8 +220,8 @@ func EvaluateBattleState(s *SimulatedState) float64 {
 	}
 
 	// 9. active speed advantage
-	ourSpe := calculatePokemonSpeed(s.OurActive, s.Weather, s.Terrain)
-	oppSpe := calculatePokemonSpeed(s.OppActive, s.Weather, s.Terrain)
+	ourSpe := calculatePokemonSpeed(s.OurActive, s.Weather, s.Terrain, s.OurScreens != nil && s.OurScreens["tailwind"])
+	oppSpe := calculatePokemonSpeed(s.OppActive, s.Weather, s.Terrain, s.OppScreens != nil && s.OppScreens["tailwind"])
 	switch {
 	case s.OppActive.ConfirmedFaster:
 		score -= 18.0
@@ -229,6 +231,36 @@ func EvaluateBattleState(s *SimulatedState) float64 {
 		score += 15.0
 	case oppSpe > ourSpe:
 		score -= 15.0
+	}
+
+	// 10. active screens evaluation
+	if s.OurScreens != nil {
+		if s.OurScreens["reflect"] {
+			score += 40.0
+		}
+		if s.OurScreens["lightscreen"] {
+			score += 40.0
+		}
+		if s.OurScreens["auroraveil"] {
+			score += 70.0
+		}
+		if s.OurScreens["tailwind"] {
+			score += 35.0
+		}
+	}
+	if s.OppScreens != nil {
+		if s.OppScreens["reflect"] {
+			score -= 40.0
+		}
+		if s.OppScreens["lightscreen"] {
+			score -= 40.0
+		}
+		if s.OppScreens["auroraveil"] {
+			score -= 70.0
+		}
+		if s.OppScreens["tailwind"] {
+			score -= 35.0
+		}
 	}
 
 	return score
@@ -300,8 +332,8 @@ func statStageMultiplier(stage int) float64 {
 	return 2.0 / float64(2-stage)
 }
 
-// calculatepokemonspeed computes effective speed considering base stat, stage, paralysis, and weather.
-func calculatePokemonSpeed(p SimulatedPokemon, weather, terrain string) int {
+// calculatepokemonspeed computes effective speed considering base stat, stage, tailwind, paralysis, and weather.
+func calculatePokemonSpeed(p SimulatedPokemon, weather, terrain string, hasTailwind bool) int {
 	if p.Fainted {
 		return 0
 	}
@@ -312,6 +344,11 @@ func calculatePokemonSpeed(p SimulatedPokemon, weather, terrain string) int {
 	if p.Boosts != nil {
 		stage := p.Boosts["spe"]
 		spe = int(float64(spe) * statStageMultiplier(stage))
+	}
+
+	// tailwind doubles speed
+	if hasTailwind {
+		spe *= 2
 	}
 
 	// paralysis halves speed

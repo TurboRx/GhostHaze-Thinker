@@ -132,7 +132,7 @@ func TestMinimaxEngine_WeatherBoosts(t *testing.T) {
 func TestMinimaxEngine_EffectiveSpeedCalculation(t *testing.T) {
 	// base speed 100 pokemon
 	pNormal := SimulatedPokemon{Species: "Mew"}
-	speNormal := calculatePokemonSpeed(pNormal, "", "")
+	speNormal := calculatePokemonSpeed(pNormal, "", "", false)
 	if speNormal != 100 {
 		t.Fatalf("expected mew base speed 100, got %d", speNormal)
 	}
@@ -142,7 +142,7 @@ func TestMinimaxEngine_EffectiveSpeedCalculation(t *testing.T) {
 		Species: "Mew",
 		Boosts:  map[string]int{"spe": 1},
 	}
-	speBoosted := calculatePokemonSpeed(pBoosted, "", "")
+	speBoosted := calculatePokemonSpeed(pBoosted, "", "", false)
 	if speBoosted != 150 {
 		t.Fatalf("expected +1 speed stage to yield 150, got %d", speBoosted)
 	}
@@ -152,9 +152,15 @@ func TestMinimaxEngine_EffectiveSpeedCalculation(t *testing.T) {
 		Species: "Mew",
 		Status:  "par",
 	}
-	spePar := calculatePokemonSpeed(pParalyzed, "", "")
+	spePar := calculatePokemonSpeed(pParalyzed, "", "", false)
 	if spePar != 50 {
 		t.Fatalf("expected paralysis to yield 50, got %d", spePar)
+	}
+
+	// tailwind doubles speed
+	speTailwind := calculatePokemonSpeed(pNormal, "", "", true)
+	if speTailwind != 200 {
+		t.Fatalf("expected tailwind to double speed to 200, got %d", speTailwind)
 	}
 
 	// swift swim under rain doubles speed
@@ -163,7 +169,7 @@ func TestMinimaxEngine_EffectiveSpeedCalculation(t *testing.T) {
 		Ability: "swiftswim",
 	}
 	baseSpe := GetSpeciesBaseStats("Barraskewda")["spe"]
-	speRain := calculatePokemonSpeed(pSwiftSwim, "raindance", "")
+	speRain := calculatePokemonSpeed(pSwiftSwim, "raindance", "", false)
 	if speRain != baseSpe*2 {
 		t.Fatalf("expected swift swim rain speed %d, got %d", baseSpe*2, speRain)
 	}
@@ -764,6 +770,47 @@ func TestMinimaxEngine_TeamPreviewAntiPredictability(t *testing.T) {
 	// both neutral leads should be sampled across trials
 	if len(leadCounts) < 2 {
 		t.Fatalf("expected both close leads to be sampled across 60 trials, got: %v", leadCounts)
+	}
+}
+
+func TestMinimaxEngine_TeamPreviewLeadMatrixOptimization(t *testing.T) {
+	engine := NewMinimaxEngine()
+	engine.SetAntiPredictability(false)
+
+	b := NewBattle("battle-preview-matrix", engine)
+	b.OpponentTeam = []OpponentBenchPoke{
+		{Species: "Glimmora"},
+		{Species: "Kingambit"},
+		{Species: "Dragonite"},
+	}
+
+	req := BattleRequest{
+		TeamPreview: true,
+		RQID:        20,
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{
+					Details: "Clodsire, L80, M",
+					Moves:   []string{"toxic", "recover", "earthquake"},
+				},
+				{
+					Details: "Great Tusk, L80",
+					Item:    "boosterenergy",
+					Moves:   []string{"stealthrock", "rapidspin", "headlongrush", "closecombat"},
+				},
+			},
+		},
+	}
+
+	dec := engine.Decide(b, req)
+	if dec.Type != DecisionTeam || len(dec.TeamOrder) == 0 {
+		t.Fatalf("expected DecisionTeam, got %+v", dec)
+	}
+
+	// great tusk (slot 2) should be chosen over clodsire (slot 1) due to hazard utility and offensive matchup vs glimmora
+	leadSlot := string(dec.TeamOrder[0])
+	if leadSlot != "2" {
+		t.Fatalf("expected optimal lead slot '2' (Great Tusk), got slot '%s'", leadSlot)
 	}
 }
 

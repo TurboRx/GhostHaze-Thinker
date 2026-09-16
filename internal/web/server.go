@@ -386,6 +386,7 @@ func (s *Server) buildMux() (http.Handler, error) {
 
 	mux.HandleFunc("/api/teams", s.handleAPITeams)
 	mux.HandleFunc("/api/teams/save", s.handleAPITeamsSave)
+	mux.HandleFunc("/api/teams/import", s.handleAPITeamsImport)
 	mux.HandleFunc("/api/teams/delete", s.handleAPITeamsDelete)
 	mux.HandleFunc("/api/teams/toggle", s.handleAPITeamsToggle)
 
@@ -1638,6 +1639,38 @@ func (s *Server) handleAPITeamsToggle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "active": active})
+}
+
+// handleapiteamsimport fetches and imports a team from a pokepast.es url
+func (s *Server) handleAPITeamsImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		URL    string `json:"url"`
+		Format string `json:"format"`
+		Name   string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url is required"})
+		return
+	}
+
+	if s.client.Teams() == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "team vault is not available"})
+		return
+	}
+
+	team, err := s.client.Teams().ImportPokepaste(req.URL, req.Format, req.Name)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.AddLog("system", "Control Panel", fmt.Sprintf("Imported pokepaste team '%s' for format %s", team.Name, team.Format))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "ok", "team": team})
 }
 
 // handleapicommands returns all dynamic custom commands

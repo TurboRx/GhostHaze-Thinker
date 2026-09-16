@@ -992,3 +992,132 @@ func TestItemAndChoiceDeductions(t *testing.T) {
 		t.Fatalf("expected heavy-duty boots deduced for dragonite, got %s", b.OpponentActive.Item)
 	}
 }
+
+func TestScreenTrackingAndEvaluation(t *testing.T) {
+	b := NewBattle("battle-screens-test", nil)
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	// 1. test setting screens on our side
+	b.HandleLine([]string{"-sidestart", "p1: botuser", "move: Reflect"}, "botuser")
+	b.HandleLine([]string{"-sidestart", "p1: botuser", "move: Light Screen"}, "botuser")
+	b.HandleLine([]string{"-sidestart", "p1: botuser", "move: Tailwind"}, "botuser")
+
+	if !b.MyHasScreen("reflect") || !b.MyHasScreen("lightscreen") || !b.MyHasScreen("tailwind") {
+		t.Fatalf("expected our screens to be active: %+v", b.MyScreens)
+	}
+
+	// 2. test setting aurora veil on opponent side
+	b.HandleLine([]string{"-sidestart", "p2: opponent", "move: Aurora Veil"}, "botuser")
+	if !b.OpponentHasScreen("auroraveil") {
+		t.Fatalf("expected opponent aurora veil to be active: %+v", b.OpponentScreens)
+	}
+
+	// 3. test state evaluation reflects screen advantages
+	stateBase := &SimulatedState{
+		OurActive: SimulatedPokemon{Species: "Mew", HPPercent: 1.0},
+		OppActive: SimulatedPokemon{Species: "Mew", HPPercent: 1.0},
+	}
+	scoreBase := EvaluateBattleState(stateBase)
+
+	stateWithOurScreens := &SimulatedState{
+		OurActive:  SimulatedPokemon{Species: "Mew", HPPercent: 1.0},
+		OppActive:  SimulatedPokemon{Species: "Mew", HPPercent: 1.0},
+		OurScreens: map[string]bool{"reflect": true, "lightscreen": true},
+	}
+	scoreOurScreens := EvaluateBattleState(stateWithOurScreens)
+	if scoreOurScreens <= scoreBase {
+		t.Fatalf("expected our screens to boost evaluation: base=%f, screens=%f", scoreBase, scoreOurScreens)
+	}
+
+	// 4. test -sideend clears screens
+	b.HandleLine([]string{"-sideend", "p1: botuser", "Reflect"}, "botuser")
+	if b.MyHasScreen("reflect") {
+		t.Fatalf("expected reflect to be removed on sideend")
+	}
+	b.HandleLine([]string{"-sideend", "p2: opponent", "move: Aurora Veil"}, "botuser")
+	if b.OpponentHasScreen("auroraveil") {
+		t.Fatalf("expected opponent aurora veil to be removed on sideend")
+	}
+}
+
+func TestStatStageAndAbilitySimulation(t *testing.T) {
+	// 1. test setup moves boost stat stages
+	s := &SimulatedState{
+		OurActive: SimulatedPokemon{Species: "Garchomp", HPPercent: 1.0, Boosts: make(map[string]int)},
+		OppActive: SimulatedPokemon{Species: "Blissey", HPPercent: 1.0, Boosts: make(map[string]int)},
+	}
+	actSetup := SimAction{Type: actionMove, MoveID: "swordsdance", MoveData: GetMoveData("swordsdance")}
+	executeMove(s, actSetup, true)
+	if s.OurActive.Boosts["atk"] != 2 {
+		t.Fatalf("expected swords dance to yield +2 atk, got %d", s.OurActive.Boosts["atk"])
+	}
+
+	// 2. test screen damage halving
+	sNoScreen := &SimulatedState{
+		OurActive: SimulatedPokemon{Species: "Garchomp", HPPercent: 1.0},
+		OppActive: SimulatedPokemon{Species: "Mew", HPPercent: 1.0},
+	}
+	actEarthquake := SimAction{Type: actionMove, MoveID: "earthquake", MoveData: GetMoveData("earthquake")}
+	executeMove(sNoScreen, actEarthquake, true)
+	dmgNoScreen := 1.0 - sNoScreen.OppActive.HPPercent
+
+	sWithReflect := &SimulatedState{
+		OurActive:  SimulatedPokemon{Species: "Garchomp", HPPercent: 1.0},
+		OppActive:  SimulatedPokemon{Species: "Mew", HPPercent: 1.0},
+		OppScreens: map[string]bool{"reflect": true},
+	}
+	executeMove(sWithReflect, actEarthquake, true)
+	dmgWithReflect := 1.0 - sWithReflect.OppActive.HPPercent
+
+	if dmgWithReflect >= dmgNoScreen*0.75 {
+		t.Fatalf("expected reflect to halve damage: no_screen=%f, with_reflect=%f", dmgNoScreen, dmgWithReflect)
+	}
+
+	// 3. test screen breaking move (brick break)
+	sBreak := &SimulatedState{
+		OurActive:  SimulatedPokemon{Species: "Machamp", HPPercent: 1.0},
+		OppActive:  SimulatedPokemon{Species: "Mew", HPPercent: 1.0},
+		OppScreens: map[string]bool{"reflect": true, "lightscreen": true},
+	}
+	actBrickBreak := SimAction{Type: actionMove, MoveID: "brickbreak", MoveData: GetMoveData("brickbreak")}
+	executeMove(sBreak, actBrickBreak, true)
+	if sBreak.OppScreens["reflect"] || sBreak.OppScreens["lightscreen"] {
+		t.Fatalf("expected brick break to shatter screens: %+v", sBreak.OppScreens)
+	}
+
+	// 4. test defog clears hazards and screens
+	sDefog := &SimulatedState{
+		OurActive:  SimulatedPokemon{Species: "Corviknight", HPPercent: 1.0},
+		OppActive:  SimulatedPokemon{Species: "Mew", HPPercent: 1.0},
+		OurHazards: map[string]int{"stealthrock": 1},
+		OppHazards: map[string]int{"spikes": 2},
+		OppScreens: map[string]bool{"lightscreen": true},
+	}
+	actDefog := SimAction{Type: actionMove, MoveID: "defog", MoveData: GetMoveData("defog")}
+	executeMove(sDefog, actDefog, true)
+	if len(sDefog.OurHazards) > 0 || len(sDefog.OppHazards) > 0 || sDefog.OppScreens["lightscreen"] {
+		t.Fatalf("expected defog to clear hazards and screens: our_hazards=%+v, opp_hazards=%+v, opp_screens=%+v",
+			sDefog.OurHazards, sDefog.OppHazards, sDefog.OppScreens)
+	}
+
+	// 5. test intimidate on switch-in
+	sIntim := &SimulatedState{
+		OurActive: SimulatedPokemon{Species: "Landorus-Therian", Ability: "intimidate", HPPercent: 1.0},
+		OppActive: SimulatedPokemon{Species: "Tyranitar", HPPercent: 1.0, Boosts: make(map[string]int)},
+	}
+	applySwitchInAbilities(sIntim, &sIntim.OurActive, &sIntim.OppActive)
+	if sIntim.OppActive.Boosts["atk"] != -1 {
+		t.Fatalf("expected intimidate to lower opponent attack, got %d", sIntim.OppActive.Boosts["atk"])
+	}
+
+	// 6. test defiant opponent gains +2 attack from intimidate
+	sDefiant := &SimulatedState{
+		OurActive: SimulatedPokemon{Species: "Landorus-Therian", Ability: "intimidate", HPPercent: 1.0},
+		OppActive: SimulatedPokemon{Species: "Kingambit", Ability: "defiant", HPPercent: 1.0, Boosts: make(map[string]int)},
+	}
+	applySwitchInAbilities(sDefiant, &sDefiant.OurActive, &sDefiant.OppActive)
+	if sDefiant.OppActive.Boosts["atk"] != 2 {
+		t.Fatalf("expected defiant to give +2 attack on intimidate, got %d", sDefiant.OppActive.Boosts["atk"])
+	}
+}

@@ -857,7 +857,10 @@
             <h2 class="card-title">Battle Teams Vault</h2>
             <p class="card-description">Manage custom teams for different battle formats. The bot automatically selects the right team when challenged.</p>
           </div>
-          <button type="button" class="btn btn-primary btn-sm" id="btn-show-add-team">+ New Team</button>
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-show-import-pokepaste">Import Pokepaste</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-show-add-team">+ New Team</button>
+          </div>
         </div>
 
         <!-- add/edit team form -->
@@ -909,6 +912,31 @@
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-team">Cancel</button>
                 <button type="submit" class="btn btn-primary btn-sm" id="btn-save-team">Save Team</button>
               </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- import pokepaste form -->
+        <div id="team-import-container" style="display:none;background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:20px;">
+          <h3 class="section-subtitle" style="margin-top:0;">Import Team from Pokepaste</h3>
+          <form id="form-import-pokepaste" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="input-import-url">Pokepaste URL or ID</label>
+              <input type="text" id="input-import-url" class="form-input" placeholder="https://pokepast.es/d06587c6742512f4 or d06587c6742512f4">
+            </div>
+            <div class="form-row" style="margin-top:14px;">
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" for="input-import-name">Team Name (Optional)</label>
+                <input type="text" id="input-import-name" class="form-input" placeholder="Leave blank to infer from pokepaste">
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" for="input-import-format">Format (Tier - Optional)</label>
+                <input type="text" id="input-import-format" class="form-input" placeholder="e.g. gen9ou (blank = auto-detect)">
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:14px;justify-content:flex-end;gap:10px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-import">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm" id="btn-submit-import">Import Team</button>
             </div>
           </form>
         </div>

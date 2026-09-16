@@ -73,13 +73,45 @@ func (e *MinimaxEngine) Decide(b *Battle, req BattleRequest) BattleDecision {
 	return e.decideForcedSwitch(b, req)
 }
 
-// decodeteampreview selects the best lead pokemon against opponent's previewed roster.
+// decideteampreview selects the best lead pokemon using an n x m matchup matrix against opponent's previewed roster.
 func (e *MinimaxEngine) decideTeamPreview(b *Battle, req BattleRequest) BattleDecision {
 	pokemonList := req.Side.Pokemon
 	if len(pokemonList) == 0 {
 		return BattleDecision{Type: DecisionTeam, TeamOrder: "123456"}
 	}
 
+	if len(b.OpponentTeam) == 0 {
+		// fallback to natural roster ordering if opponent roster is unrevealed
+		return BattleDecision{Type: DecisionTeam, TeamOrder: "123456"}
+	}
+
+	// 1. calculate opponent lead likelihood weights based on speed and premier hazard/pivot roles
+	oppWeights := make([]float64, len(b.OpponentTeam))
+	totalOppWeight := 0.0
+	for j, oppPoke := range b.OpponentTeam {
+		w := 1.0
+		oppStats := GetSpeciesBaseStats(oppPoke.Species)
+		if oppStats["spe"] >= 105 {
+			w += 1.5 // fast offensive pivots are common leads
+		}
+		cleanOpp := cleanID(oppPoke.Species)
+		switch cleanOpp {
+		case "greattusk", "glimmora", "tinglu", "samurotthisui", "landorustherian",
+			"ribombee", "deoxysspeed", "garganacl", "meowscarada", "skarmory",
+			"forretress", "shuckle", "cloyster", "aerodactyl", "azelf", "smeargle":
+			w += 2.5 // premier dedicated hazard / suicide leads
+		}
+		if oppStats["spe"] <= 50 {
+			w *= 0.6 // slow defensive tanks rarely lead
+		}
+		oppWeights[j] = w
+		totalOppWeight += w
+	}
+	if totalOppWeight <= 0 {
+		totalOppWeight = 1.0
+	}
+
+	// 2. evaluate each of our pokemon across the weighted opponent matrix
 	bestLeadIndex := 0
 	bestScore := -99999.0
 	leadScores := make([]float64, len(pokemonList))
@@ -89,38 +121,174 @@ func (e *MinimaxEngine) decideTeamPreview(b *Battle, req BattleRequest) BattleDe
 			leadScores[i] = -99999.0
 			continue
 		}
-		pokeTypes := GetSpeciesTypes(poke.Species())
-		score := 0.0
 
-		for _, oppPoke := range b.OpponentTeam {
-			oppTypes := GetSpeciesTypes(oppPoke.Species)
-			for _, pt := range pokeTypes {
-				score += GetMultipleEffectiveness(pt, oppTypes...) * 25.0
+		pokeSpecies := poke.Species()
+		pokeStats := GetSpeciesBaseStats(pokeSpecies)
+		pokeTypes := GetSpeciesTypes(pokeSpecies)
+		pokeItem := cleanID(poke.Item)
+		pokeAbility := cleanID(poke.Ability)
+
+		// detect utility lead moves in our set
+		hasHazards := false
+		hasTaunt := false
+		hasFakeOut := false
+		hasScreens := false
+		for _, m := range poke.Moves {
+			cm := cleanID(m)
+			if cm == "stealthrock" || cm == "spikes" || cm == "toxicspikes" || cm == "stickyweb" {
+				hasHazards = true
 			}
-			for _, ot := range oppTypes {
-				score -= GetMultipleEffectiveness(ot, pokeTypes...) * 25.0
+			if cm == "taunt" {
+				hasTaunt = true
+			}
+			if cm == "fakeout" {
+				hasFakeOut = true
+			}
+			if cm == "reflect" || cm == "lightscreen" || cm == "auroraveil" {
+				hasScreens = true
 			}
 		}
 
-		// factor in base speed tier of lead
-		baseSpe := GetSpeciesBaseStats(poke.Species())["spe"]
-		score += float64(baseSpe) * 0.1
-		leadScores[i] = score
+		aggregateMatchupScore := 0.0
 
-		if score > bestScore {
-			bestScore = score
+		for j, oppPoke := range b.OpponentTeam {
+			oppStats := GetSpeciesBaseStats(oppPoke.Species)
+			oppTypes := GetSpeciesTypes(oppPoke.Species)
+			weightFraction := oppWeights[j] / totalOppWeight
+
+			// evaluate max damage potential from our movepool against opponent
+			maxOurDmgFraction := 0.0
+			if len(poke.Moves) > 0 {
+				for _, m := range poke.Moves {
+					mData := GetMoveData(m)
+					if mData.BasePower <= 0 {
+						continue
+					}
+					eff := GetMultipleEffectiveness(mData.Type, oppTypes...)
+					stab := 1.0
+					for _, pt := range pokeTypes {
+						if strings.EqualFold(mData.Type, pt) {
+							stab = 1.5
+							break
+						}
+					}
+					atkStat := pokeStats["atk"]
+					defStat := oppStats["def"]
+					isPhys := mData.Category == CategoryPhysical
+					if !isPhys {
+						atkStat = pokeStats["spa"]
+						defStat = oppStats["spd"]
+					}
+					rawDmg := CalculateDamage(80, mData.BasePower, atkStat, defStat, stab, eff, false, isPhys)
+					frac := rawDmg / 250.0 // approximate 250 average max hp
+					if frac > maxOurDmgFraction {
+						maxOurDmgFraction = frac
+					}
+				}
+			} else {
+				// fallback if movepool not populated at preview
+				for _, pt := range pokeTypes {
+					eff := GetMultipleEffectiveness(pt, oppTypes...)
+					frac := eff * 0.40
+					if frac > maxOurDmgFraction {
+						maxOurDmgFraction = frac
+					}
+				}
+			}
+
+			// evaluate opponent threat back against our typing
+			maxOppDmgFraction := 0.0
+			for _, ot := range oppTypes {
+				eff := GetMultipleEffectiveness(ot, pokeTypes...)
+				stab := 1.5
+				atkStat := oppStats["atk"]
+				defStat := pokeStats["def"]
+				if oppStats["spa"] > oppStats["atk"] {
+					atkStat = oppStats["spa"]
+					defStat = pokeStats["spd"]
+				}
+				rawDmg := CalculateDamage(80, 85, atkStat, defStat, stab, eff, false, true)
+				frac := rawDmg / 250.0
+				if frac > maxOppDmgFraction {
+					maxOppDmgFraction = frac
+				}
+			}
+
+			// matchup score for this specific pair
+			matchup := 0.0
+			faster := pokeStats["spe"] >= oppStats["spe"]
+
+			if faster {
+				if maxOurDmgFraction >= 0.95 {
+					matchup += 80.0 // outspeeds and threatens instant ohko
+				} else if maxOurDmgFraction >= 0.50 && maxOppDmgFraction < 0.50 {
+					matchup += 45.0 // favorable 2hko trade
+				} else {
+					matchup += (maxOurDmgFraction - maxOppDmgFraction) * 30.0 + 15.0
+				}
+			} else {
+				if maxOppDmgFraction >= 0.95 {
+					if pokeItem == "focussash" {
+						matchup -= 20.0 // focus sash survives lethal hit
+					} else {
+						matchup -= 85.0 // slower and risks being ohkod on turn 1
+					}
+				} else if maxOppDmgFraction >= 0.50 && maxOurDmgFraction < 0.50 {
+					matchup -= 40.0 // unfavorable trade
+				} else {
+					matchup += (maxOurDmgFraction - maxOppDmgFraction) * 30.0 - 15.0
+				}
+			}
+
+			// utility lead value against this opponent
+			if hasHazards {
+				if faster || maxOppDmgFraction < 0.95 || pokeItem == "focussash" {
+					matchup += 35.0 // reliable hazard setup
+				}
+			}
+			if hasTaunt && faster {
+				cleanOpp := cleanID(oppPoke.Species)
+				if cleanOpp == "glimmora" || cleanOpp == "tinglu" || cleanOpp == "skarmory" || cleanOpp == "ribombee" {
+					matchup += 40.0 // shut down opposing suicide lead
+				}
+			}
+
+			aggregateMatchupScore += matchup * weightFraction
+		}
+
+		// general lead baseline adjustments
+		aggregateMatchupScore += float64(pokeStats["spe"]) * 0.10
+		if hasScreens {
+			aggregateMatchupScore += 25.0
+		}
+		if hasFakeOut {
+			aggregateMatchupScore += 20.0
+		}
+		if pokeItem == "focussash" {
+			aggregateMatchupScore += 15.0
+		}
+		if pokeItem == "boosterenergy" {
+			aggregateMatchupScore += 15.0
+		}
+		if pokeAbility == "intimidate" {
+			aggregateMatchupScore += 25.0
+		}
+
+		leadScores[i] = aggregateMatchupScore
+		if aggregateMatchupScore > bestScore {
+			bestScore = aggregateMatchupScore
 			bestLeadIndex = i
 		}
 	}
 
-	// anti-predictability sampling among close lead candidates (within 5 points)
+	// anti-predictability sampling among close lead candidates (within 12 points)
 	if e.antiPredictability && len(pokemonList) > 1 && bestScore > -9999.0 {
 		var topLeads []int
 		var leadWeights []float64
 		totalWeight := 0.0
 		for i, s := range leadScores {
-			if s >= bestScore-5.0 && s > -9999.0 {
-				w := math.Exp((s - bestScore) / 3.0)
+			if s >= bestScore-12.0 && s > -9999.0 {
+				w := math.Exp((s - bestScore) / 4.0)
 				topLeads = append(topLeads, i)
 				leadWeights = append(leadWeights, w)
 				totalWeight += w
@@ -215,8 +383,8 @@ func (e *MinimaxEngine) decideForcedSwitch(b *Battle, req BattleRequest) BattleD
 			Ability:   poke.Ability,
 			Moves:     poke.Moves,
 		}
-		ourSpe := calculatePokemonSpeed(simBench, state.Weather, state.Terrain)
-		oppSpe := calculatePokemonSpeed(state.OppActive, state.Weather, state.Terrain)
+		ourSpe := calculatePokemonSpeed(simBench, state.Weather, state.Terrain, state.OurScreens != nil && state.OurScreens["tailwind"])
+		oppSpe := calculatePokemonSpeed(state.OppActive, state.Weather, state.Terrain, state.OppScreens != nil && state.OppScreens["tailwind"])
 
 		winConAdjustment := 0.0
 		if strings.EqualFold(poke.Species(), winConSpecies) {
@@ -353,6 +521,8 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 		ConsecutiveProtects: b.ConsecutiveProtects,
 		OurHazards:          make(map[string]int),
 		OppHazards:          make(map[string]int),
+		OurScreens:          make(map[string]bool),
+		OppScreens:          make(map[string]bool),
 		Turn:                b.Turn,
 	}
 
@@ -366,6 +536,16 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 	for k, v := range b.OpponentHazards {
 		if v && s.OppHazards[k] == 0 {
 			s.OppHazards[k] = 1
+		}
+	}
+	for k, v := range b.MyScreens {
+		if v {
+			s.OurScreens[k] = true
+		}
+	}
+	for k, v := range b.OpponentScreens {
+		if v {
+			s.OppScreens[k] = true
 		}
 	}
 
@@ -657,6 +837,7 @@ func simulateTurn(initial *SimulatedState, ourAct, oppAct SimAction) *SimulatedS
 		s.OurActive.Volatiles = make(map[string]bool)
 		s.ConsecutiveProtects = 0
 		applyEntryHazards(&s.OurActive, s.OurHazards)
+		applySwitchInAbilities(s, &s.OurActive, &s.OppActive)
 	}
 
 	if oppSwitched && oppAct.SwitchIndex < len(s.OppBench) {
@@ -664,6 +845,7 @@ func simulateTurn(initial *SimulatedState, ourAct, oppAct SimAction) *SimulatedS
 		s.OppActive.Boosts = make(map[string]int)
 		s.OppActive.Volatiles = make(map[string]bool)
 		applyEntryHazards(&s.OppActive, s.OppHazards)
+		applySwitchInAbilities(s, &s.OppActive, &s.OurActive)
 	}
 
 	// if both switched, no moves execute
@@ -700,8 +882,8 @@ func simulateTurn(initial *SimulatedState, ourAct, oppAct SimAction) *SimulatedS
 		}
 	}
 
-	ourSpe := calculatePokemonSpeed(s.OurActive, s.Weather, s.Terrain)
-	oppSpe := calculatePokemonSpeed(s.OppActive, s.Weather, s.Terrain)
+	ourSpe := calculatePokemonSpeed(s.OurActive, s.Weather, s.Terrain, s.OurScreens != nil && s.OurScreens["tailwind"])
+	oppSpe := calculatePokemonSpeed(s.OppActive, s.Weather, s.Terrain, s.OppScreens != nil && s.OppScreens["tailwind"])
 
 	var ourFirst bool
 	switch {
@@ -778,6 +960,121 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 		return
 	}
 
+	cleanM := cleanID(mData.ID)
+
+	// screen setting moves
+	switch cleanM {
+	case "reflect":
+		if isOurMove {
+			if s.OurScreens == nil {
+				s.OurScreens = make(map[string]bool)
+			}
+			s.OurScreens["reflect"] = true
+		} else {
+			if s.OppScreens == nil {
+				s.OppScreens = make(map[string]bool)
+			}
+			s.OppScreens["reflect"] = true
+		}
+		return
+	case "lightscreen":
+		if isOurMove {
+			if s.OurScreens == nil {
+				s.OurScreens = make(map[string]bool)
+			}
+			s.OurScreens["lightscreen"] = true
+		} else {
+			if s.OppScreens == nil {
+				s.OppScreens = make(map[string]bool)
+			}
+			s.OppScreens["lightscreen"] = true
+		}
+		return
+	case "auroraveil":
+		if isOurMove {
+			if s.OurScreens == nil {
+				s.OurScreens = make(map[string]bool)
+			}
+			s.OurScreens["auroraveil"] = true
+		} else {
+			if s.OppScreens == nil {
+				s.OppScreens = make(map[string]bool)
+			}
+			s.OppScreens["auroraveil"] = true
+		}
+		return
+	case "tailwind":
+		if isOurMove {
+			if s.OurScreens == nil {
+				s.OurScreens = make(map[string]bool)
+			}
+			s.OurScreens["tailwind"] = true
+		} else {
+			if s.OppScreens == nil {
+				s.OppScreens = make(map[string]bool)
+			}
+			s.OppScreens["tailwind"] = true
+		}
+		return
+	}
+
+	// defog: clears hazards on both sides, clears screens on target side
+	if cleanM == "defog" {
+		s.OurHazards = make(map[string]int)
+		s.OppHazards = make(map[string]int)
+		if isOurMove && s.OppScreens != nil {
+			delete(s.OppScreens, "reflect")
+			delete(s.OppScreens, "lightscreen")
+			delete(s.OppScreens, "auroraveil")
+		} else if !isOurMove && s.OurScreens != nil {
+			delete(s.OurScreens, "reflect")
+			delete(s.OurScreens, "lightscreen")
+			delete(s.OurScreens, "auroraveil")
+		}
+		return
+	}
+
+	// screen breaking moves (brick break, psychic fangs)
+	if cleanM == "brickbreak" || cleanM == "psychicfangs" {
+		if isOurMove && s.OppScreens != nil {
+			delete(s.OppScreens, "reflect")
+			delete(s.OppScreens, "lightscreen")
+			delete(s.OppScreens, "auroraveil")
+		} else if !isOurMove && s.OurScreens != nil {
+			delete(s.OurScreens, "reflect")
+			delete(s.OurScreens, "lightscreen")
+			delete(s.OurScreens, "auroraveil")
+		}
+	}
+
+	// rapid spin / mortal spin: clears hazards on user side, boosts speed by 1
+	if cleanM == "rapidspin" || cleanM == "mortalspin" {
+		if isOurMove {
+			s.OurHazards = make(map[string]int)
+		} else {
+			s.OppHazards = make(map[string]int)
+		}
+		if attacker.Boosts == nil {
+			attacker.Boosts = make(map[string]int)
+		}
+		applyBoost(attacker.Boosts, "spe", 1)
+		if cleanM == "mortalspin" && defender.Status == "" {
+			defender.Status = "psn"
+		}
+	}
+
+	// tidy up: clears hazards on both sides, boosts atk and spe by 1
+	if cleanM == "tidyup" {
+		s.OurHazards = make(map[string]int)
+		s.OppHazards = make(map[string]int)
+		if attacker.Boosts == nil {
+			attacker.Boosts = make(map[string]int)
+		}
+		applyBoost(attacker.Boosts, "atk", 1)
+		applyBoost(attacker.Boosts, "spe", 1)
+		return
+	}
+
 	// healing moves
 	if mData.IsHealing {
 		attacker.HPPercent += 0.50
@@ -792,34 +1089,68 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 		if attacker.Boosts == nil {
 			attacker.Boosts = make(map[string]int)
 		}
-		cleanM := cleanID(mData.ID)
 		switch cleanM {
 		case "swordsdance":
-			attacker.Boosts["atk"] += 2
+			applyBoost(attacker.Boosts, "atk", 2)
 		case "dragondance":
-			attacker.Boosts["atk"]++
-			attacker.Boosts["spe"]++
+			applyBoost(attacker.Boosts, "atk", 1)
+			applyBoost(attacker.Boosts, "spe", 1)
 		case "calmmind":
-			attacker.Boosts["spa"]++
-			attacker.Boosts["spd"]++
+			applyBoost(attacker.Boosts, "spa", 1)
+			applyBoost(attacker.Boosts, "spd", 1)
 		case "nastyplot":
-			attacker.Boosts["spa"] += 2
+			applyBoost(attacker.Boosts, "spa", 2)
 		case "quiverdance":
-			attacker.Boosts["spa"]++
-			attacker.Boosts["spd"]++
-			attacker.Boosts["spe"]++
+			applyBoost(attacker.Boosts, "spa", 1)
+			applyBoost(attacker.Boosts, "spd", 1)
+			applyBoost(attacker.Boosts, "spe", 1)
 		case "bulkup":
-			attacker.Boosts["atk"]++
-			attacker.Boosts["def"]++
-		case "agility":
-			attacker.Boosts["spe"] += 2
+			applyBoost(attacker.Boosts, "atk", 1)
+			applyBoost(attacker.Boosts, "def", 1)
+		case "curse":
+			applyBoost(attacker.Boosts, "atk", 1)
+			applyBoost(attacker.Boosts, "def", 1)
+			applyBoost(attacker.Boosts, "spe", -1)
+		case "irondefense", "acidarmor", "barrier":
+			applyBoost(attacker.Boosts, "def", 2)
+		case "amnesia":
+			applyBoost(attacker.Boosts, "spd", 2)
+		case "agility", "rockpolish", "autotomize":
+			applyBoost(attacker.Boosts, "spe", 2)
+		case "shiftgear":
+			applyBoost(attacker.Boosts, "atk", 1)
+			applyBoost(attacker.Boosts, "spe", 2)
+		case "shellsmash":
+			applyBoost(attacker.Boosts, "atk", 2)
+			applyBoost(attacker.Boosts, "spa", 2)
+			applyBoost(attacker.Boosts, "spe", 2)
+			applyBoost(attacker.Boosts, "def", -1)
+			applyBoost(attacker.Boosts, "spd", -1)
+		case "growth":
+			applyBoost(attacker.Boosts, "atk", 1)
+			applyBoost(attacker.Boosts, "spa", 1)
+		case "tailglow":
+			applyBoost(attacker.Boosts, "spa", 3)
+		case "clangaroussoul":
+			applyBoost(attacker.Boosts, "atk", 1)
+			applyBoost(attacker.Boosts, "def", 1)
+			applyBoost(attacker.Boosts, "spa", 1)
+			applyBoost(attacker.Boosts, "spd", 1)
+			applyBoost(attacker.Boosts, "spe", 1)
+			attacker.HPPercent -= 0.33
+		case "victorydance":
+			applyBoost(attacker.Boosts, "atk", 1)
+			applyBoost(attacker.Boosts, "def", 1)
+			applyBoost(attacker.Boosts, "spe", 1)
+		case "bellydrum":
+			attacker.Boosts["atk"] = 6
+			attacker.HPPercent -= 0.50
 		}
 		return
 	}
 
 	// hazard moves
 	if mData.IsHazard {
-		cleanM := cleanID(mData.ID)
 		if cleanM == "stealthrock" || cleanM == "stickyweb" {
 			targetHazards[cleanM] = 1
 		} else {
@@ -830,7 +1161,6 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 
 	// status infliction moves
 	if mData.IsStatus {
-		cleanM := cleanID(mData.ID)
 		if defender.Status == "" {
 			switch cleanM {
 			case "thunderwave":
@@ -895,7 +1225,7 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 	defStats := GetSpeciesBaseStats(defender.Species)
 
 	isPhysical := mData.Category == CategoryPhysical
-	isPsyshockLike := cleanID(mData.ID) == "psyshock" || cleanID(mData.ID) == "psystrike" || cleanID(mData.ID) == "secretsword"
+	isPsyshockLike := cleanM == "psyshock" || cleanM == "psystrike" || cleanM == "secretsword"
 
 	if isPhysical {
 		atkBase = atkStats["atk"]
@@ -927,6 +1257,21 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 
 	dmgPoints := CalculateDamageWithWeatherAndTerrain(80, mData.BasePower, atkBase, defBase, stab, typeEff, isBurned, isPhysical, mData.Type, mData.ID, s.Weather, s.Terrain, attackerGrounded, defenderGrounded)
 
+	// screen damage reduction
+	var defenderScreens map[string]bool
+	if isOurMove {
+		defenderScreens = s.OppScreens
+	} else {
+		defenderScreens = s.OurScreens
+	}
+	if defenderScreens != nil {
+		if isPhysical && (defenderScreens["reflect"] || defenderScreens["auroraveil"]) {
+			dmgPoints *= 0.5
+		} else if !isPhysical && (defenderScreens["lightscreen"] || defenderScreens["auroraveil"]) {
+			dmgPoints *= 0.5
+		}
+	}
+
 	// convert damage points to hp fraction (approx 250 avg max hp)
 	hpLoss := dmgPoints / 250.0
 
@@ -934,6 +1279,93 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 	if defender.HPPercent <= 0.001 {
 		defender.HPPercent = 0.0
 		defender.Fainted = true
+	}
+
+	// post-attack stat changes on user and target
+	if attacker.Boosts == nil {
+		attacker.Boosts = make(map[string]int)
+	}
+	if defender.Boosts == nil {
+		defender.Boosts = make(map[string]int)
+	}
+	switch cleanM {
+	case "closecombat", "headlongrush", "armorcannon":
+		applyBoost(attacker.Boosts, "def", -1)
+		applyBoost(attacker.Boosts, "spd", -1)
+	case "superpower":
+		applyBoost(attacker.Boosts, "atk", -1)
+		applyBoost(attacker.Boosts, "def", -1)
+	case "dracometeor", "overheat", "leafstorm", "fleurcannon":
+		applyBoost(attacker.Boosts, "spa", -2)
+	case "makeitrain":
+		applyBoost(attacker.Boosts, "spa", -1)
+	case "hammerarm":
+		applyBoost(attacker.Boosts, "spe", -1)
+	case "vcreate":
+		applyBoost(attacker.Boosts, "def", -1)
+		applyBoost(attacker.Boosts, "spd", -1)
+		applyBoost(attacker.Boosts, "spe", -1)
+	case "torchsong":
+		applyBoost(attacker.Boosts, "spa", 1)
+	case "poweruppunch":
+		applyBoost(attacker.Boosts, "atk", 1)
+	case "trailblaze", "flamecharge":
+		applyBoost(attacker.Boosts, "spe", 1)
+	case "chillingwater":
+		applyBoost(defender.Boosts, "atk", -1)
+	case "mysticalfire", "snarl", "strugglebug", "skittersmack":
+		applyBoost(defender.Boosts, "spa", -1)
+	case "icywind", "electroweb", "bulldoze", "lowsweep":
+		applyBoost(defender.Boosts, "spe", -1)
+	}
+}
+
+// applyboost modifies a stat stage bounded to [-6, +6].
+func applyBoost(boosts map[string]int, stat string, delta int) {
+	if boosts == nil {
+		return
+	}
+	cur := boosts[stat] + delta
+	if cur > 6 {
+		cur = 6
+	} else if cur < -6 {
+		cur = -6
+	}
+	boosts[stat] = cur
+}
+
+// applyswitchinabilities handles entrance abilities like intimidate, weather, and terrain.
+func applySwitchInAbilities(s *SimulatedState, in *SimulatedPokemon, opp *SimulatedPokemon) {
+	abilityClean := cleanID(in.Ability)
+	switch abilityClean {
+	case "intimidate":
+		if opp.Fainted || opp.HPPercent <= 0.001 {
+			return
+		}
+		if opp.Boosts == nil {
+			opp.Boosts = make(map[string]int)
+		}
+		oppAbility := cleanID(opp.Ability)
+		switch oppAbility {
+		case "defiant":
+			applyBoost(opp.Boosts, "atk", 2)
+		case "competitive":
+			applyBoost(opp.Boosts, "spa", 2)
+		case "clearbody", "whitesmoke", "fullmetalbody", "hypercutter", "innerfocus", "scrappy", "oblivious", "owntempo":
+			// immune to intimidate
+		default:
+			applyBoost(opp.Boosts, "atk", -1)
+		}
+	case "drizzle":
+		s.Weather = "raindance"
+	case "drought":
+		s.Weather = "sunnyday"
+	case "electricsurge":
+		s.Terrain = "electricterrain"
+	case "grassysurge":
+		s.Terrain = "grassyterrain"
+	case "psychicsurge":
+		s.Terrain = "psychicterrain"
 	}
 }
 
@@ -1092,8 +1524,10 @@ func cloneState(orig *SimulatedState) *SimulatedState {
 		Weather:             orig.Weather,
 		Terrain:             orig.Terrain,
 		ConsecutiveProtects: orig.ConsecutiveProtects,
-		OurHazards:          make(map[string]int),
-		OppHazards:          make(map[string]int),
+		OurHazards:          make(map[string]int, len(orig.OurHazards)),
+		OppHazards:          make(map[string]int, len(orig.OppHazards)),
+		OurScreens:          make(map[string]bool, len(orig.OurScreens)),
+		OppScreens:          make(map[string]bool, len(orig.OppScreens)),
 		Turn:                orig.Turn,
 		WinConSpecies:       orig.WinConSpecies,
 		SackFodder:          orig.SackFodder,
@@ -1104,6 +1538,12 @@ func cloneState(orig *SimulatedState) *SimulatedState {
 	}
 	for k, v := range orig.OppHazards {
 		clone.OppHazards[k] = v
+	}
+	for k, v := range orig.OurScreens {
+		clone.OurScreens[k] = v
+	}
+	for k, v := range orig.OppScreens {
+		clone.OppScreens[k] = v
 	}
 
 	clone.OurBench = make([]SimulatedPokemon, len(orig.OurBench))

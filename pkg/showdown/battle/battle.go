@@ -66,6 +66,8 @@ type Battle struct {
 	MyActiveTerastallized      string
 	OpponentSwitchedThisTurn   bool
 	OpponentSwitchHazardDamage bool
+	MyScreens                  map[string]bool
+	OpponentScreens            map[string]bool
 }
 
 func NewBattle(room string, engine BattleEngine) *Battle {
@@ -78,6 +80,8 @@ func NewBattle(room string, engine BattleEngine) *Battle {
 		OpponentHazards:      make(map[string]bool),
 		OpponentHazardLayers: make(map[string]int),
 		MyHazards:            make(map[string]int),
+		MyScreens:            make(map[string]bool),
+		OpponentScreens:      make(map[string]bool),
 		MyBoosts:             make(map[string]int),
 		MyVolatiles:          make(map[string]bool),
 		OpponentVolatiles:    make(map[string]bool),
@@ -101,6 +105,22 @@ func (b *Battle) SetAntiPredictability(enable bool) {
 
 func (b *Battle) OpponentHasHazard(hazard string) bool {
 	return b.OpponentHazards[hazard]
+}
+
+// myhasscreen returns true if user side currently has the given screen active.
+func (b *Battle) MyHasScreen(screen string) bool {
+	if b.MyScreens == nil {
+		return false
+	}
+	return b.MyScreens[screen]
+}
+
+// opponenthasscreen returns true if opponent side currently has the given screen active.
+func (b *Battle) OpponentHasScreen(screen string) bool {
+	if b.OpponentScreens == nil {
+		return false
+	}
+	return b.OpponentScreens[screen]
 }
 
 func (b *Battle) OpponentAliveCount() int {
@@ -427,7 +447,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 		}
 
 	case "-sidestart":
-		// e.g. |-sidestart|p2: username|move: stealth rock
+		// e.g. |-sidestart|p2: username|move: stealth rock or |-sidestart|p1: username|reflect
 		if len(parts) >= 3 {
 			effect := strings.ToLower(parts[2])
 			isOpp := b.isOpponentIdent(parts[1])
@@ -456,6 +476,31 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 					b.MyHazards[hazard]++
 				}
 			}
+
+			screen := ""
+			switch {
+			case strings.Contains(effect, "reflect"):
+				screen = "reflect"
+			case strings.Contains(effect, "light screen"):
+				screen = "lightscreen"
+			case strings.Contains(effect, "aurora veil"):
+				screen = "auroraveil"
+			case strings.Contains(effect, "tailwind"):
+				screen = "tailwind"
+			}
+			if screen != "" {
+				if isOpp {
+					if b.OpponentScreens == nil {
+						b.OpponentScreens = make(map[string]bool)
+					}
+					b.OpponentScreens[screen] = true
+				} else {
+					if b.MyScreens == nil {
+						b.MyScreens = make(map[string]bool)
+					}
+					b.MyScreens[screen] = true
+				}
+			}
 		}
 
 	case "-sideend":
@@ -481,6 +526,25 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 					}
 				} else if b.MyHazards != nil {
 					delete(b.MyHazards, hazard)
+				}
+			}
+
+			screen := ""
+			switch {
+			case strings.Contains(effect, "reflect"):
+				screen = "reflect"
+			case strings.Contains(effect, "light screen"):
+				screen = "lightscreen"
+			case strings.Contains(effect, "aurora veil"):
+				screen = "auroraveil"
+			case strings.Contains(effect, "tailwind"):
+				screen = "tailwind"
+			}
+			if screen != "" {
+				if isOpp && b.OpponentScreens != nil {
+					delete(b.OpponentScreens, screen)
+				} else if !isOpp && b.MyScreens != nil {
+					delete(b.MyScreens, screen)
 				}
 			}
 		}

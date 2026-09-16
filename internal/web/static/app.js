@@ -832,6 +832,56 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // pokepaste import form toggle and submit
+  const btnShowImportPokepaste = document.getElementById("btn-show-import-pokepaste");
+  const btnCancelImport = document.getElementById("btn-cancel-import");
+  const teamImportContainer = document.getElementById("team-import-container");
+  const formImportPokepaste = document.getElementById("form-import-pokepaste");
+
+  if (btnShowImportPokepaste && teamImportContainer) {
+    btnShowImportPokepaste.addEventListener("click", function () {
+      const isVisible = teamImportContainer.style.display !== "none";
+      teamImportContainer.style.display = isVisible ? "none" : "block";
+      if (!isVisible) {
+        document.getElementById("input-import-url")?.focus();
+      }
+    });
+  }
+
+  if (btnCancelImport && teamImportContainer) {
+    btnCancelImport.addEventListener("click", function () {
+      teamImportContainer.style.display = "none";
+    });
+  }
+
+  if (formImportPokepaste) {
+    formImportPokepaste.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const url = document.getElementById("input-import-url")?.value.trim() || "";
+      if (!url) {
+        showAlert("error", "Please provide a Pokepaste URL or ID.");
+        return;
+      }
+      const payload = {
+        url: url,
+        name: document.getElementById("input-import-name")?.value.trim() || "",
+        format: document.getElementById("input-import-format")?.value.trim() || "",
+      };
+
+      postJSON("/api/teams/import", payload, function (err, res) {
+        if (err) {
+          showAlert("error", "Failed to import team: " + err);
+        } else {
+          const teamName = res?.team?.name || "Team";
+          showAlert("success", `Imported ${teamName} from Pokepaste!`);
+          formImportPokepaste.reset();
+          if (teamImportContainer) teamImportContainer.style.display = "none";
+          fetchTeams();
+        }
+      });
+    });
+  }
+
   // custom commands handlers
   function fetchCommands() {
     fetch("/api/commands")

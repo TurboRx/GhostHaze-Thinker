@@ -302,6 +302,16 @@ func TestWebServerEndpoints(t *testing.T) {
 	})
 
 	t.Run("teams endpoints crud", func(t *testing.T) {
+		// clean up any existing teams for test isolation
+		for _, tm := range client.Teams().List() {
+			client.Teams().Delete(tm.ID)
+		}
+		defer func() {
+			for _, tm := range client.Teams().List() {
+				client.Teams().Delete(tm.ID)
+			}
+		}()
+
 		// save team
 		teamJSON := `{"name":"OU Team","format":"gen9ou","team_raw":"Pikachu @ Light Ball\nAbility: Lightning Rod\n- Thunderbolt\n","active":true}`
 		saveReq := authReq(httptest.NewRequest(http.MethodPost, "/api/teams/save", bytes.NewBufferString(teamJSON)))
@@ -333,6 +343,28 @@ func TestWebServerEndpoints(t *testing.T) {
 		mux.ServeHTTP(toggleRR, toggleReq)
 		if toggleRR.Code != http.StatusOK {
 			t.Fatalf("expected 200 for teams toggle, got %d", toggleRR.Code)
+		}
+
+		// import team via pokepaste
+		mockPaste := "Garchomp @ Life Orb\nAbility: Rough Skin\n- Earthquake\n- Outrage\n"
+		pokeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(mockPaste))
+		}))
+		defer pokeServer.Close()
+		origClient := showdown.SetPokepasteHTTPClient
+		_ = origClient
+		showdown.SetPokepasteHTTPClient(pokeServer.Client())
+		showdown.SetPokepasteBaseURL(pokeServer.URL)
+		defer showdown.SetPokepasteBaseURL("")
+
+		importJSON := `{"url":"https://pokepast.es/testimport","format":"gen9ou","name":"Imported Garchomp"}`
+		importReq := authReq(httptest.NewRequest(http.MethodPost, "/api/teams/import", bytes.NewBufferString(importJSON)))
+		importReq.Header.Set("Content-Type", "application/json")
+		importRR := httptest.NewRecorder()
+		mux.ServeHTTP(importRR, importReq)
+		if importRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 for teams import, got %d: %s", importRR.Code, importRR.Body.String())
 		}
 
 		// delete team

@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -227,6 +229,131 @@ func (s *TeamStore) GetTeamForFormat(format string) string {
 	}
 
 	return ""
+}
+
+// pokepastehttpclient allows overriding http client in tests
+var pokepasteHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
+// pokepastebaseurl specifies the base domain for pokepaste requests
+var pokepasteBaseURL = "https://pokepast.es"
+
+// setpokepastehttpclient overrides the http client used for pokepaste fetching (for tests).
+func SetPokepasteHTTPClient(client *http.Client) {
+	if client != nil {
+		pokepasteHTTPClient = client
+	}
+}
+
+// setpokepastebaseurl overrides the base domain used for pokepaste fetching (for tests).
+func SetPokepasteBaseURL(baseURL string) {
+	if baseURL != "" {
+		pokepasteBaseURL = strings.TrimRight(baseURL, "/")
+	}
+}
+
+// extractpokepasteid parses a raw url or string to return the alphanumeric paste id.
+func ExtractPokepasteID(rawURL string) string {
+	cleaned := strings.TrimSpace(rawURL)
+	if idx := strings.Index(cleaned, "?"); idx != -1 {
+		cleaned = cleaned[:idx]
+	}
+	if idx := strings.Index(cleaned, "#"); idx != -1 {
+		cleaned = cleaned[:idx]
+	}
+	cleaned = strings.TrimPrefix(cleaned, "https://")
+	cleaned = strings.TrimPrefix(cleaned, "http://")
+	cleaned = strings.TrimPrefix(cleaned, "www.")
+	cleaned = strings.TrimPrefix(cleaned, "pokepast.es/")
+	cleaned = strings.TrimPrefix(cleaned, "raw/")
+	cleaned = strings.Trim(cleaned, "/")
+	return cleaned
+}
+
+// fetchpokepaste retrieves raw team text from pokepast.es given a url or paste id.
+func FetchPokepaste(rawURL string) (string, error) {
+	pasteID := ExtractPokepasteID(rawURL)
+	if pasteID == "" {
+		return "", errors.New("invalid or empty pokepaste id/url")
+	}
+
+	targetURL := fmt.Sprintf("%s/raw/%s", pokepasteBaseURL, pasteID)
+	req, err := http.NewRequest(http.MethodGet, targetURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create pokepaste request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Showdown-TurBOOT/1.0")
+	req.Header.Set("Accept", "text/plain")
+
+	resp, err := pokepasteHTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch pokepaste: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("pokepaste returned http status %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 131072)) // 128 kb limit
+	if err != nil {
+		return "", fmt.Errorf("failed to read pokepaste body: %w", err)
+	}
+
+	rawText := strings.TrimSpace(string(bodyBytes))
+	if rawText == "" {
+		return "", errors.New("pokepaste content is empty")
+	}
+	return rawText, nil
+}
+
+// importpokepaste fetches, parses, and persists a team from a pokepast.es url.
+func (s *TeamStore) ImportPokepaste(url string, format string, name string) (*BattleTeam, error) {
+	raw, err := FetchPokepaste(url)
+	if err != nil {
+		return nil, err
+	}
+
+	pokes, packed, err := ParsePokepaste(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pokepaste: %w", err)
+	}
+	if len(pokes) == 0 {
+		return nil, errors.New("no valid pokemon found in pokepaste")
+	}
+
+	if format == "" {
+		format = "gen9ou"
+	}
+	if name == "" {
+		pasteID := ExtractPokepasteID(url)
+		if pasteID != "" {
+			name = fmt.Sprintf("%s (%s)", pasteID, format)
+		} else {
+			name = fmt.Sprintf("%s (%s)", pokes[0], format)
+		}
+	}
+
+	team := BattleTeam{
+		ID:         generateID(),
+		Name:       name,
+		Format:     format,
+		TeamRaw:    raw,
+		TeamPacked: packed,
+		Pokemon:    pokes,
+		Active:     true,
+		UpdatedAt:  time.Now(),
+	}
+
+	s.mu.Lock()
+	s.teams[team.ID] = team
+	s.mu.Unlock()
+
+	if err := s.Save(); err != nil {
+		return nil, err
+	}
+	return &team, nil
 }
 
 // parsepokepaste parses pokepaste export text into pokemon names and packed format

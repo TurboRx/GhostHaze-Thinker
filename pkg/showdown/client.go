@@ -2199,8 +2199,93 @@ func (c *Client) initBuiltinCommands() {
 		}
 	})
 
+	c.HandleCommand("team", func(room, user, args string) {
+		parts := strings.Fields(args)
+		if len(parts) == 0 {
+			_ = c.Reply(room, user, "Usage: .team [list|import <url> [format] [name]|toggle <id>|delete <id>]")
+			return
+		}
+
+		if c.teams == nil {
+			_ = c.Reply(room, user, "Team vault is not available.")
+			return
+		}
+
+		sub := strings.ToLower(parts[0])
+		switch sub {
+		case "list":
+			list := c.teams.List()
+			if len(list) == 0 {
+				_ = c.Reply(room, user, "No teams currently saved in vault.")
+				return
+			}
+			var entries []string
+			for _, t := range list {
+				act := "inactive"
+				if t.Active {
+					act = "active"
+				}
+				entries = append(entries, fmt.Sprintf("%s [%s, %s] (ID: %s)", t.Name, t.Format, act, t.ID))
+			}
+			_ = c.Reply(room, user, strings.Join(entries, " | "))
+
+		case "import":
+			if len(parts) < 2 {
+				_ = c.Reply(room, user, "Usage: .team import <pokepast.es-url> [format] [name]")
+				return
+			}
+			url := parts[1]
+			format := "gen9ou"
+			if len(parts) > 2 {
+				format = parts[2]
+			}
+			name := ""
+			if len(parts) > 3 {
+				name = strings.Join(parts[3:], " ")
+			}
+			t, err := c.teams.ImportPokepaste(url, format, name)
+			if err != nil {
+				_ = c.Reply(room, user, fmt.Sprintf("Failed to import pokepaste: %v", err))
+				return
+			}
+			_ = c.Reply(room, user, fmt.Sprintf("Imported %s for %s (%d pokemon: %s). Team is active!", t.Name, t.Format, len(t.Pokemon), strings.Join(t.Pokemon, ", ")))
+
+		case "toggle":
+			if len(parts) < 2 {
+				_ = c.Reply(room, user, "Usage: .team toggle <team-id>")
+				return
+			}
+			id := parts[1]
+			active, err := c.teams.Toggle(id)
+			if err != nil {
+				_ = c.Reply(room, user, fmt.Sprintf("Error: %v", err))
+				return
+			}
+			statusStr := "inactive"
+			if active {
+				statusStr = "active"
+			}
+			_ = c.Reply(room, user, fmt.Sprintf("Team %s is now %s.", id, statusStr))
+
+		case "delete":
+			if len(parts) < 2 {
+				_ = c.Reply(room, user, "Usage: .team delete <team-id>")
+				return
+			}
+			id := parts[1]
+			if c.teams.Delete(id) {
+				_ = c.Reply(room, user, fmt.Sprintf("Deleted team %s.", id))
+			} else {
+				_ = c.Reply(room, user, fmt.Sprintf("Team %s not found.", id))
+			}
+
+		default:
+			_ = c.Reply(room, user, "Usage: .team [list|import <url> [format] [name]|toggle <id>|delete <id>]")
+		}
+	})
+
 	c.HandleCommand("help", func(room, user, args string) {
-		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch, .tourjoin, .tourleave, .tourstatus, .antipred [on|off], .ladder [start|stop|status]")
+		_ = c.Reply(room, user, "Available commands: .status [msg], .seen <user>, .data <pokemon>, .randpoke, .randmove, .quote, .joke, .hotpatch, .tourjoin, .tourleave, .tourstatus, .antipred [on|off], .ladder [start|stop|status], .team [list|import|toggle|delete]")
 	})
 
 	// register default command aliases

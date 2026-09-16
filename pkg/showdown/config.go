@@ -45,9 +45,9 @@ type Config struct {
 	AutoTournaments   bool
 	TournamentFormats []string
 	AntiPredictability *bool
-	LadderAutoStart   bool
-	LadderFormat      string
-	LadderMaxBattles  int
+	LadderAutoStart    bool
+	LadderFormat       string
+	LadderMaxBattles   int
 }
 
 func (c *Config) ApplyDefaults() {
