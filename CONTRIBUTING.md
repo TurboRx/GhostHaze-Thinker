@@ -6,7 +6,7 @@ Thank you for your interest in contributing to GhostHaze-Thinker! This document 
 
 ## Code of Conduct
 
-All contributors and maintainers are expected to adhere to our [Code of Conduct](file:///home/parimaldebnath99007/Showdown-TurBOOT/CODE_OF_CONDUCT.md). Please treat everyone with respect and kindness.
+All contributors and maintainers are expected to adhere to our [Code of Conduct](CODE_OF_CONDUCT.md). Please treat everyone with respect and kindness.
 
 ---
 
@@ -109,4 +109,4 @@ To keep the repository clean, consistent, and maintainable:
 
 ## Security
 
-If you discover a security vulnerability, please do not open a public issue. Follow our disclosure policy in [SECURITY.md](file:///home/parimaldebnath99007/Showdown-TurBOOT/SECURITY.md).
+If you discover a security vulnerability, please do not open a public issue. Follow our disclosure policy in [SECURITY.md](SECURITY.md).

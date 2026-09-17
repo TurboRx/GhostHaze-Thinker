@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 // import official pokemon showdown moves.ts
-const movesTsPath = '/home/parimaldebnath99007/pokemon-showdown/data/moves.ts';
-const outputPath = '/home/parimaldebnath99007/GhostHaze-Thinker/pkg/showdown/battle/data/moves.json';
+const movesTsPath = process.argv[2] || process.env.SHOWDOWN_MOVES_TS || path.resolve(__dirname, '../../../pokemon-showdown/data/moves.ts');
+const outputPath = process.argv[3] || path.resolve(__dirname, '../pkg/showdown/battle/data/moves.json');
 
 const { Moves } = await import(movesTsPath);
 
