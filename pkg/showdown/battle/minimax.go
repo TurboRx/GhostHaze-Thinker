@@ -219,24 +219,26 @@ func (e *MinimaxEngine) decideTeamPreview(b *Battle, req BattleRequest) BattleDe
 			faster := pokeStats["spe"] >= oppStats["spe"]
 
 			if faster {
-				if maxOurDmgFraction >= 0.95 {
+				switch {
+				case maxOurDmgFraction >= 0.95:
 					matchup += 80.0 // outspeeds and threatens instant ohko
-				} else if maxOurDmgFraction >= 0.50 && maxOppDmgFraction < 0.50 {
+				case maxOurDmgFraction >= 0.50 && maxOppDmgFraction < 0.50:
 					matchup += 45.0 // favorable 2hko trade
-				} else {
-					matchup += (maxOurDmgFraction - maxOppDmgFraction) * 30.0 + 15.0
+				default:
+					matchup += (maxOurDmgFraction - maxOppDmgFraction)*30.0 + 15.0
 				}
 			} else {
-				if maxOppDmgFraction >= 0.95 {
+				switch {
+				case maxOppDmgFraction >= 0.95:
 					if pokeItem == "focussash" {
 						matchup -= 20.0 // focus sash survives lethal hit
 					} else {
 						matchup -= 85.0 // slower and risks being ohkod on turn 1
 					}
-				} else if maxOppDmgFraction >= 0.50 && maxOurDmgFraction < 0.50 {
+				case maxOppDmgFraction >= 0.50 && maxOurDmgFraction < 0.50:
 					matchup -= 40.0 // unfavorable trade
-				} else {
-					matchup += (maxOurDmgFraction - maxOppDmgFraction) * 30.0 - 15.0
+				default:
+					matchup += (maxOurDmgFraction - maxOppDmgFraction)*30.0 - 15.0
 				}
 			}
 
@@ -441,6 +443,9 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 	oppActions := generateOpponentActions(b, state)
 	if len(oppActions) == 0 {
 		oppActions = generateFallbackOpponentActions(state)
+	}
+	if len(oppActions) == 0 {
+		oppActions = []SimAction{{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")}}
 	}
 
 	// count surviving pokemon to trigger deep terminal solver in endgame (<= 2 alive per side)
@@ -871,6 +876,9 @@ func generateFallbackOpponentActions(state *SimulatedState) []SimAction {
 		default:
 			actions = append(actions, SimAction{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")})
 		}
+	}
+	if len(actions) == 0 {
+		actions = append(actions, SimAction{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")})
 	}
 	return actions
 }
@@ -1729,6 +1737,10 @@ func generateTurn2OppActions(s *SimulatedState) []SimAction {
 		}
 	}
 
+	if len(actions) == 0 {
+		actions = append(actions, SimAction{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")})
+	}
+
 	return actions
 }
 
@@ -1884,6 +1896,10 @@ func generateTurn3OppActions(s *SimulatedState) []SimAction {
 		if len(actions) >= 2 {
 			break
 		}
+	}
+
+	if len(actions) == 0 {
+		actions = append(actions, SimAction{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")})
 	}
 
 	return actions
@@ -2144,6 +2160,10 @@ func generateEndgameOppActions(s *SimulatedState) []SimAction {
 		}
 	}
 
+	if len(actions) == 0 {
+		actions = append(actions, SimAction{Type: actionMove, MoveID: "bodyslam", MoveData: GetMoveData("bodyslam")})
+	}
+
 	return actions
 }
 
@@ -2219,7 +2239,7 @@ func selectMixedStrategy(scored []scoredAction, bestScore float64, fallback SimA
 		totalWeight += w
 	}
 
-	if totalWeight <= 0 {
+	if totalWeight <= 0 || math.IsNaN(totalWeight) || math.IsInf(totalWeight, 0) {
 		return fallback
 	}
 
