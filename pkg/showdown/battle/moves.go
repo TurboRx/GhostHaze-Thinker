@@ -12,18 +12,37 @@ const (
 	CategoryStatus   MoveCategory = "Status"
 )
 
+// secondaryeffect models a move's secondary effect (flinch, burn chance, stat drops, etc).
+type SecondaryEffect struct {
+	Chance     int            `json:"chance"`
+	Status     string         `json:"status,omitempty"`
+	Boosts     map[string]int `json:"boosts,omitempty"`
+	SelfBoosts map[string]int `json:"selfBoosts,omitempty"`
+}
+
+// movedata holds the complete mechanical data for a single move.
 type MoveData struct {
-	ID        string       `json:"id"`
-	Name      string       `json:"name"`
-	Type      string       `json:"type"`
-	Category  MoveCategory `json:"category"`
-	BasePower int          `json:"basePower"`
-	Accuracy  int          `json:"accuracy"`
-	Priority  int          `json:"priority"`
-	IsHealing bool         `json:"isHealing"`
-	IsHazard  bool         `json:"isHazard"`
-	IsSetup   bool         `json:"isSetup"`
-	IsStatus  bool         `json:"isStatus"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Type           string          `json:"type"`
+	Category       MoveCategory    `json:"category"`
+	BasePower      int             `json:"basePower"`
+	Accuracy       int             `json:"accuracy"`
+	Priority       int             `json:"priority"`
+	IsHealing      bool            `json:"isHealing"`
+	IsHazard       bool            `json:"isHazard"`
+	IsSetup        bool            `json:"isSetup"`
+	IsStatus       bool            `json:"isStatus"`
+	SelfBoosts     map[string]int  `json:"selfBoosts,omitempty"`
+	Boosts         map[string]int  `json:"boosts,omitempty"`
+	SideCondition  string          `json:"sideCondition,omitempty"`
+	Drain          [2]int          `json:"drain,omitempty"`
+	Recoil         [2]int          `json:"recoil,omitempty"`
+	Status         string          `json:"status,omitempty"`
+	VolatileStatus string          `json:"volatileStatus,omitempty"`
+	ForceSwitch    bool            `json:"forceSwitch,omitempty"`
+	Secondary      *SecondaryEffect `json:"secondary,omitempty"`
+	ClearsHazards  bool            `json:"clearsHazards,omitempty"`
 }
 
 var movesDatabase = map[string]MoveData{

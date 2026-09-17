@@ -497,7 +497,14 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 
 		avgScore := totalScore / float64(len(oppActions))
 		// maximin score with weighted average expectation
-		compositeScore := (0.75 * worstScore) + (0.25 * avgScore)
+		worstWeight := 0.75
+		avgWeight := 0.25
+		if state.PredictiveRate >= 0.35 {
+			// against predictive reading opponents, increase worst-case branch weighting
+			worstWeight = 0.85
+			avgWeight = 0.15
+		}
+		compositeScore := (worstWeight * worstScore) + (avgWeight * avgScore)
 
 		scored = append(scored, scoredAction{action: ourAct, score: compositeScore})
 		if compositeScore > bestScore {
@@ -508,7 +515,7 @@ func (e *MinimaxEngine) decideSimultaneousTurn(b *Battle, req BattleRequest) Bat
 
 	selectedAction := bestAction
 	if e.antiPredictability {
-		selectedAction = selectMixedStrategy(scored, bestScore, bestAction)
+		selectedAction = selectMixedStrategy(scored, bestScore, bestAction, state.PredictiveRate)
 	}
 	return actionToDecision(selectedAction)
 }
@@ -524,6 +531,7 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 		OurScreens:          make(map[string]bool),
 		OppScreens:          make(map[string]bool),
 		Turn:                b.Turn,
+		PredictiveRate:      b.PredictiveRate,
 	}
 
 	for k, v := range b.MyHazards {
@@ -615,9 +623,17 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 		Boosts:          make(map[string]int),
 		Volatiles:       make(map[string]bool),
 		LockedMove:      b.OpponentActive.LockedMove,
-		Moves:           b.OpponentActive.Moves,
+		Moves:           append([]string(nil), b.OpponentActive.Moves...),
 		ConfirmedFaster: b.OpponentActive.ConfirmedFaster,
 		ConfirmedSlower: b.OpponentActive.ConfirmedSlower,
+	}
+	// meta movepool inference: if opponent active has no revealed moves, infer from official meta dataset
+	if len(s.OppActive.Moves) == 0 && s.OppActive.Species != "" {
+		if setData, found := GetRandomBattleSet(s.OppActive.Species); found && len(setData.Sets) > 0 {
+			for _, m := range setData.Sets[0].Movepool {
+				s.OppActive.Moves = append(s.OppActive.Moves, cleanID(m))
+			}
+		}
 	}
 	if s.OppActive.HPPercent == 0 && !s.OppActive.Fainted {
 		s.OppActive.HPPercent = 1.0
@@ -632,6 +648,14 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 	// opponent bench pokemon
 	for _, p := range b.OpponentTeam {
 		if !strings.EqualFold(p.Species, b.OpponentActive.Species) {
+			benchMoves := append([]string(nil), p.Moves...)
+			if len(benchMoves) == 0 && p.Species != "" {
+				if setData, found := GetRandomBattleSet(p.Species); found && len(setData.Sets) > 0 {
+					for _, m := range setData.Sets[0].Movepool {
+						benchMoves = append(benchMoves, cleanID(m))
+					}
+				}
+			}
 			s.OppBench = append(s.OppBench, SimulatedPokemon{
 				Species:   p.Species,
 				HPPercent: 1.0,
@@ -639,6 +663,7 @@ func buildSimulatedState(b *Battle, req BattleRequest) *SimulatedState {
 				Fainted:   p.Fainted,
 				Ability:   p.Ability,
 				Item:      p.Item,
+				Moves:     benchMoves,
 			})
 		}
 	}
@@ -797,8 +822,36 @@ func generateOpponentActions(b *Battle, state *SimulatedState) []SimAction {
 	return actions
 }
 
-// generatefallbackopponentactions creates generic stab attacks when no data is known.
+// inferopponentmovepool loads candidate moves for an opponent species from official meta data.
+func inferOpponentMovepool(species string, maxMoves int) []SimAction {
+	if species == "" {
+		return nil
+	}
+	setData, found := GetRandomBattleSet(species)
+	if !found || len(setData.Sets) == 0 {
+		return nil
+	}
+	var actions []SimAction
+	for _, m := range setData.Sets[0].Movepool {
+		clean := cleanID(m)
+		actions = append(actions, SimAction{
+			Type:     actionMove,
+			MoveID:   clean,
+			MoveData: GetMoveData(clean),
+		})
+		if len(actions) >= maxMoves {
+			break
+		}
+	}
+	return actions
+}
+
+// generatefallbackopponentactions creates candidate attacks using meta inference, falling back to stab attacks when no data is known.
 func generateFallbackOpponentActions(state *SimulatedState) []SimAction {
+	if inferred := inferOpponentMovepool(state.OppActive.Species, 4); len(inferred) > 0 {
+		return inferred
+	}
+
 	oppTypes := state.OppActive.Types()
 	var actions []SimAction
 	for _, t := range oppTypes {
@@ -962,63 +1015,28 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 
 	cleanM := cleanID(mData.ID)
 
-	// screen setting moves
-	switch cleanM {
-	case "reflect":
-		if isOurMove {
-			if s.OurScreens == nil {
-				s.OurScreens = make(map[string]bool)
+	// data-driven side condition handling (screens, hazards set via sideCondition field)
+	if mData.SideCondition != "" && mData.Category == CategoryStatus {
+		sc := mData.SideCondition
+		// screen/wall conditions go on user side; hazard conditions go on target side
+		isScreen := sc == "reflect" || sc == "lightscreen" || sc == "auroraveil" || sc == "tailwind" || sc == "safeguard" || sc == "mist"
+		if isScreen {
+			if isOurMove {
+				if s.OurScreens == nil {
+					s.OurScreens = make(map[string]bool)
+				}
+				s.OurScreens[sc] = true
+			} else {
+				if s.OppScreens == nil {
+					s.OppScreens = make(map[string]bool)
+				}
+				s.OppScreens[sc] = true
 			}
-			s.OurScreens["reflect"] = true
-		} else {
-			if s.OppScreens == nil {
-				s.OppScreens = make(map[string]bool)
-			}
-			s.OppScreens["reflect"] = true
+			return
 		}
-		return
-	case "lightscreen":
-		if isOurMove {
-			if s.OurScreens == nil {
-				s.OurScreens = make(map[string]bool)
-			}
-			s.OurScreens["lightscreen"] = true
-		} else {
-			if s.OppScreens == nil {
-				s.OppScreens = make(map[string]bool)
-			}
-			s.OppScreens["lightscreen"] = true
-		}
-		return
-	case "auroraveil":
-		if isOurMove {
-			if s.OurScreens == nil {
-				s.OurScreens = make(map[string]bool)
-			}
-			s.OurScreens["auroraveil"] = true
-		} else {
-			if s.OppScreens == nil {
-				s.OppScreens = make(map[string]bool)
-			}
-			s.OppScreens["auroraveil"] = true
-		}
-		return
-	case "tailwind":
-		if isOurMove {
-			if s.OurScreens == nil {
-				s.OurScreens = make(map[string]bool)
-			}
-			s.OurScreens["tailwind"] = true
-		} else {
-			if s.OppScreens == nil {
-				s.OppScreens = make(map[string]bool)
-			}
-			s.OppScreens["tailwind"] = true
-		}
-		return
 	}
 
-	// defog: clears hazards on both sides, clears screens on target side
+	// defog: clears hazards on both sides and screens on target side (unique behavior)
 	if cleanM == "defog" {
 		s.OurHazards = make(map[string]int)
 		s.OppHazards = make(map[string]int)
@@ -1047,32 +1065,13 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 		}
 	}
 
-	// rapid spin / mortal spin: clears hazards on user side, boosts speed by 1
-	if cleanM == "rapidspin" || cleanM == "mortalspin" {
+	// data-driven hazard clearing (rapid spin, mortal spin, tidy up, court change)
+	if mData.ClearsHazards {
 		if isOurMove {
 			s.OurHazards = make(map[string]int)
 		} else {
 			s.OppHazards = make(map[string]int)
 		}
-		if attacker.Boosts == nil {
-			attacker.Boosts = make(map[string]int)
-		}
-		applyBoost(attacker.Boosts, "spe", 1)
-		if cleanM == "mortalspin" && defender.Status == "" {
-			defender.Status = "psn"
-		}
-	}
-
-	// tidy up: clears hazards on both sides, boosts atk and spe by 1
-	if cleanM == "tidyup" {
-		s.OurHazards = make(map[string]int)
-		s.OppHazards = make(map[string]int)
-		if attacker.Boosts == nil {
-			attacker.Boosts = make(map[string]int)
-		}
-		applyBoost(attacker.Boosts, "atk", 1)
-		applyBoost(attacker.Boosts, "spe", 1)
-		return
 	}
 
 	// healing moves
@@ -1084,64 +1083,17 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 		return
 	}
 
-	// setup moves
-	if mData.IsSetup {
+	// data-driven status setup / stat buff moves
+	if mData.Category == CategoryStatus && len(mData.SelfBoosts) > 0 {
 		if attacker.Boosts == nil {
 			attacker.Boosts = make(map[string]int)
 		}
+		for stat, delta := range mData.SelfBoosts {
+			applyBoost(attacker.Boosts, stat, delta)
+		}
 		switch cleanM {
-		case "swordsdance":
-			applyBoost(attacker.Boosts, "atk", 2)
-		case "dragondance":
-			applyBoost(attacker.Boosts, "atk", 1)
-			applyBoost(attacker.Boosts, "spe", 1)
-		case "calmmind":
-			applyBoost(attacker.Boosts, "spa", 1)
-			applyBoost(attacker.Boosts, "spd", 1)
-		case "nastyplot":
-			applyBoost(attacker.Boosts, "spa", 2)
-		case "quiverdance":
-			applyBoost(attacker.Boosts, "spa", 1)
-			applyBoost(attacker.Boosts, "spd", 1)
-			applyBoost(attacker.Boosts, "spe", 1)
-		case "bulkup":
-			applyBoost(attacker.Boosts, "atk", 1)
-			applyBoost(attacker.Boosts, "def", 1)
-		case "curse":
-			applyBoost(attacker.Boosts, "atk", 1)
-			applyBoost(attacker.Boosts, "def", 1)
-			applyBoost(attacker.Boosts, "spe", -1)
-		case "irondefense", "acidarmor", "barrier":
-			applyBoost(attacker.Boosts, "def", 2)
-		case "amnesia":
-			applyBoost(attacker.Boosts, "spd", 2)
-		case "agility", "rockpolish", "autotomize":
-			applyBoost(attacker.Boosts, "spe", 2)
-		case "shiftgear":
-			applyBoost(attacker.Boosts, "atk", 1)
-			applyBoost(attacker.Boosts, "spe", 2)
-		case "shellsmash":
-			applyBoost(attacker.Boosts, "atk", 2)
-			applyBoost(attacker.Boosts, "spa", 2)
-			applyBoost(attacker.Boosts, "spe", 2)
-			applyBoost(attacker.Boosts, "def", -1)
-			applyBoost(attacker.Boosts, "spd", -1)
-		case "growth":
-			applyBoost(attacker.Boosts, "atk", 1)
-			applyBoost(attacker.Boosts, "spa", 1)
-		case "tailglow":
-			applyBoost(attacker.Boosts, "spa", 3)
 		case "clangaroussoul":
-			applyBoost(attacker.Boosts, "atk", 1)
-			applyBoost(attacker.Boosts, "def", 1)
-			applyBoost(attacker.Boosts, "spa", 1)
-			applyBoost(attacker.Boosts, "spd", 1)
-			applyBoost(attacker.Boosts, "spe", 1)
 			attacker.HPPercent -= 0.33
-		case "victorydance":
-			applyBoost(attacker.Boosts, "atk", 1)
-			applyBoost(attacker.Boosts, "def", 1)
-			applyBoost(attacker.Boosts, "spe", 1)
 		case "bellydrum":
 			attacker.Boosts["atk"] = 6
 			attacker.HPPercent -= 0.50
@@ -1149,48 +1101,71 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 		return
 	}
 
-	// hazard moves
-	if mData.IsHazard {
-		if cleanM == "stealthrock" || cleanM == "stickyweb" {
-			targetHazards[cleanM] = 1
-		} else {
-			targetHazards[cleanM]++
+	// data-driven status stat-lowering moves on target (e.g. screech, fake tears)
+	if mData.Category == CategoryStatus && len(mData.Boosts) > 0 {
+		if defender.Boosts == nil {
+			defender.Boosts = make(map[string]int)
+		}
+		for stat, delta := range mData.Boosts {
+			applyBoost(defender.Boosts, stat, delta)
 		}
 		return
 	}
 
-	// status infliction moves
-	if mData.IsStatus {
-		if defender.Status == "" {
+	// data-driven hazard moves (stealth rock, spikes, toxic spikes, sticky web)
+	if mData.IsHazard || mData.SideCondition != "" {
+		hType := mData.SideCondition
+		if hType == "" {
+			hType = cleanM
+		}
+		switch hType {
+		case "stealthrock", "stickyweb", "gmaxsteelsurge":
+			targetHazards[hType] = 1
+			return
+		case "spikes", "toxicspikes":
+			targetHazards[hType]++
+			return
+		}
+	}
+
+	// data-driven status infliction moves
+	if mData.IsStatus || (mData.Category == CategoryStatus && mData.Status != "") {
+		targetStatus := mData.Status
+		if targetStatus == "" {
 			switch cleanM {
-			case "thunderwave":
-				for _, t := range defender.Types() {
-					if t == "ground" || t == "electric" {
-						return
-					}
-				}
-				defender.Status = "par"
+			case "thunderwave", "glare", "stunspore":
+				targetStatus = "par"
 			case "willowisp":
-				for _, t := range defender.Types() {
-					if t == "fire" {
-						return
-					}
+				targetStatus = "brn"
+			case "toxic", "poisonpowder":
+				targetStatus = "tox"
+			case "spore", "sleeppowder", "hypnosis":
+				targetStatus = "slp"
+			}
+		}
+
+		if defender.Status == "" && targetStatus != "" {
+			immune := false
+			for _, t := range defender.Types() {
+				if targetStatus == "par" && (t == "ground" || t == "electric") {
+					immune = true
+					break
 				}
-				defender.Status = "brn"
-			case "toxic":
-				for _, t := range defender.Types() {
-					if t == "steel" || t == "poison" {
-						return
-					}
+				if targetStatus == "brn" && t == "fire" {
+					immune = true
+					break
 				}
-				defender.Status = "tox"
-			case "spore", "sleeppowder":
-				for _, t := range defender.Types() {
-					if t == "grass" {
-						return
-					}
+				if (targetStatus == "tox" || targetStatus == "psn") && (t == "steel" || t == "poison") {
+					immune = true
+					break
 				}
-				defender.Status = "slp"
+				if targetStatus == "slp" && (cleanM == "spore" || cleanM == "sleeppowder") && t == "grass" {
+					immune = true
+					break
+				}
+			}
+			if !immune {
+				defender.Status = targetStatus
 			}
 		}
 		return
@@ -1281,42 +1256,48 @@ func executeMove(s *SimulatedState, act SimAction, isOurMove bool) {
 		defender.Fainted = true
 	}
 
-	// post-attack stat changes on user and target
-	if attacker.Boosts == nil {
-		attacker.Boosts = make(map[string]int)
+	// data-driven drain mechanics (e.g. giga drain, drain punch)
+	if mData.Drain[0] > 0 && mData.Drain[1] > 0 {
+		healedFraction := (hpLoss * float64(mData.Drain[0])) / float64(mData.Drain[1])
+		attacker.HPPercent += healedFraction
+		if attacker.HPPercent > 1.0 {
+			attacker.HPPercent = 1.0
+		}
 	}
-	if defender.Boosts == nil {
-		defender.Boosts = make(map[string]int)
+
+	// data-driven recoil mechanics (e.g. flare blitz, brave bird, wood hammer)
+	if mData.Recoil[0] > 0 && mData.Recoil[1] > 0 {
+		recoilFraction := (hpLoss * float64(mData.Recoil[0])) / float64(mData.Recoil[1])
+		attacker.HPPercent -= recoilFraction
+		if attacker.HPPercent <= 0.001 {
+			attacker.HPPercent = 0.0
+			attacker.Fainted = true
+		}
 	}
-	switch cleanM {
-	case "closecombat", "headlongrush", "armorcannon":
-		applyBoost(attacker.Boosts, "def", -1)
-		applyBoost(attacker.Boosts, "spd", -1)
-	case "superpower":
-		applyBoost(attacker.Boosts, "atk", -1)
-		applyBoost(attacker.Boosts, "def", -1)
-	case "dracometeor", "overheat", "leafstorm", "fleurcannon":
-		applyBoost(attacker.Boosts, "spa", -2)
-	case "makeitrain":
-		applyBoost(attacker.Boosts, "spa", -1)
-	case "hammerarm":
-		applyBoost(attacker.Boosts, "spe", -1)
-	case "vcreate":
-		applyBoost(attacker.Boosts, "def", -1)
-		applyBoost(attacker.Boosts, "spd", -1)
-		applyBoost(attacker.Boosts, "spe", -1)
-	case "torchsong":
-		applyBoost(attacker.Boosts, "spa", 1)
-	case "poweruppunch":
-		applyBoost(attacker.Boosts, "atk", 1)
-	case "trailblaze", "flamecharge":
-		applyBoost(attacker.Boosts, "spe", 1)
-	case "chillingwater":
-		applyBoost(defender.Boosts, "atk", -1)
-	case "mysticalfire", "snarl", "strugglebug", "skittersmack":
-		applyBoost(defender.Boosts, "spa", -1)
-	case "icywind", "electroweb", "bulldoze", "lowsweep":
-		applyBoost(defender.Boosts, "spe", -1)
+
+	// data-driven post-attack stat changes on attacker
+	if len(mData.SelfBoosts) > 0 {
+		if attacker.Boosts == nil {
+			attacker.Boosts = make(map[string]int)
+		}
+		for stat, delta := range mData.SelfBoosts {
+			applyBoost(attacker.Boosts, stat, delta)
+		}
+	}
+
+	// data-driven post-attack stat changes on target
+	if len(mData.Boosts) > 0 {
+		if defender.Boosts == nil {
+			defender.Boosts = make(map[string]int)
+		}
+		for stat, delta := range mData.Boosts {
+			applyBoost(defender.Boosts, stat, delta)
+		}
+	}
+
+	// data-driven secondary status effects (guaranteed or high-chance)
+	if !defender.Fainted && defender.Status == "" && mData.Secondary != nil && mData.Secondary.Chance == 100 && mData.Secondary.Status != "" {
+		defender.Status = mData.Secondary.Status
 	}
 }
 
@@ -1723,6 +1704,11 @@ func generateTurn2OppActions(s *SimulatedState) []SimAction {
 		return actions
 	}
 
+	// infer likely moves from official meta data
+	if inferred := inferOpponentMovepool(s.OppActive.Species, 3); len(inferred) > 0 {
+		return inferred
+	}
+
 	// fallback attacks based on opponent types
 	oppTypes := s.OppActive.Types()
 	for _, t := range oppTypes {
@@ -1873,6 +1859,11 @@ func generateTurn3OppActions(s *SimulatedState) []SimAction {
 		if len(actions) > 0 {
 			return actions
 		}
+	}
+
+	// infer likely moves from official meta data
+	if inferred := inferOpponentMovepool(s.OppActive.Species, 2); len(inferred) > 0 {
+		return inferred
 	}
 
 	// fallback attacks based on opponent types
@@ -2128,6 +2119,11 @@ func generateEndgameOppActions(s *SimulatedState) []SimAction {
 		return actions
 	}
 
+	// infer likely moves from official meta data
+	if inferred := inferOpponentMovepool(s.OppActive.Species, 3); len(inferred) > 0 {
+		return inferred
+	}
+
 	// fallback attacks based on opponent types
 	oppTypes := s.OppActive.Types()
 	for _, t := range oppTypes {
@@ -2157,9 +2153,10 @@ type scoredAction struct {
 }
 
 // selectmixedstrategy chooses among top-scoring candidate actions using a game-theoretic probability distribution.
-// when an action is decisively superior, it is selected deterministically.
-// when candidate actions are in a close competitive standoff, it samples proportionally to remain unexploitable.
-func selectMixedStrategy(scored []scoredAction, bestScore float64, fallback SimAction) SimAction {
+// when an action is decisively superior or the position is terminal, it is selected deterministically.
+// when candidate actions are in a close competitive standoff, it samples proportionally to remain unexploitable,
+// dynamically adapting temperature based on the opponent's observed prediction rate.
+func selectMixedStrategy(scored []scoredAction, bestScore float64, fallback SimAction, predictiveRate float64) SimAction {
 	if len(scored) <= 1 {
 		return fallback
 	}
@@ -2185,6 +2182,11 @@ func selectMixedStrategy(scored []scoredAction, bestScore float64, fallback SimA
 		margin = 6.0
 	}
 
+	// against predictive reading opponents, expand candidate pool to remain unexploitable
+	if predictiveRate >= 0.35 {
+		margin += 3.0
+	}
+
 	var contenders []scoredAction
 	for _, sa := range scored {
 		if sa.score >= bestScore-margin {
@@ -2200,8 +2202,11 @@ func selectMixedStrategy(scored []scoredAction, bestScore float64, fallback SimA
 		return fallback
 	}
 
-	// boltzmann softmax temperature scaled to competitive margin
-	temp := margin * 0.65
+	// boltzmann softmax temperature scaled to competitive margin and predictive rate
+	temp := margin * 0.55
+	if predictiveRate >= 0.35 {
+		temp = margin * 0.75
+	}
 	if temp < 1.0 {
 		temp = 1.0
 	}

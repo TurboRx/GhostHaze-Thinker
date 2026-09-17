@@ -37,6 +37,7 @@ type SimulatedState struct {
 	Turn                int
 	WinConSpecies       string
 	SackFodder          map[string]bool
+	PredictiveRate      float64
 }
 
 // evaluatebattlestate scores a simulated battle state from our perspective.

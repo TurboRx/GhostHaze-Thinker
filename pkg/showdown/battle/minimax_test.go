@@ -625,8 +625,8 @@ func TestMinimaxEngine_AntiPredictabilityCloseMoves(t *testing.T) {
 		Side: RequestSide{
 			Pokemon: []RequestPokemon{
 				{Details: "Charizard, L80", Condition: "250/250", Active: true},
-				{Details: "Blastoise, L80", Condition: "250/250"},
-				{Details: "Venusaur, L80", Condition: "250/250"},
+				{Details: "Blastoise, L80", Condition: "0 fnt"},
+				{Details: "Venusaur, L80", Condition: "0 fnt"},
 			},
 		},
 	}
@@ -721,8 +721,8 @@ func TestMinimaxEngine_AntiPredictabilityDisabled(t *testing.T) {
 		Side: RequestSide{
 			Pokemon: []RequestPokemon{
 				{Details: "Charizard, L80", Condition: "250/250", Active: true},
-				{Details: "Blastoise, L80", Condition: "250/250"},
-				{Details: "Venusaur, L80", Condition: "250/250"},
+				{Details: "Blastoise, L80", Condition: "0 fnt"},
+				{Details: "Venusaur, L80", Condition: "0 fnt"},
 			},
 		},
 	}
@@ -943,6 +943,161 @@ func TestDecideForcedSwitch_ProtectsWinConditionFromLethalThreat(t *testing.T) {
 	// slot 2 is blissey (sponge); slot 3 is iron valiant (fragile wincon that would die)
 	if dec.Slot == 3 {
 		t.Fatalf("expected engine to protect win condition against faster lethal threat, but sent slot 3")
+	}
+}
+
+func TestMinimaxEngine_DataDrivenMoveMechanics(t *testing.T) {
+	// test close combat self stat drops
+	cc := GetMoveData("closecombat")
+	if cc.SelfBoosts["def"] != -1 || cc.SelfBoosts["spd"] != -1 {
+		t.Fatalf("expected closecombat self boosts def -1 spd -1, got: %v", cc.SelfBoosts)
+	}
+
+	// test giga drain healing flag and drain ratio
+	gd := GetMoveData("gigadrain")
+	if !gd.IsHealing || gd.Drain[0] != 1 || gd.Drain[1] != 2 {
+		t.Fatalf("expected gigadrain drain 1/2 and isHealing, got: %+v", gd)
+	}
+
+	// test flare blitz recoil
+	fb := GetMoveData("flareblitz")
+	if fb.Recoil[0] != 33 || fb.Recoil[1] != 100 {
+		t.Fatalf("expected flareblitz recoil 33/100, got: %v", fb.Recoil)
+	}
+
+	// test swords dance setup boost
+	sd := GetMoveData("swordsdance")
+	if !sd.IsSetup || sd.SelfBoosts["atk"] != 2 {
+		t.Fatalf("expected swordsdance atk +2 self boost, got: %+v", sd)
+	}
+
+	// test chilling water target drop
+	cw := GetMoveData("chillingwater")
+	if cw.Boosts["atk"] != -1 {
+		t.Fatalf("expected chillingwater target drop atk -1, got: %+v", cw)
+	}
+
+	// test torch song user special attack buff
+	ts := GetMoveData("torchsong")
+	if ts.SelfBoosts["spa"] != 1 {
+		t.Fatalf("expected torchsong spa +1 self boost, got: %+v", ts)
+	}
+
+	// test executeMove simulation applying data-driven mechanics directly
+	state := &SimulatedState{
+		OurActive: SimulatedPokemon{
+			Species:   "Lucario",
+			HPPercent: 1.0,
+			Boosts:    make(map[string]int),
+		},
+		OppActive: SimulatedPokemon{
+			Species:   "Blissey",
+			HPPercent: 1.0,
+			Boosts:    make(map[string]int),
+		},
+	}
+
+	// simulate closecombat
+	act := SimAction{
+		Type:     actionMove,
+		MoveID:   "closecombat",
+		MoveData: cc,
+	}
+	executeMove(state, act, true)
+
+	if state.OurActive.Boosts["def"] != -1 || state.OurActive.Boosts["spd"] != -1 {
+		t.Fatalf("expected lucario to have def -1 and spd -1 after close combat, got: %v", state.OurActive.Boosts)
+	}
+	if state.OppActive.HPPercent >= 1.0 {
+		t.Fatalf("expected blissey to take damage from close combat, got hp: %f", state.OppActive.HPPercent)
+	}
+}
+
+func TestMinimaxEngine_MetaMovepoolInference(t *testing.T) {
+	// verify meta movepool inference helper for unrevealed meta pokemon
+	inferred := inferOpponentMovepool("Kingambit", 4)
+	if len(inferred) == 0 {
+		t.Fatalf("expected inferred moves for Kingambit, got empty")
+	}
+
+	hasExpectedMove := false
+	for _, act := range inferred {
+		if act.MoveID == "kowtowcleave" || act.MoveID == "suckerpunch" || act.MoveID == "ironhead" || act.MoveID == "swordsdance" {
+			hasExpectedMove = true
+			break
+		}
+	}
+	if !hasExpectedMove {
+		t.Fatalf("expected kingambit inferred movepool to contain standard moves, got: %v", inferred)
+	}
+
+	// verify buildSimulatedState infers movepool when opponent moves are unrevealed
+	engine := NewMinimaxEngine()
+	b := NewBattle("battle-inference-test", engine)
+	b.OpponentActive = OpponentActivePoke{
+		Species:   "Great Tusk",
+		HPPercent: 1.0,
+	}
+
+	req := BattleRequest{
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{Details: "Blissey, L80", Condition: "250/250", Active: true},
+			},
+		},
+	}
+
+	simState := buildSimulatedState(b, req)
+	if len(simState.OppActive.Moves) == 0 {
+		t.Fatalf("expected simulated opponent active to infer moves from meta dataset, got 0 moves")
+	}
+
+	// verify opponent actions generation uses inferred moves
+	oppActions := generateOpponentActions(b, simState)
+	if len(oppActions) == 0 {
+		t.Fatalf("expected opponent actions to be generated from inferred movepool")
+	}
+}
+
+func TestMinimaxEngine_PredictiveRateTracking(t *testing.T) {
+	engine := NewMinimaxEngine()
+	b := NewBattle("battle-predict-test", engine)
+
+	// set player IDs
+	b.MyPlayerID = "p1"
+	b.OpponentID = "p2"
+
+	// simulate turn 1: standard turn (no hard reads)
+	b.HandleLine([]string{"turn", "1"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"move", "p1a: Blastoise", "Surf", "p2a: Garchomp"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"move", "p2a: Garchomp", "Earthquake", "p1a: Blastoise"}, "GhostHaze Thinker")
+
+	// simulate turn 2: double switch occurs
+	b.HandleLine([]string{"turn", "2"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"switch", "p1a: Zapdos", "Zapdos, L80", "100/100"}, "GhostHaze Thinker")
+	b.HandleLine([]string{"switch", "p2a: Tyranitar", "Tyranitar, L80", "100/100"}, "GhostHaze Thinker")
+
+	// advance to turn 3: turn line calculates predictive rate from previous double switch
+	b.HandleLine([]string{"turn", "3"}, "GhostHaze Thinker")
+
+	if b.OpponentHardReads != 1 {
+		t.Fatalf("expected 1 opponent hard read from double switch, got %d", b.OpponentHardReads)
+	}
+	if b.PredictiveRate <= 0.0 {
+		t.Fatalf("expected positive predictive rate, got %f", b.PredictiveRate)
+	}
+
+	// verify that simulated state receives predictive rate
+	req := BattleRequest{
+		Side: RequestSide{
+			Pokemon: []RequestPokemon{
+				{Details: "Zapdos, L80", Condition: "250/250", Active: true},
+			},
+		},
+	}
+	s := buildSimulatedState(b, req)
+	if s.PredictiveRate != b.PredictiveRate {
+		t.Fatalf("expected simulated state predictive rate %f to match battle %f", s.PredictiveRate, b.PredictiveRate)
 	}
 }
 

@@ -68,6 +68,10 @@ type Battle struct {
 	OpponentSwitchHazardDamage bool
 	MyScreens                  map[string]bool
 	OpponentScreens            map[string]bool
+	MySwitchedThisTurn         bool
+	OpponentHardReads          int
+	OpponentTotalActions       int
+	PredictiveRate             float64
 }
 
 func NewBattle(room string, engine BattleEngine) *Battle {
@@ -193,9 +197,21 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 					b.updateOpponentBenchItem(b.OpponentActive.Species, "heavydutyboots")
 				}
 			}
-			b.OpponentSwitchedThisTurn = false
-			b.OpponentSwitchHazardDamage = false
 		}
+
+		// track opponent hard reads (double switches or predictive moves)
+		if b.OpponentSwitchedThisTurn && b.MySwitchedThisTurn {
+			b.OpponentHardReads++
+		}
+		if b.OpponentSwitchedThisTurn || b.FirstMoverThisTurn != "" {
+			b.OpponentTotalActions++
+		}
+		if b.OpponentTotalActions > 0 {
+			b.PredictiveRate = float64(b.OpponentHardReads) / float64(b.OpponentTotalActions)
+		}
+		b.OpponentSwitchedThisTurn = false
+		b.OpponentSwitchHazardDamage = false
+		b.MySwitchedThisTurn = false
 
 	case "poke":
 		// team preview poke broadcast e.g. |poke|p2|garchomp, l80, m|item
@@ -282,6 +298,7 @@ func (b *Battle) HandleLine(parts []string, myUsername string) (choice string, s
 				b.MyBoosts = make(map[string]int)
 				b.MyVolatiles = make(map[string]bool)
 				b.ConsecutiveProtects = 0
+				b.MySwitchedThisTurn = true
 			}
 		}
 
